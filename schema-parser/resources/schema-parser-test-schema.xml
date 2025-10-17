@@ -1,0 +1,402 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<database xmlns="http://stano.com/database"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://stano.com/database http://stano.com/database"
+          version="1.2">
+  <table name="ParentTable">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="Name" type="varchar" length="100" required="true"/>
+      <column name="Extra" type="varchar" length="200"/>
+      <column name="Gender" type="enum" enumType="GenderType"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique cluster="true">
+        <column name="Name"/>
+        <column name="Extra"/>
+      </unique>
+      <index compress="true">
+        <column name="Extra"/>
+        <column name="Name"/>
+      </index>
+      <index>
+        <column name="ID"/>
+        <column name="Name"/>
+        <column name="Extra"/>
+      </index>
+    </keys>
+    <initialData>
+      <sql>insert into ParentTable (Name,Extra,Gender) values ('AAA','Extra AAA','M')</sql>
+      <sql>insert into ParentTable (Name,Extra,Gender) values ('BBB','Extra BBB','F')</sql>
+      <sql databaseType="pgsql">insert into ParentTable (Name,Extra,Gender) values ('PGSQL','Extra PGSQL','M')</sql>
+      <sql databaseType="mssql">insert into ParentTable (Name,Extra,Gender) values ('MSSQL','Extra MSSQL','F')</sql>
+    </initialData>
+    <triggers>
+      <delete databaseType="pgsql">delete from pgsql</delete>
+      <delete databaseType="mssql">delete from mssql</delete>
+      <update databaseType="pgsql">update pgsql</update>
+      <update databaseType="mssql">update mssql</update>
+    </triggers>
+    <aggregations>
+      <aggregate destinationTable="ParentTableAggregation" dateColumn="Extra" criteria="criteria" timestampColumn="timestamp" frequency="daily">
+        <count destinationColumn="CountOfData"/>
+        <sum sourceColumn="Name" destinationColumn="SumOfData"/>
+        <group>
+          <column source="Source1" destination="Destination1" sourceDerivedFrom="SourceDerivedFrom1"/>
+          <column source="Source2" destination="Destination2" sourceDerivedFrom="SourceDerivedFrom2"/>
+        </group>
+      </aggregate>
+      <aggregate destinationTable="ParentTableAggregation2" dateColumn="Extra" timestampColumn="timestamp" frequency="daily">
+        <count destinationColumn="CountOfData"/>
+        <sum sourceColumn="Name" destinationColumn="SumOfData"/>
+        <group>
+          <column source="Source1" destination="Destination1" sourceDerivedFrom="SourceDerivedFrom1"/>
+          <column source="Source2" destination="Destination2" sourceDerivedFrom="SourceDerivedFrom2"/>
+        </group>
+      </aggregate>
+    </aggregations>
+  </table>
+
+  <table name="ChildTable">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="ParentID" type="int" required="true"/>
+      <column name="Name" type="varchar" length="100" required="true"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="ParentID"/>
+        <column name="Name"/>
+      </unique>
+    </keys>
+    <relations>
+      <relation src="ParentID" table="ParentTable" column="ID" type="cascade"/>
+    </relations>
+  </table>
+
+  <table name="ColumnTesterTable" data="true" compress="true" lockEscalation="disable" noExport="true" exportDataColumn="byte">
+    <columns>
+      <column name="sequence" type="sequence" required="true"/>
+      <column name="longsequence" type="longsequence"/>
+      <column name="byte" type="byte"/>
+      <column name="short" type="short"/>
+      <column name="int" type="int" minValue="1" maxValue="500"/>
+      <column name="long" type="long"/>
+      <column name="float" type="float"/>
+      <column name="double" type="double"/>
+      <column name="decimal" type="decimal" length="19" scale="4"/>
+      <column name="boolean" type="boolean"/>
+      <column name="date" type="date"/>
+      <column name="datetime" type="datetime"/>
+      <column name="time" type="time"/>
+      <column name="timestamp" type="timestamp"/>
+      <column name="char" type="char" length="1" default="default 'A'"/>
+      <column name="varchar" type="varchar" length="10" unicode="true"/>
+      <column name="varcharWithCheck" type="varchar" length="6">
+        <check>varcharWithCheck = 'ABC123'</check>
+      </column>
+      <column name="enum" type="enum" enumType="TestEnumType"/>
+      <column name="text" type="text"/>
+      <column name="binary" type="binary"/>
+      <column name="uuid" type="uuid"/>
+      <column name="json" type="json"/>
+    </columns>
+  </table>
+
+  <table name="Property">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="Name" type="varchar" length="50" required="true"/>
+      <column name="ShortName" type="varchar" length="25" required="true"/>
+      <column name="Code" type="varchar" length="25" required="true"/>
+      <column name="AltCode" type="varchar" length="25" required="true"/>
+      <column name="NumberRooms" type="short" required="true" minValue="0" maxValue="20000"/>
+      <column name="RegionID" type="int"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="Name"/>
+      </unique>
+      <unique>
+        <column name="Code"/>
+      </unique>
+      <unique>
+        <column name="AltCode"/>
+      </unique>
+    </keys>
+    <relations>
+      <relation src="RegionID" table="Region" column="ID" type="setnull"/>
+    </relations>
+  </table>
+
+  <table name="Region">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="Name" type="varchar" length="50" required="true"/>
+      <column name="ShortName" type="varchar" length="25" required="true"/>
+      <column name="Code" type="varchar" length="25" required="true"/>
+      <column name="ExcludeFromCorpReports" type="boolean" required="true"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="Name"/>
+      </unique>
+      <unique>
+        <column name="Code"/>
+      </unique>
+    </keys>
+  </table>
+
+  <table name="KBI">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="PropertyID" type="int" required="true"/>
+      <column name="Name" type="varchar" length="50" required="true"/>
+      <column name="Code" type="varchar" length="25" required="true"/>
+      <column name="ShowInModule" type="enum" length="1" required="true" enumType="ShowInModuleType"/>
+      <column name="MasterKBICodeID" type="int"/>
+      <column name="UnitID" type="int"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="PropertyID"/>
+        <column name="Name"/>
+      </unique>
+      <unique>
+        <column name="PropertyID"/>
+        <column name="Code"/>
+      </unique>
+      <index>
+        <column name="MasterKBICodeID"/>
+      </index>
+    </keys>
+    <relations>
+      <relation src="PropertyID" table="Property" column="ID" type="cascade"/>
+      <relation src="UnitID" table="Unit" column="ID" type="setnull"/>
+      <relation src="MasterKBICodeID" table="MasterKBICode" column="ID" type="setnull"/>
+    </relations>
+  </table>
+
+  <table name="MasterKBICode" noExport="true">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="Code" type="varchar" length="25" required="true"/>
+      <column name="Description" type="varchar" length="50" required="true"/>
+      <column name="ShowOnDashboard" type="boolean" required="true"/>
+      <column name="SortOrder" type="int"/>
+      <column name="GroupingFreeForm" type="varchar" length="50"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="Code"/>
+      </unique>
+    </keys>
+  </table>
+
+  <schema name="test">
+    <table name="Unit">
+      <columns>
+        <column name="ID" type="sequence" required="true"/>
+        <column name="PropertyID" type="int" required="true"/>
+        <column name="Name" type="varchar" length="50" required="true"/>
+        <column name="SingularName" type="varchar" length="50" required="true"/>
+        <column name="Symbol" type="varchar" length="5" required="true"/>
+        <column name="Comment" type="varchar" length="255"/>
+      </columns>
+      <keys>
+        <primary>
+          <column name="ID"/>
+        </primary>
+        <unique>
+          <column name="PropertyID"/>
+          <column name="Name"/>
+        </unique>
+        <unique>
+          <column name="PropertyID"/>
+          <column name="SingularName"/>
+        </unique>
+      </keys>
+      <relations>
+        <relation src="PropertyID" table="Property" column="ID" type="cascade"/>
+      </relations>
+    </table>
+
+    <view name="TestView1">
+      select * from ParentTable
+    </view>
+
+    <functions>
+      <function name="testCustomFunction1">
+        <sql databaseType="pgsql">
+          test custom function sql for pgsql 1
+        </sql>
+        <sql databaseType="mssql">
+          test custom function sql for mssql 1
+        </sql>
+      </function>
+    </functions>
+
+    <procedures>
+      <procedure name="testCustomProcedure1">
+        <sql databaseType="pgsql">
+          test custom procedure sql for pgsql 1
+        </sql>
+        <sql databaseType="mssql">
+          test custom procedure sql for mssql 1
+        </sql>
+      </procedure>
+    </procedures>
+  </schema>
+
+  <view name="TestView1">
+    select * from ParentTable
+  </view>
+
+  <view name="TestView2" databaseType="pgsql">
+    select * from pgsql
+  </view>
+
+  <view name="TestView2" databaseType="mssql">
+    select * from mssql
+  </view>
+
+  <enum name="GenderType">
+    <value name="MALE" code="M"/>
+    <value name="FEMALE" code="F"/>
+  </enum>
+
+  <enum name="TestEnumType">
+    <value name="ONE" code="1"/>
+    <value name="TWO" code="2"/>
+  </enum>
+
+  <functions>
+    <function name="customFunction1">
+      <sql databaseType="pgsql">
+        custom function sql for pgsql 1
+      </sql>
+      <sql databaseType="mssql">
+        custom function sql for mssql 1
+      </sql>
+    </function>
+  </functions>
+
+  <functions>
+    <function name="customFunction2">
+      <sql databaseType="pgsql">
+        custom function sql for pgsql 2
+      </sql>
+      <sql databaseType="mssql">
+        custom function sql for mssql 2
+      </sql>
+    </function>
+  </functions>
+
+  <procedures>
+    <procedure name="customProcedure1">
+      <sql databaseType="pgsql">
+        custom procedure sql for pgsql 1
+      </sql>
+      <sql databaseType="mssql">
+        custom procedure sql for mssql 1
+      </sql>
+    </procedure>
+  </procedures>
+
+  <procedures>
+    <procedure name="customProcedure2">
+      <sql databaseType="pgsql">
+        custom procedure sql for pgsql 2
+      </sql>
+      <sql databaseType="pgsql">
+        custom procedure sql for mssql 2
+      </sql>
+    </procedure>
+  </procedures>
+
+  <otherSql databaseType="pgsql" order="top">
+    other top sql for pgsql 1
+  </otherSql>
+
+  <otherSql databaseType="pgsql" order="top">
+    other top sql for pgsql 2
+  </otherSql>
+
+  <otherSql databaseType="pgsql" order="bottom">
+    other bottom sql for pgsql 1
+  </otherSql>
+
+  <otherSql databaseType="pgsql" order="bottom">
+    other bottom sql for pgsql 2
+  </otherSql>
+
+  <otherSql databaseType="mssql" order="top">
+    other top sql for mssql 1
+  </otherSql>
+
+  <otherSql databaseType="mssql" order="top">
+    other top sql for mssql 2
+  </otherSql>
+
+  <otherSql databaseType="mssql" order="bottom">
+    other bottom sql for mssql 1
+  </otherSql>
+
+  <otherSql databaseType="mssql" order="bottom">
+    other bottom sql for mssql 2
+  </otherSql>
+
+  <customSQL databaseType="pgsql">
+    <function name="customSQLFunction1">
+      customSQL function sql for pgsql 1
+    </function>
+    <function name="customSQLFunction2">
+      customSQL function sql for pgsql 2
+    </function>
+    <procedure name="customSQLProcedure1">
+      customSQL procedure sql for pgsql 1
+    </procedure>
+    <procedure name="customSQLProcedure2">
+      customSQL procedure sql for pgsql 2
+    </procedure>
+    <other>
+      customSQL other sql for pgsql
+    </other>
+  </customSQL>
+
+  <customSQL databaseType="mssql">
+    <function name="customSQLFunction1">
+      customSQL function sql for mssql 1
+    </function>
+    <function name="customSQLFunction2">
+      customSQL function sql for mssql 2
+    </function>
+    <procedure name="customSQLProcedure1">
+      customSQL procedure sql for mssql 1
+    </procedure>
+    <procedure name="customSQLProcedure2">
+      customSQL procedure sql for mssql 2
+    </procedure>
+    <other>
+      customSQL other sql for mssql
+    </other>
+  </customSQL>
+</database>

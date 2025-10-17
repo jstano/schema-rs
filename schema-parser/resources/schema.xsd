@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema"
+        targetNamespace="http://stano.com/database"
+        xmlns:database="http://stano.com/database"
+        elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        version="1.0">
+
+  <element name="database">
+    <complexType>
+      <sequence>
+        <choice minOccurs="0" maxOccurs="unbounded">
+          <element name="table" type="database:tableType"/>
+
+          <element name="enum" type="database:enumType"/>
+
+          <element name="view" type="database:viewType"/>
+
+          <element name="functions" type="database:functionsType"/>
+
+          <element name="procedures" type="database:proceduresType"/>
+
+          <element name="otherSql" type="database:otherSqlType"/>
+
+          <element name="customSQL" type="database:customSQLType"/>
+
+          <element name="schema">
+            <complexType>
+              <sequence>
+                <choice minOccurs="0" maxOccurs="unbounded">
+                  <element name="table" type="database:tableType"/>
+
+                  <element name="enum" type="database:enumType"/>
+
+                  <element name="view" type="database:viewType"/>
+
+                  <element name="functions" type="database:functionsType"/>
+
+                  <element name="procedures" type="database:proceduresType"/>
+
+                  <element name="otherSql" type="database:otherSqlType"/>
+
+                  <element name="customSQL" type="database:customSQLType"/>
+                </choice>
+              </sequence>
+              <attribute name="name" type="string" use="required"/>
+            </complexType>
+          </element>
+        </choice>
+      </sequence>
+      <attribute name="version" type="string"/>
+      <attribute name="foreignKeyMode" type="database:foreignKeyMode"/>
+      <attribute name="booleanMode" type="database:booleanMode"/>
+    </complexType>
+  </element>
+
+  <complexType name="tableType">
+    <all>
+      <element name="columns" minOccurs="1" maxOccurs="1">
+        <complexType>
+          <sequence minOccurs="1" maxOccurs="unbounded">
+            <element name="column" minOccurs="1" maxOccurs="unbounded">
+              <complexType>
+                <sequence>
+                  <element name="check" minOccurs="0" maxOccurs="1"/>
+                </sequence>
+                <attribute name="name" type="string" use="required"/>
+                <attribute name="type" type="database:columnEnum" use="required"/>
+                <attribute name="length" type="integer"/>
+                <attribute name="scale" type="integer"/>
+                <attribute name="required" type="boolean"/>
+                <attribute name="unicode" type="boolean"/>
+                <attribute name="ignoreCase" type="boolean"/>
+                <attribute name="default" type="string"/>
+                <attribute name="generated" type="string"/>
+                <attribute name="enumType" type="string"/>
+                <attribute name="elementType" type="database:columnEnum"/>
+                <attribute name="minValue" type="double"/>
+                <attribute name="maxValue" type="double"/>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="keys" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence>
+            <element name="primary" minOccurs="1" maxOccurs="1">
+              <complexType>
+                <sequence minOccurs="1" maxOccurs="unbounded">
+                  <element name="column">
+                    <complexType>
+                      <attribute name="name"/>
+                    </complexType>
+                  </element>
+                </sequence>
+                <attribute name="cluster" type="boolean" default="true"/>
+              </complexType>
+            </element>
+
+            <element name="unique" minOccurs="0" maxOccurs="unbounded">
+              <complexType>
+                <sequence minOccurs="1" maxOccurs="unbounded">
+                  <element name="column">
+                    <complexType>
+                      <attribute name="name"/>
+                    </complexType>
+                  </element>
+                </sequence>
+                <attribute name="cluster" type="boolean" default="false"/>
+              </complexType>
+            </element>
+
+            <element name="index" minOccurs="0" maxOccurs="unbounded">
+              <complexType>
+                <sequence minOccurs="1" maxOccurs="unbounded">
+                  <element name="column">
+                    <complexType>
+                      <attribute name="name"/>
+                    </complexType>
+                  </element>
+                </sequence>
+                <attribute name="include" type="string" default=""/>
+                <attribute name="compress" type="boolean" default="false"/>
+                <attribute name="unique" type="boolean" default="false"/>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="relations" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence minOccurs="1" maxOccurs="unbounded">
+            <element name="relation">
+              <complexType>
+                <attribute name="src" type="string" use="required"/>
+                <attribute name="table" type="string" use="required"/>
+                <attribute name="column" type="string" use="required"/>
+                <attribute name="type" type="database:relationTypeEnum" use="required"/>
+                <attribute name="disableUsageChecking" type="boolean"/>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="triggers" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence>
+            <choice minOccurs="0" maxOccurs="unbounded">
+              <element name="update" type="database:triggerType" minOccurs="0" maxOccurs="unbounded"/>
+              <element name="delete" type="database:triggerType" minOccurs="0" maxOccurs="unbounded"/>
+            </choice>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="constraints" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence>
+            <element name="constraint" minOccurs="1" maxOccurs="unbounded">
+              <complexType>
+                <simpleContent>
+                  <extension base="string">
+                    <attribute name="name" type="string" use="required"/>
+                    <attribute name="databaseType" type="database:databaseTypeEnum"/>
+                  </extension>
+                </simpleContent>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="aggregations" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence minOccurs="1" maxOccurs="unbounded">
+            <element name="aggregate">
+              <complexType>
+                <sequence minOccurs="1" maxOccurs="unbounded">
+                  <choice minOccurs="1" maxOccurs="unbounded">
+                    <element name="sum">
+                      <complexType>
+                        <attribute name="sourceColumn" type="string" use="required"/>
+                        <attribute name="destinationColumn" type="string" use="required"/>
+                      </complexType>
+                    </element>
+                    <element name="count">
+                      <complexType>
+                        <attribute name="destinationColumn" type="string" use="required"/>
+                      </complexType>
+                    </element>
+                  </choice>
+                  <element name="group">
+                    <complexType>
+                      <sequence minOccurs="1" maxOccurs="unbounded">
+                        <element name="column">
+                          <complexType>
+                            <attribute name="source" type="string" use="required"/>
+                            <attribute name="sourceDerivedFrom" type="string"/>
+                            <attribute name="destination" type="string" use="required"/>
+                          </complexType>
+                        </element>
+
+                      </sequence>
+                    </complexType>
+                  </element>
+                </sequence>
+                <attribute name="destinationTable" type="string" use="required"/>
+                <attribute name="dateColumn" type="string" use="required"/>
+                <attribute name="timestampColumn" type="string" use="required"/>
+                <attribute name="frequency" type="database:aggregationFrequencyEnum" use="required"/>
+                <attribute name="criteria" type="string"/>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+
+      <element name="initialData" minOccurs="0" maxOccurs="1">
+        <complexType>
+          <sequence>
+            <element name="sql" minOccurs="1" maxOccurs="unbounded">
+              <complexType>
+                <simpleContent>
+                  <extension base="string">
+                    <attribute name="databaseType" type="database:databaseTypeEnum"/>
+                  </extension>
+                </simpleContent>
+              </complexType>
+            </element>
+          </sequence>
+        </complexType>
+      </element>
+    </all>
+
+    <attribute name="name" type="string" use="required"/>
+    <attribute name="data" type="boolean"/>
+    <attribute name="noExport" type="boolean"/>
+    <attribute name="exportDataColumn" type="string"/>
+    <attribute name="compress" type="boolean" default="false"/>
+    <attribute name="lockEscalation" type="database:lockEscalationEnum" default="auto"/>
+  </complexType>
+
+  <complexType name="viewType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="name" type="string" use="required"/>
+        <attribute name="databaseType" type="database:databaseTypeEnum"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="functionsType">
+    <sequence>
+      <element name="function" type="database:functionType" minOccurs="0" maxOccurs="unbounded"/>
+    </sequence>
+  </complexType>
+
+  <complexType name="functionType">
+    <sequence>
+      <element name="sql" type="database:vendorSqlType" minOccurs="1" maxOccurs="unbounded"/>
+    </sequence>
+    <attribute name="name" type="string" use="required"/>
+  </complexType>
+
+  <complexType name="proceduresType">
+    <sequence>
+      <element name="procedure" type="database:procedureType" minOccurs="0" maxOccurs="unbounded"/>
+    </sequence>
+  </complexType>
+
+  <complexType name="procedureType">
+    <sequence>
+      <element name="sql" type="database:vendorSqlType" minOccurs="1" maxOccurs="unbounded"/>
+    </sequence>
+    <attribute name="name" type="string" use="required"/>
+  </complexType>
+
+  <complexType name="vendorSqlType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="otherSqlType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
+        <attribute name="order" type="database:otherSqlOrderType" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <simpleType name="otherSqlOrderType">
+    <restriction base="string">
+      <enumeration value="top"/>
+      <enumeration value="bottom"/>
+    </restriction>
+  </simpleType>
+
+  <complexType name="triggerType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="legacyFunctionType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="name" type="string" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="legacyProcedureType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="name" type="string" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="otherType">
+    <simpleContent>
+      <extension base="string">
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="customSQLType">
+    <sequence>
+      <element name="function" type="database:legacyFunctionType" minOccurs="0" maxOccurs="unbounded"/>
+
+      <element name="procedure" type="database:legacyProcedureType" minOccurs="0" maxOccurs="unbounded"/>
+
+      <element name="other" type="database:otherType" minOccurs="0" maxOccurs="1"/>
+    </sequence>
+    <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
+  </complexType>
+
+  <complexType name="policySqlType">
+    <simpleContent>
+      <extension base="string">
+        <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
+      </extension>
+    </simpleContent>
+  </complexType>
+
+  <complexType name="enumType">
+    <sequence>
+      <element name="value" minOccurs="1" maxOccurs="unbounded">
+        <complexType>
+          <attribute name="name" type="string" use="required"/>
+          <attribute name="code" type="string"/>
+        </complexType>
+      </element>
+    </sequence>
+    <attribute name="name" type="string" use="required"/>
+  </complexType>
+
+  <simpleType name="columnEnum">
+    <restriction base="string">
+      <enumeration value="sequence"/>
+      <enumeration value="longsequence"/>
+      <enumeration value="byte"/>
+      <enumeration value="short"/>
+      <enumeration value="int"/>
+      <enumeration value="long"/>
+      <enumeration value="float"/>
+      <enumeration value="double"/>
+      <enumeration value="decimal"/>
+      <enumeration value="boolean"/>
+      <enumeration value="date"/>
+      <enumeration value="time"/>
+      <enumeration value="datetime"/>
+      <enumeration value="timestamp"/>
+      <enumeration value="char"/>
+      <enumeration value="varchar"/>
+      <enumeration value="enum"/>
+      <enumeration value="text"/>
+      <enumeration value="binary"/>
+      <enumeration value="uuid"/>
+      <enumeration value="json"/>
+      <enumeration value="array"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="aggregationFrequencyEnum">
+    <restriction base="string">
+      <enumeration value="daily"/>
+      <enumeration value="weekly"/>
+      <enumeration value="monthly"/>
+      <enumeration value="yearly"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="aggregationTypeEnum">
+    <restriction base="string">
+      <enumeration value="sum"/>
+      <enumeration value="average"/>
+      <enumeration value="count"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="relationTypeEnum">
+    <restriction base="string">
+      <enumeration value="cascade"/>
+      <enumeration value="enforce"/>
+      <enumeration value="setnull"/>
+      <enumeration value="donothing"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="databaseTypeEnum">
+    <restriction base="string">
+      <enumeration value="mssql"/>
+      <enumeration value="pgsql"/>
+      <enumeration value="derby"/>
+      <enumeration value="hsql"/>
+      <enumeration value="mysql"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="lockEscalationEnum">
+    <restriction base="string">
+      <enumeration value="table"/>
+      <enumeration value="auto"/>
+      <enumeration value="disable"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="verifyTypeEnum">
+    <restriction base="string">
+      <enumeration value="date"/>
+      <enumeration value="sum"/>
+      <enumeration value="group_by"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="foreignKeyMode">
+    <restriction base="string">
+      <enumeration value="relations"/>
+      <enumeration value="triggers"/>
+    </restriction>
+  </simpleType>
+
+  <simpleType name="booleanMode">
+    <restriction base="string">
+      <enumeration value="native"/>
+      <enumeration value="yes_no"/>
+      <enumeration value="yn"/>
+    </restriction>
+  </simpleType>
+</schema>

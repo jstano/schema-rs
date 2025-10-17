@@ -1,0 +1,8 @@
+[package]
+name = "schema-model"
+license = "MIT OR Apache-2.0"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+url = "2"
