@@ -1,5 +1,5 @@
-mod nodes;
 mod convert;
-pub mod database;
+pub mod parser;
+mod nodes;
 
-pub use database::parse_database_xml;
+pub use parser::parse_database_xml;

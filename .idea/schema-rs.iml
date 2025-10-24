@@ -7,6 +7,10 @@
       <sourceFolder url="file://$MODULE_DIR$/schema-parser/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/schema-sql-generator/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/schema-parser/tests" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/schema-installer/target" />
+      <excludeFolder url="file://$MODULE_DIR$/schema-model/target" />
+      <excludeFolder url="file://$MODULE_DIR$/schema-parser/target" />
+      <excludeFolder url="file://$MODULE_DIR$/schema-sql-generator/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

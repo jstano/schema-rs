@@ -1,9 +1,7 @@
-use crate::builder::{ColumnBuilder, KeyBuilder, TableBuilder};
-use crate::model::column::Column;
-use crate::model::column_type::ColumnType;
+use crate::builder::{TableBuilder};
 use crate::model::schema::Schema;
 use crate::model::table::Table;
-use crate::model::types::{BooleanMode, ForeignKeyMode, KeyType, LockEscalation, Version};
+use crate::model::types::{BooleanMode, ForeignKeyMode, Version};
 
 /// DatabaseBuilder is the root builder that accumulates database-level settings
 /// and delegates all object creation to a single, selected Schema.
@@ -11,12 +9,9 @@ use crate::model::types::{BooleanMode, ForeignKeyMode, KeyType, LockEscalation, 
 /// Per requirement, `build()` returns a fully-populated Schema (not a Database).
 #[derive(Debug)]
 pub struct DatabaseBuilder {
-    // Database-level attributes (kept for completeness; not applied to Schema today)
     version: Option<Version>,
     foreign_key_mode: Option<ForeignKeyMode>,
     boolean_mode: Option<BooleanMode>,
-
-    // Target schema we are building (name + inner builder)
     schema_name: String,
     schema_builder: crate::builder::SchemaBuilder,
 }
@@ -34,37 +29,56 @@ impl DatabaseBuilder {
         }
     }
 
-    /// Set an optional database version.
-    pub fn version(mut self, v: Version) -> Self { self.version = Some(v); self }
-    /// Set database foreign key mode (stored on builder; schema currently doesn’t carry this).
-    pub fn foreign_key_mode(mut self, m: ForeignKeyMode) -> Self { self.foreign_key_mode = Some(m); self }
-    /// Set database boolean mode (stored on builder; schema currently doesn’t carry this).
-    pub fn boolean_mode(mut self, m: BooleanMode) -> Self { self.boolean_mode = Some(m); self }
+    pub fn version(mut self, v: Version) -> Self {
+        self.version = Some(v);
+        self
+    }
 
-    /// Add a fully built table into the target schema.
-    pub fn add_table(mut self, table: Table) -> Self { self.schema_builder = self.schema_builder.add_table(table); self }
+    pub fn foreign_key_mode(mut self, m: ForeignKeyMode) -> Self {
+        self.foreign_key_mode = Some(m);
+        self
+    }
 
-    /// Convenience to add a table via a TableBuilder.
-    pub fn add_table_built(mut self, tb: TableBuilder) -> Self { self.schema_builder = self.schema_builder.add_table(tb.build()); self }
+    pub fn boolean_mode(mut self, m: BooleanMode) -> Self {
+        self.boolean_mode = Some(m);
+        self
+    }
 
-    /// Build and return the fully populated Schema.
+    pub fn add_table(mut self, table: Table) -> Self {
+        self.schema_builder = self.schema_builder.add_table(table);
+        self
+    }
+
+    pub fn add_table_built(mut self, tb: TableBuilder) -> Self {
+        self.schema_builder = self.schema_builder.add_table(tb.build());
+        self
+    }
+
     pub fn build(self) -> Schema {
-        // At the moment Schema does not model version/boolean/foreign key settings.
-        // If those fields are added to Schema later, we can easily apply them here
-        // before returning the built Schema.
         self.schema_builder.build()
+    }
+
+    pub fn schema_name(&self) -> &str {
+        &self.schema_name
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::builder::{ColumnBuilder, KeyBuilder};
+    use crate::model::column_type::ColumnType;
+    use crate::model::types::KeyType;
     use super::*;
 
     #[test]
     fn build_schema_through_database_builder() {
         // Build a simple table through the DB builder.
         let table = TableBuilder::new("public", "users")
-            .add_column(ColumnBuilder::new("id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new("id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_column(ColumnBuilder::new("name", ColumnType::Varchar).build())
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build();

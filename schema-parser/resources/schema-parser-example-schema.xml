@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<database xmlns="http://stano.com/database"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://stano.com/database http://stano.com/database"
+          version="1.2">
+
+   <table name="TestTable">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Name" type="varchar" length="100" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Name"/>
+         </unique>
+      </keys>
+   </table>
+
+   <schema name="other">
+      <table name="OtherTable">
+         <columns>
+            <column name="ID" type="sequence" required="true"/>
+            <column name="Name" type="varchar" length="50" required="true"/>
+         </columns>
+         <keys>
+            <primary>
+               <column name="ID"/>
+            </primary>
+            <unique>
+               <column name="Name"/>
+            </unique>
+         </keys>
+      </table>
+   </schema>
+</database>

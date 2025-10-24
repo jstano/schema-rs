@@ -29,9 +29,13 @@ impl Schema {
         }
     }
 
-    pub fn schema_name(&self) -> &str { &self.schema_name }
+    pub fn schema_name(&self) -> &str {
+        &self.schema_name
+    }
 
-    pub fn tables(&self) -> &Vec<Table> { &self.tables }
+    pub fn tables(&self) -> &Vec<Table> {
+        &self.tables
+    }
 
     pub fn get_table(&self, name: &str) -> &Table {
         let key = name.to_lowercase();
@@ -55,7 +59,9 @@ impl Schema {
             .collect()
     }
 
-    pub fn enum_types(&self) -> impl Iterator<Item = &EnumType> { self.enum_types.values() }
+    pub fn enum_types(&self) -> impl Iterator<Item = &EnumType> {
+        self.enum_types.values()
+    }
 
     pub fn get_enum_type(&self, type_name: &str) -> &EnumType {
         self.enum_types
@@ -69,18 +75,35 @@ impl Schema {
         self.tables.push(table);
     }
 
-    pub fn add_view(&mut self, view: View) { self.views.push(view); }
+    pub fn add_view(&mut self, view: View) {
+        self.views.push(view);
+    }
 
-    pub fn add_enum_type(&mut self, enum_type: EnumType) { self.enum_types.insert(enum_type.name().to_string(), enum_type); }
+    pub fn add_enum_type(&mut self, enum_type: EnumType) {
+        self.enum_types
+            .insert(enum_type.name().to_string(), enum_type);
+    }
 
-    pub fn add_functions(&mut self, functions: Vec<Function>) { self.functions.extend(functions); }
-    pub fn functions(&self) -> Vec<Function> { self.functions.clone() }
+    pub fn add_functions(&mut self, functions: Vec<Function>) {
+        self.functions.extend(functions);
+    }
+    pub fn functions(&self) -> Vec<Function> {
+        self.functions.clone()
+    }
 
-    pub fn add_procedures(&mut self, procedures: Vec<Procedure>) { self.procedures.extend(procedures); }
-    pub fn procedures(&self) -> Vec<Procedure> { self.procedures.clone() }
+    pub fn add_procedures(&mut self, procedures: Vec<Procedure>) {
+        self.procedures.extend(procedures);
+    }
+    pub fn procedures(&self) -> Vec<Procedure> {
+        self.procedures.clone()
+    }
 
-    pub fn add_other_sql(&mut self, other_sql: OtherSql) { self.other_sql.push(other_sql); }
-    pub fn other_sql(&self) -> Vec<OtherSql> { self.other_sql.clone() }
+    pub fn add_other_sql(&mut self, other_sql: OtherSql) {
+        self.other_sql.push(other_sql);
+    }
+    pub fn other_sql(&self) -> Vec<OtherSql> {
+        self.other_sql.clone()
+    }
 
     pub fn validate(&self) -> Vec<String> {
         let mut errors: Vec<String> = Vec::new();
@@ -153,14 +176,29 @@ mod tests {
     use crate::model::column::Column;
     use crate::model::column_type::ColumnType;
 
-    fn make_schema() -> Schema { Schema::new("s".to_string()) }
+    fn make_schema() -> Schema {
+        Schema::new("s".to_string())
+    }
 
     #[test]
     fn add_and_get_table_and_sort() {
         let mut s = make_schema();
-        let mut t1 = Table::new("s", "B", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        let t2 = Table::new("s", "A", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        t1.columns_mut().push(Column::new("id", ColumnType::Int, 0, 0, true));
+        let mut t1 = Table::new(
+            "s",
+            "B",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        let t2 = Table::new(
+            "s",
+            "A",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        t1.columns_mut()
+            .push(Column::new("id", ColumnType::Int, 0, 0, true));
         s.add_table(t1);
         s.add_table(t2);
         assert_eq!(s.get_table("b").name(), "B"); // case-insensitive
@@ -184,14 +222,35 @@ mod tests {
     #[test]
     fn validate_setnull_error_when_required() {
         let mut s = make_schema();
-        let mut parent = Table::new("s", "parent", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        parent.columns_mut().push(Column::new("id", ColumnType::Int, 0, 0, true));
+        let mut parent = Table::new(
+            "s",
+            "parent",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        parent
+            .columns_mut()
+            .push(Column::new("id", ColumnType::Int, 0, 0, true));
         s.add_table(parent);
 
-        let mut child = Table::new("s", "child", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        child.columns_mut().push(Column::new("pid", ColumnType::Int, 0, 0, true));
+        let mut child = Table::new(
+            "s",
+            "child",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        child
+            .columns_mut()
+            .push(Column::new("pid", ColumnType::Int, 0, 0, true));
         child.relations_mut().push(Relation::new(
-            "parent", "id", "child", "pid", RelationType::SetNull, false
+            "parent",
+            "id",
+            "child",
+            "pid",
+            RelationType::SetNull,
+            false,
         ));
         s.add_table(child);
 
@@ -203,11 +262,34 @@ mod tests {
     #[test]
     fn build_reverse_relations_creates_back_refs() {
         let mut s = make_schema();
-        let mut parent = Table::new("s", "p", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        parent.columns_mut().push(Column::new("id", ColumnType::Int, 0, 0, true));
-        let mut child = Table::new("s", "c", Option::<&str>::None, crate::model::types::LockEscalation::Auto, false);
-        child.columns_mut().push(Column::new("pid", ColumnType::Int, 0, 0, false));
-        child.relations_mut().push(Relation::new("p", "id", "c", "pid", RelationType::Cascade, false));
+        let mut parent = Table::new(
+            "s",
+            "p",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        parent
+            .columns_mut()
+            .push(Column::new("id", ColumnType::Int, 0, 0, true));
+        let mut child = Table::new(
+            "s",
+            "c",
+            Option::<&str>::None,
+            crate::model::types::LockEscalation::Auto,
+            false,
+        );
+        child
+            .columns_mut()
+            .push(Column::new("pid", ColumnType::Int, 0, 0, false));
+        child.relations_mut().push(Relation::new(
+            "p",
+            "id",
+            "c",
+            "pid",
+            RelationType::Cascade,
+            false,
+        ));
         s.add_table(parent);
         s.add_table(child);
 

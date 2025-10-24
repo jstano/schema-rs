@@ -1,0 +1,10 @@
+pub mod postgres_generator;
+mod postgres_table_generator;
+mod postgres_relation_generator;
+mod postgres_index_generator;
+mod postgres_function_generator;
+mod postgres_view_generator;
+mod postgres_procedure_generator;
+mod postgres_trigger_generator;
+mod postgres_other_sql_generator;
+mod postgres_column_generator;

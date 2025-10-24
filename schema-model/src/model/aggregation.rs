@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AggregationType {
     Sum,
-    Count
+    Count,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -9,7 +9,7 @@ pub enum AggregationFrequency {
     Daily,
     Weekly,
     Monthly,
-    Yearly
+    Yearly,
 }
 
 #[derive(Debug, Clone)]
@@ -28,9 +28,15 @@ impl AggregationGroup {
         }
     }
 
-    pub fn source(&self) -> &str { &self.source }
-    pub fn destination(&self) -> &str { &self.destination }
-    pub fn source_derived_from(&self) -> &str { &self.source_derived_from }
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+    pub fn destination(&self) -> &str {
+        &self.destination
+    }
+    pub fn source_derived_from(&self) -> &str {
+        &self.source_derived_from
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +47,11 @@ pub struct AggregationColumn {
 }
 
 impl AggregationColumn {
-    pub fn new<S: Into<String>>(aggregation_type: AggregationType, source_column: S, destination_column: S) -> Self {
+    pub fn new<S: Into<String>>(
+        aggregation_type: AggregationType,
+        source_column: S,
+        destination_column: S,
+    ) -> Self {
         Self {
             aggregation_type,
             source_column: source_column.into(),
@@ -49,11 +59,16 @@ impl AggregationColumn {
         }
     }
 
-    pub fn aggregation_type(&self) -> AggregationType { self.aggregation_type }
-    pub fn source_column(&self) -> &str { &self.source_column }
-    pub fn destination_column(&self) -> &str { &self.destination_column }
+    pub fn aggregation_type(&self) -> AggregationType {
+        self.aggregation_type
+    }
+    pub fn source_column(&self) -> &str {
+        &self.source_column
+    }
+    pub fn destination_column(&self) -> &str {
+        &self.destination_column
+    }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Aggregation {
@@ -88,13 +103,27 @@ impl Aggregation {
         }
     }
 
-    pub fn destination_table(&self) -> &str { &self.destination_table }
-    pub fn date_column(&self) -> &str { &self.date_column }
-    pub fn criteria(&self) -> &str { &self.criteria }
-    pub fn time_stamp_column(&self) -> &str { &self.time_stamp_column }
-    pub fn aggregation_frequency(&self) -> AggregationFrequency { self.aggregation_frequency }
-    pub fn aggregation_groups(&self) -> &Vec<AggregationGroup> { &self.aggregation_groups }
-    pub fn aggregation_columns(&self) -> &Vec<AggregationColumn> { &self.aggregation_columns }
+    pub fn destination_table(&self) -> &str {
+        &self.destination_table
+    }
+    pub fn date_column(&self) -> &str {
+        &self.date_column
+    }
+    pub fn criteria(&self) -> &str {
+        &self.criteria
+    }
+    pub fn time_stamp_column(&self) -> &str {
+        &self.time_stamp_column
+    }
+    pub fn aggregation_frequency(&self) -> AggregationFrequency {
+        self.aggregation_frequency
+    }
+    pub fn aggregation_groups(&self) -> &Vec<AggregationGroup> {
+        &self.aggregation_groups
+    }
+    pub fn aggregation_columns(&self) -> &Vec<AggregationColumn> {
+        &self.aggregation_columns
+    }
 }
 
 #[cfg(test)]
@@ -147,7 +176,10 @@ mod tests {
 
         // Spot-check preserved content
         assert_eq!(aggr.aggregation_columns()[0].source_column(), "a");
-        assert_eq!(aggr.aggregation_columns()[1].aggregation_type(), AggregationType::Count);
+        assert_eq!(
+            aggr.aggregation_columns()[1].aggregation_type(),
+            AggregationType::Count
+        );
         assert_eq!(aggr.aggregation_groups()[0].destination(), "dst1");
         assert_eq!(aggr.aggregation_groups()[1].source_derived_from(), "from2");
 

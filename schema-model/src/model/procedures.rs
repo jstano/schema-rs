@@ -11,12 +11,19 @@ impl Procedures {
     pub fn new(database_type: DatabaseType, procedures: Vec<Procedure>) -> Self {
         // In Java this is wrapped as an unmodifiable copy; here we take ownership of the Vec
         // and expose only immutable access via getter.
-        Self { database_type, procedures }
+        Self {
+            database_type,
+            procedures,
+        }
     }
 
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
 
-    pub fn procedures(&self) -> &Vec<Procedure> { &self.procedures }
+    pub fn procedures(&self) -> &Vec<Procedure> {
+        &self.procedures
+    }
 }
 
 #[cfg(test)]

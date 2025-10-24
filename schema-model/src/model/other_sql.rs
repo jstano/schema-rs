@@ -8,11 +8,21 @@ pub struct OtherSql {
 }
 impl OtherSql {
     pub fn new<S: Into<String>>(database_type: DatabaseType, order: OtherSqlOrder, sql: S) -> Self {
-        Self { database_type, order, sql: sql.into() }
+        Self {
+            database_type,
+            order,
+            sql: sql.into(),
+        }
     }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
-    pub fn order(&self) -> OtherSqlOrder { self.order }
-    pub fn sql(&self) -> &str { &self.sql }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
+    pub fn order(&self) -> OtherSqlOrder {
+        self.order
+    }
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
 }
 
 #[cfg(test)]

@@ -8,7 +8,12 @@ pub struct Procedure {
     sql: String,
 }
 impl Procedure {
-    pub fn new<S: Into<String>>(schema_name: S, name: S, database_type: DatabaseType, sql: S) -> Self {
+    pub fn new<S: Into<String>>(
+        schema_name: S,
+        name: S,
+        database_type: DatabaseType,
+        sql: S,
+    ) -> Self {
         Self {
             schema_name: schema_name.into(),
             name: name.into(),
@@ -16,10 +21,18 @@ impl Procedure {
             sql: sql.into(),
         }
     }
-    pub fn schema_name(&self) -> &str { &self.schema_name }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
-    pub fn sql(&self) -> &str { &self.sql }
+    pub fn schema_name(&self) -> &str {
+        &self.schema_name
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
 }
 
 #[cfg(test)]

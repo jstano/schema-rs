@@ -125,7 +125,10 @@ mod tests {
             assert_eq!(*v, parsed);
         }
         // Lower/space handling
-        assert_eq!(ColumnType::from_type_name(" int ").unwrap(), ColumnType::Int);
+        assert_eq!(
+            ColumnType::from_type_name(" int ").unwrap(),
+            ColumnType::Int
+        );
         // Error case
         let err = ColumnType::from_type_name("notatype").unwrap_err();
         assert!(err.contains("notatype"));

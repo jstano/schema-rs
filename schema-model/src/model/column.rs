@@ -24,7 +24,7 @@ impl Column {
         column_type: ColumnType,
         length: i32,
         scale: i32,
-        required: bool
+        required: bool,
     ) -> Self {
         Self {
             name: name.into(),

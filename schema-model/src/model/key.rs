@@ -10,7 +10,9 @@ impl KeyColumn {
         Self { name: name.into() }
     }
 
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,19 +55,35 @@ impl Key {
         }
     }
 
-    pub fn r#type(&self) -> KeyType { self.r#type }
-    pub fn columns(&self) -> &Vec<KeyColumn> { &self.columns }
-    pub fn is_cluster(&self) -> bool { self.cluster }
-    pub fn is_compress(&self) -> bool { self.compress }
-    pub fn is_unique(&self) -> bool { self.unique }
-    pub fn include(&self) -> Option<&str> { self.include.as_deref() }
+    pub fn r#type(&self) -> KeyType {
+        self.r#type
+    }
+    pub fn columns(&self) -> &Vec<KeyColumn> {
+        &self.columns
+    }
+    pub fn is_cluster(&self) -> bool {
+        self.cluster
+    }
+    pub fn is_compress(&self) -> bool {
+        self.compress
+    }
+    pub fn is_unique(&self) -> bool {
+        self.unique
+    }
+    pub fn include(&self) -> Option<&str> {
+        self.include.as_deref()
+    }
 
     pub fn contains_column(&self, column_name: &str) -> bool {
         self.columns.iter().any(|c| c.name() == column_name)
     }
 
     pub fn columns_as_string(&self) -> String {
-        self.columns.iter().map(|c| c.name()).collect::<Vec<_>>().join(",")
+        self.columns
+            .iter()
+            .map(|c| c.name())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 

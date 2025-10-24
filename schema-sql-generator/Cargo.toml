@@ -5,3 +5,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+schema-model = { path = "../schema-model" }
+schema-parser = { path = "../schema-parser" }
+clap = "^4.5.50"
+rust_string_utils = "^0.1.20"

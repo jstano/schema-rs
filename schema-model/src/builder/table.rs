@@ -1,8 +1,8 @@
 use crate::model::column::Column;
+use crate::model::key::Key;
 use crate::model::relation::Relation;
 use crate::model::table::Table;
 use crate::model::types::{LockEscalation, TableOption};
-use crate::model::key::Key;
 
 /// TableBuilder holds intermediate, mutable state for a table and produces an immutable Table.
 #[derive(Debug)]
@@ -21,9 +21,13 @@ pub struct TableBuilder {
 }
 
 impl TableBuilder {
-    pub fn new<S: Into<String>>(schema_name: S, name: S) -> Self {
+    pub fn new(schema_name: &str, name: &str) -> Self {
         Self {
-            schema_name: schema_name.into(),
+            schema_name: if schema_name.is_empty() {
+                "public".to_string()
+            } else {
+                schema_name.to_string()
+            },
             name: name.into(),
             export_date_column: None,
             lock_escalation: LockEscalation::Auto,
@@ -36,15 +40,39 @@ impl TableBuilder {
         }
     }
 
-    pub fn export_date_column<S: Into<String>>(mut self, col: S) -> Self { self.export_date_column = Some(col.into()); self }
-    pub fn lock_escalation(mut self, le: LockEscalation) -> Self { self.lock_escalation = le; self }
-    pub fn no_export(mut self, v: bool) -> Self { self.no_export = v; self }
+    pub fn export_date_column<S: Into<String>>(mut self, col: S) -> Self {
+        self.export_date_column = Some(col.into());
+        self
+    }
+    pub fn lock_escalation(mut self, le: LockEscalation) -> Self {
+        self.lock_escalation = le;
+        self
+    }
+    pub fn no_export(mut self, v: bool) -> Self {
+        self.no_export = v;
+        self
+    }
 
-    pub fn add_column(mut self, column: Column) -> Self { self.columns.push(column); self }
-    pub fn add_key(mut self, key: Key) -> Self { self.keys.push(key); self }
-    pub fn add_index(mut self, index: Key) -> Self { self.indexes.push(index); self }
-    pub fn add_relation(mut self, relation: Relation) -> Self { self.relations.push(relation); self }
-    pub fn add_option(mut self, o: TableOption) -> Self { self.options.push(o); self }
+    pub fn add_column(mut self, column: Column) -> Self {
+        self.columns.push(column);
+        self
+    }
+    pub fn add_key(mut self, key: Key) -> Self {
+        self.keys.push(key);
+        self
+    }
+    pub fn add_index(mut self, index: Key) -> Self {
+        self.indexes.push(index);
+        self
+    }
+    pub fn add_relation(mut self, relation: Relation) -> Self {
+        self.relations.push(relation);
+        self
+    }
+    pub fn add_option(mut self, o: TableOption) -> Self {
+        self.options.push(o);
+        self
+    }
 
     pub fn build(self) -> Table {
         let mut t = Table::new(
@@ -68,8 +96,8 @@ mod tests {
     use super::*;
     use crate::model::column::Column;
     use crate::model::column_type::ColumnType;
-    use crate::model::types::KeyType;
     use crate::model::key::{Key, KeyColumn};
+    use crate::model::types::KeyType;
 
     #[test]
     fn build_table_with_columns_and_pk() {

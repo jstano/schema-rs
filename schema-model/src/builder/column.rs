@@ -13,14 +13,35 @@ pub struct ColumnBuilder {
 
 impl ColumnBuilder {
     pub fn new<N: Into<String>>(name: N, column_type: ColumnType) -> Self {
-        Self { name: name.into(), column_type, length: 0, scale: 0, required: false }
+        Self {
+            name: name.into(),
+            column_type,
+            length: 0,
+            scale: 0,
+            required: false,
+        }
     }
-    pub fn length(mut self, len: i32) -> Self { self.length = len; self }
-    pub fn scale(mut self, sc: i32) -> Self { self.scale = sc; self }
-    pub fn required(mut self, r: bool) -> Self { self.required = r; self }
+    pub fn length(mut self, len: i32) -> Self {
+        self.length = len;
+        self
+    }
+    pub fn scale(mut self, sc: i32) -> Self {
+        self.scale = sc;
+        self
+    }
+    pub fn required(mut self, r: bool) -> Self {
+        self.required = r;
+        self
+    }
 
     pub fn build(self) -> Column {
-        Column::new(self.name, self.column_type, self.length, self.scale, self.required)
+        Column::new(
+            self.name,
+            self.column_type,
+            self.length,
+            self.scale,
+            self.required,
+        )
     }
 }
 
@@ -30,7 +51,10 @@ mod tests {
 
     #[test]
     fn build_basic_column() {
-        let c = ColumnBuilder::new("name", ColumnType::Varchar).length(100).required(true).build();
+        let c = ColumnBuilder::new("name", ColumnType::Varchar)
+            .length(100)
+            .required(true)
+            .build();
         assert_eq!(c.name(), "name");
         assert_eq!(c.length(), 100);
         assert!(c.required());

@@ -1,5 +1,5 @@
-use std::fmt;
 use crate::model::types::DatabaseType;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct View {
@@ -9,7 +9,12 @@ pub struct View {
     database_type: DatabaseType,
 }
 impl View {
-    pub fn new<S: Into<String>>(schema_name: S, name: S, sql: S, database_type: DatabaseType) -> Self {
+    pub fn new<S: Into<String>>(
+        schema_name: S,
+        name: S,
+        sql: S,
+        database_type: DatabaseType,
+    ) -> Self {
         Self {
             schema_name: schema_name.into(),
             name: name.into(),
@@ -17,14 +22,28 @@ impl View {
             database_type,
         }
     }
-    pub fn schema_name(&self) -> &str { &self.schema_name }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn sql(&self) -> &str { &self.sql }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
+    pub fn schema_name(&self) -> &str {
+        &self.schema_name
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
+
+    pub fn fully_qualified_view_name(&self) -> String {
+        self.schema_name().to_string() + "." + self.name()
+    }
 }
 
 impl fmt::Display for View {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "View({}.{})", self.schema_name, self.name) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "View({}.{})", self.schema_name, self.name)
+    }
 }
 
 #[cfg(test)]

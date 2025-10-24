@@ -16,9 +16,15 @@ impl Constraint {
         }
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn sql(&self) -> &str { &self.sql }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
 }
 
 #[cfg(test)]

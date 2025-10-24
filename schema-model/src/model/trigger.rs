@@ -8,7 +8,11 @@ pub struct Trigger {
 }
 
 impl Trigger {
-    pub fn new<S: Into<String>>(trigger_text: S, trigger_type: TriggerType, database_type: DatabaseType) -> Self {
+    pub fn new<S: Into<String>>(
+        trigger_text: S,
+        trigger_type: TriggerType,
+        database_type: DatabaseType,
+    ) -> Self {
         Self {
             trigger_text: trigger_text.into(),
             trigger_type,
@@ -16,9 +20,15 @@ impl Trigger {
         }
     }
 
-    pub fn trigger_text(&self) -> &str { &self.trigger_text }
-    pub fn trigger_type(&self) -> TriggerType { self.trigger_type }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
+    pub fn trigger_text(&self) -> &str {
+        &self.trigger_text
+    }
+    pub fn trigger_type(&self) -> TriggerType {
+        self.trigger_type
+    }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
 }
 
 #[cfg(test)]

@@ -3,8 +3,12 @@ pub struct EnumType {
     name: String,
 }
 impl EnumType {
-    pub fn new<S: Into<String>>(name: S) -> Self { Self { name: name.into() } }
-    pub fn name(&self) -> &str { &self.name }
+    pub fn new<S: Into<String>>(name: S) -> Self {
+        Self { name: name.into() }
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -16,14 +20,21 @@ pub struct EnumValue {
 impl EnumValue {
     /// Create a new EnumValue. `code` may be None to mirror Java's nullable field.
     pub fn new<N: Into<String>, C: Into<String>>(name: N, code: Option<C>) -> Self {
-        Self { name: name.into(), code: code.map(|c| c.into()) }
+        Self {
+            name: name.into(),
+            code: code.map(|c| c.into()),
+        }
     }
 
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     /// Returns the explicit code if present; otherwise falls back to the name,
     /// matching the Java getter behavior.
-    pub fn code(&self) -> &str { self.code.as_deref().unwrap_or(&self.name) }
+    pub fn code(&self) -> &str {
+        self.code.as_deref().unwrap_or(&self.name)
+    }
 }
 
 #[cfg(test)]

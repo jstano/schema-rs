@@ -8,11 +8,18 @@ pub struct InitialData {
 
 impl InitialData {
     pub fn new<S: Into<String>>(sql: S, database_type: DatabaseType) -> Self {
-        Self { sql: sql.into(), database_type }
+        Self {
+            sql: sql.into(),
+            database_type,
+        }
     }
 
-    pub fn sql(&self) -> &str { &self.sql }
-    pub fn database_type(&self) -> DatabaseType { self.database_type }
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
+    pub fn database_type(&self) -> DatabaseType {
+        self.database_type
+    }
 }
 
 #[cfg(test)]

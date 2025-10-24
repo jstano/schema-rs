@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DatabaseType {
-    // Extend as needed
-    Postgres,
+    H2,
     Mysql,
+    Postgres,
     Sqlite,
     SqlServer,
 }
@@ -28,6 +28,19 @@ impl Default for BooleanMode {
     }
 }
 
+impl FromStr for BooleanMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "native" => Ok(BooleanMode::Native),
+            "yesno" => Ok(BooleanMode::YesNo),
+            "yn" => Ok(BooleanMode::YN),
+            _ => Err(format!("Unknown boolean mode: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ForeignKeyMode {
     None,
@@ -41,6 +54,19 @@ impl Default for ForeignKeyMode {
     }
 }
 
+impl FromStr for ForeignKeyMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(ForeignKeyMode::None),
+            "relations" => Ok(ForeignKeyMode::Relations),
+            "triggers" => Ok(ForeignKeyMode::Triggers),
+            _ => Err(format!("Unknown foreign key mode: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OtherSqlOrder {
     Bottom,
@@ -51,20 +77,20 @@ pub enum OtherSqlOrder {
 pub enum TableOption {
     Data,
     NoExport,
-    Compress
+    Compress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TriggerType {
     Update,
-    Delete
+    Delete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyType {
     Primary,
     Unique,
-    Index
+    Index,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -72,6 +98,7 @@ pub enum LockEscalation {
     Auto,
 }
 
+use std::str::FromStr;
 // Re-export Version so external crates can access it via model::types
 pub use crate::model::version::Version;
 
@@ -118,4 +145,3 @@ mod tests {
         assert_ne!(TableOption::Data, TableOption::NoExport);
     }
 }
-
