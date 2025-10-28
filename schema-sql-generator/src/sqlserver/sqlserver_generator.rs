@@ -1,13 +1,13 @@
-use crate::common::function_generator::DefaultFunctionGenerator;
 use crate::common::generator_context::GeneratorContext;
-use crate::common::index_generator::DefaultIndexGenerator;
-use crate::common::other_sql_generator::DefaultOtherSqlGenerator;
-use crate::common::procedure_generator::DefaultProcedureGenerator;
-use crate::common::relation_generator::DefaultRelationGenerator;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
-use crate::common::table_generator::DefaultTableGenerator;
-use crate::common::trigger_generator::DefaultTriggerGenerator;
-use crate::common::view_generator::DefaultViewGenerator;
+use crate::sqlserver::sqlserver_function_generator::SqlServerFunctionGenerator;
+use crate::sqlserver::sqlserver_index_generator::SqlServerIndexGenerator;
+use crate::sqlserver::sqlserver_other_sql_generator::SqlServerOtherSqlGenerator;
+use crate::sqlserver::sqlserver_procedure_generator::SqlServerProcedureGenerator;
+use crate::sqlserver::sqlserver_relation_generator::SqlServerRelationGenerator;
+use crate::sqlserver::sqlserver_table_generator::SqlServerTableGenerator;
+use crate::sqlserver::sqlserver_trigger_generator::SqlServerTriggerGenerator;
+use crate::sqlserver::sqlserver_view_generator::SqlServerViewGenerator;
 
 pub struct SqlServerGenerator {
     context: GeneratorContext,
@@ -18,14 +18,14 @@ impl SqlServerGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
-            Box::new(DefaultTableGenerator::new(context.clone())),
-            Box::new(DefaultRelationGenerator::new(context.clone())),
-            Box::new(DefaultIndexGenerator::new(context.clone())),
-            Box::new(DefaultFunctionGenerator::new(context.clone())),
-            Box::new(DefaultViewGenerator::new(context.clone())),
-            Box::new(DefaultProcedureGenerator::new(context.clone())),
-            Box::new(DefaultTriggerGenerator::new(context.clone())),
-            Box::new(DefaultOtherSqlGenerator::new(context.clone())),
+            Box::new(SqlServerTableGenerator::new(context.clone())),
+            Box::new(SqlServerRelationGenerator::new(context.clone())),
+            Box::new(SqlServerIndexGenerator::new(context.clone())),
+            Box::new(SqlServerFunctionGenerator::new(context.clone())),
+            Box::new(SqlServerViewGenerator::new(context.clone())),
+            Box::new(SqlServerProcedureGenerator::new(context.clone())),
+            Box::new(SqlServerTriggerGenerator::new(context.clone())),
+            Box::new(SqlServerOtherSqlGenerator::new(context.clone())),
         );
 
         Self {

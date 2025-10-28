@@ -3,46 +3,55 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct View {
-    schema_name: String,
+    schema_name: Option<String>,
     name: String,
     sql: String,
     database_type: DatabaseType,
 }
 impl View {
     pub fn new<S: Into<String>>(
-        schema_name: S,
+        schema_name: Option<S>,
         name: S,
         sql: S,
         database_type: DatabaseType,
     ) -> Self {
         Self {
-            schema_name: schema_name.into(),
+            schema_name: schema_name.map(|s| s.into()),
             name: name.into(),
             sql: sql.into(),
             database_type,
         }
     }
-    pub fn schema_name(&self) -> &str {
-        &self.schema_name
+    pub fn schema_name(&self) -> Option<&str> {
+        self.schema_name.as_deref()
     }
+
     pub fn name(&self) -> &str {
         &self.name
     }
+
     pub fn sql(&self) -> &str {
         &self.sql
     }
+
     pub fn database_type(&self) -> DatabaseType {
         self.database_type
     }
 
     pub fn fully_qualified_view_name(&self) -> String {
-        self.schema_name().to_string() + "." + self.name()
+        match self.schema_name() {
+            Some(schema_name) => format!("{}.{}", schema_name, self.name()),
+            None => self.name().to_string(),
+        }
     }
 }
 
 impl fmt::Display for View {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "View({}.{})", self.schema_name, self.name)
+        match &self.schema_name {
+            Some(schema) => write!(f, "{}.{}", schema, self.name),
+            None => write!(f, "{}", self.name),
+        }
     }
 }
 
@@ -52,11 +61,11 @@ mod tests {
 
     #[test]
     fn constructor_and_getters_and_display() {
-        let v = View::new("s", "v1", "select *", DatabaseType::Postgres);
-        assert_eq!(v.schema_name(), "s");
+        let v = View::new(Some("s"), "v1", "select *", DatabaseType::Postgres);
+        assert_eq!(v.schema_name().unwrap(), "s");
         assert_eq!(v.name(), "v1");
         assert_eq!(v.sql(), "select *");
         assert_eq!(v.database_type(), DatabaseType::Postgres);
-        assert_eq!(format!("{}", v), "View(s.v1)");
+        assert_eq!(format!("{}", v), "s.v1");
     }
 }

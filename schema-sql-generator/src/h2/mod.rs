@@ -1,1 +1,14 @@
 pub mod h2_generator;
+mod h2_column_type_generator;
+mod h2_table_generator;
+mod h2_column_generator;
+mod h2_key_generator;
+mod h2_column_constraint_generator;
+mod h2_table_constraint_generator;
+mod h2_index_generator;
+mod h2_function_generator;
+mod h2_other_sql_generator;
+mod h2_procedure_generator;
+mod h2_relation_generator;
+mod h2_trigger_generator;
+mod h2_view_generator;

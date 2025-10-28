@@ -1,1 +1,14 @@
 pub mod mysql_generator;
+mod mysql_column_type_generator;
+mod mysql_column_constraint_generator;
+mod mysql_column_generator;
+mod mysql_function_generator;
+mod mysql_index_generator;
+mod mysql_key_generator;
+mod mysql_other_sql_generator;
+mod mysql_procedure_generator;
+mod mysql_relation_generator;
+mod mysql_table_constraint_generator;
+mod mysql_trigger_generator;
+mod mysql_view_generator;
+mod mysql_table_generator;

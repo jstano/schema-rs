@@ -3,6 +3,7 @@ use crate::model::types::BooleanMode;
 
 #[derive(Debug, Clone)]
 pub struct Column {
+    schema_name: Option<String>,
     name: String,
     column_type: ColumnType,
     length: i32,
@@ -18,8 +19,10 @@ pub struct Column {
     unicode: bool,
     ignore_case: bool,
 }
+
 impl Column {
     pub fn new<S: Into<String>>(
+        schema_name: Option<S>,
         name: S,
         column_type: ColumnType,
         length: i32,
@@ -27,6 +30,7 @@ impl Column {
         required: bool,
     ) -> Self {
         Self {
+            schema_name: schema_name.map(|s| s.into()),
             name: name.into(),
             column_type,
             length,
@@ -42,6 +46,10 @@ impl Column {
             unicode: false,
             ignore_case: false,
         }
+    }
+
+    pub fn schema_name(&self) -> Option<&str> {
+        self.schema_name.as_deref()
     }
 
     pub fn name(&self) -> &str {
@@ -69,32 +77,32 @@ impl Column {
         self.required
     }
 
-    pub fn check_constraint(&self) -> &Option<String> {
-        &self.check_constraint
+    pub fn check_constraint(&self) -> Option<&str> {
+        self.check_constraint.as_deref()
     }
 
-    pub fn default_constraint(&self) -> &Option<String> {
-        &self.default_constraint
+    pub fn default_constraint(&self) -> Option<&str> {
+        self.default_constraint.as_deref()
     }
 
-    pub fn generated(&self) -> &Option<String> {
-        &self.generated
+    pub fn generated(&self) -> Option<&str> {
+        self.generated.as_deref()
     }
 
-    pub fn min_value(&self) -> &Option<String> {
-        &self.min_value
+    pub fn min_value(&self) -> Option<&str> {
+        self.min_value.as_deref()
     }
 
-    pub fn max_value(&self) -> &Option<String> {
-        &self.max_value
+    pub fn max_value(&self) -> Option<&str> {
+        self.max_value.as_deref()
     }
 
-    pub fn enum_type(&self) -> &Option<String> {
-        &self.enum_type
+    pub fn enum_type(&self) -> Option<&str> {
+        self.enum_type.as_deref()
     }
 
-    pub fn element_type(&self) -> &Option<String> {
-        &self.element_type
+    pub fn element_type(&self) -> Option<&str> {
+        self.element_type.as_deref()
     }
 
     pub fn unicode(&self) -> bool {
@@ -125,7 +133,7 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let c = Column::new("name", ColumnType::Varchar, 255, 0, true);
+        let c = Column::new(None, "name", ColumnType::Varchar, 255, 0, true);
         assert_eq!(c.name(), "name");
         assert_eq!(c.column_type(), ColumnType::Varchar);
         assert_eq!(c.length(), 255);
@@ -138,7 +146,7 @@ mod tests {
 
     #[test]
     fn needs_check_constraints_logic() {
-        let c = Column::new("b", ColumnType::Boolean, 0, 0, false);
+        let c = Column::new(None, "b", ColumnType::Boolean, 0, 0, false);
         // boolean with non-native boolean mode => needs constraints
         assert!(c.needs_check_constraints(BooleanMode::YesNo));
         // boolean with native => no unless other attributes set
@@ -147,7 +155,7 @@ mod tests {
 
     #[test]
     fn has_min_or_max_value() {
-        let c = Column::new("n", ColumnType::Int, 0, 0, false);
+        let c = Column::new(None, "n", ColumnType::Int, 0, 0, false);
         assert!(!c.has_min_or_max_value());
     }
 }

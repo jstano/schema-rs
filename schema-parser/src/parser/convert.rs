@@ -1,50 +1,38 @@
-use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
-use schema_model::model::column_type::ColumnType;
+use schema_model::builder::SchemaBuilder;
 use schema_model::model::database_model::DatabaseModel;
-use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
-use schema_model::model::types::{KeyType, LockEscalation, RelationType, Version};
+use schema_model::model::types::{
+    DatabaseType, OtherSqlOrder, Version,
+};
 use schema_model::model::view::View;
-
+use schema_model::model::{
+    aggregation::AggregationFrequency
+    ,
+    enum_type::{EnumType, EnumValue},
+    function::Function
+    ,
+    other_sql::OtherSql,
+    procedure::Procedure
+    ,
+};
+use crate::parser::table_parser::parse_table;
 use super::nodes::*;
 
-pub fn convert_database(db: DatabaseXml) -> Result<DatabaseModel, String> {
+pub fn convert_database(database: DatabaseXml) -> Result<DatabaseModel, String> {
     let mut schemas: Vec<Schema> = Vec::new();
 
-    // Root schema "" using builder
-    let mut root_builder = SchemaBuilder::new("");
-
-    for t in db.tables.iter() {
-        let tbl = convert_table(t, "")?;
-        root_builder = root_builder.add_table(tbl);
-    }
-
-    for v in db.views.iter() {
-        if let Some(dt) = str_to_database_type_opt(v.database_type.as_deref()) {
-            root_builder = root_builder.add_view(View::new("", &v.name, &v.sql, dt));
-        }
-    }
-
-    let root_schema = root_builder.build();
-    if !root_schema.tables().is_empty() || !db.views.is_empty() {
+    if let Some(root_schema) = root_schema(&database) {
         schemas.push(root_schema);
     }
 
-    for s in db.schemas.into_iter() {
-        let mut sb = SchemaBuilder::new(&s.name);
-        for t in s.tables.iter() {
-            sb = sb.add_table(convert_table(t, &s.name)?);
+    for schemaXml in database.schemas.into_iter() {
+        if let Some(s) = sub_schema(&schemaXml) {
+            schemas.push(s);
         }
-        for v in s.views.iter() {
-            if let Some(dt) = str_to_database_type_opt(v.database_type.as_deref()) {
-                sb = sb.add_view(View::new(&s.name, &v.name, &v.sql, dt));
-            }
-        }
-        schemas.push(sb.build());
     }
 
-    let version = if db.version.is_some() {
-        Some(Version::parse(db.version.as_deref().unwrap_or("")))
+    let version = if database.version.is_some() {
+        Some(Version::parse(database.version.as_deref().unwrap_or("")))
     } else {
         None
     };
@@ -55,89 +43,209 @@ pub fn convert_database(db: DatabaseXml) -> Result<DatabaseModel, String> {
     ))
 }
 
-fn convert_table(
-    t: &TableXml,
-    schema_name: &str,
-) -> Result<schema_model::model::table::Table, String> {
-    let le = match t.lock_escalation.as_deref().map(|s| s.to_ascii_lowercase()) {
-        Some(s) if s == "auto" => LockEscalation::Auto,
-        _ => LockEscalation::Auto,
-    };
+fn root_schema(database: &DatabaseXml) -> Option<Schema> {
+    let mut root_builder = SchemaBuilder::new(None::<&str>);
 
-    let mut tb = TableBuilder::new(schema_name, &t.name).no_export(t.no_export.unwrap_or(false));
-    if let Some(c) = &t.export_data_column {
-        tb = tb.export_date_column(c.clone());
+    for table_xml in database.tables.iter() {
+        let table = parse_table(table_xml, None);
+        root_builder = root_builder.add_table(table);
     }
-    tb = tb.lock_escalation(le);
 
-    if let Some(cols) = &t.columns {
-        for c in cols.column.iter() {
-            let ctype = ColumnType::from_type_name(&c.r#type)
-                .map_err(|e| format!("column '{}' type error: {}", c.name, e))?;
-            let col = ColumnBuilder::new(&c.name, ctype)
-                .length(c.length.unwrap_or(0))
-                .scale(c.scale.unwrap_or(0))
-                .required(c.required.unwrap_or(false))
-                .build();
-            tb = tb.add_column(col);
+    for view_xml in database.views.iter() {
+        if let Some(database_type) = str_to_database_type_opt(view_xml.database_type.as_deref()) {
+            root_builder = root_builder.add_view(View::new(None, &view_xml.name, &view_xml.sql, database_type));
         }
     }
 
-    if let Some(keys) = &t.keys {
-        if let Some(pk) = &keys.primary {
-            let mut kb = KeyBuilder::new(KeyType::Primary);
-            for kc in pk.columns.iter() {
-                kb = kb.add_column(&kc.name);
+    // Root-level enums
+    for enum_xml in database.enums.iter() {
+        let evs: Vec<EnumValue> = enum_xml
+            .value
+            .iter()
+            .map(|v| EnumValue::new(&v.name, v.code.clone()))
+            .collect();
+        root_builder = root_builder.add_enum_type(EnumType::new(&enum_xml.name, evs));
+    }
+
+    for functions_xml in database.functions.iter() {
+        let mut functions: Vec<Function> = Vec::new();
+        for function_xml in functions_xml.function.iter() {
+            for sql in function_xml.sql.iter() {
+                if let Some(database_type) = str_to_database_type_opt(Some(&sql.database_type)) {
+                    functions.push(Function::new("", &function_xml.name, database_type, &sql.sql));
+                }
             }
-            tb = tb.add_key(kb.build());
         }
-        for uq in keys.uniques.iter() {
-            let mut kb = KeyBuilder::new(KeyType::Unique);
-            for kc in uq.columns.iter() {
-                kb = kb.add_column(&kc.name);
-            }
-            tb = tb.add_key(kb.build());
-        }
-        for idx in keys.indexes.iter() {
-            let mut kb = KeyBuilder::new(KeyType::Index);
-            for kc in idx.columns.iter() {
-                kb = kb.add_column(&kc.name);
-            }
-            tb = tb.add_index(kb.build());
+        if !functions.is_empty() {
+            root_builder = root_builder.add_functions(functions);
         }
     }
 
-    if let Some(rels) = &t.relations {
-        for r in rels.relation.iter() {
-            let rtype = match r.r#type.to_ascii_lowercase().as_str() {
-                "cascade" => RelationType::Cascade,
-                "enforce" => RelationType::Enforce,
-                "setnull" => RelationType::SetNull,
-                "donothing" => RelationType::DoNothing,
-                _ => RelationType::Enforce,
-            };
-            tb = tb.add_relation(Relation::new(
-                r.table.clone(),
-                r.column.clone(),
-                t.name.clone(),
-                r.src.clone(),
-                rtype,
-                r.disable_usage_checking.unwrap_or(false),
-            ));
+    for procedure_xmls in database.procedures.iter() {
+        let mut procedures: Vec<Procedure> = Vec::new();
+        for procedure_xml in procedure_xmls.procedure.iter() {
+            for sql in procedure_xml.sql.iter() {
+                if let Some(database_type) = str_to_database_type_opt(Some(&sql.database_type)) {
+                    procedures.push(Procedure::new("", &procedure_xml.name, database_type, &sql.sql));
+                }
+            }
+        }
+        if !procedures.is_empty() {
+            root_builder = root_builder.add_procedures(procedures);
         }
     }
 
-    Ok(tb.build())
+    for other_sql_xml in database.other_sql.iter() {
+        if let (Some(database_type), Some(order)) = (
+            str_to_database_type_opt(Some(&other_sql_xml.database_type)),
+            other_sql_order(&other_sql_xml.order),
+        ) {
+            root_builder = root_builder.add_other_sql(OtherSql::new(database_type, order, &other_sql_xml.sql));
+        }
+    }
+
+    for custom_sql_xml in database.custom_sql.iter() {
+        if let Some(database_type) = str_to_database_type_opt(Some(&custom_sql_xml.database_type)) {
+            let mut functions: Vec<Function> = Vec::new();
+            for function_xml in custom_sql_xml.function.iter() {
+                functions.push(Function::new("", &function_xml.name, database_type, &function_xml.sql));
+            }
+            if !functions.is_empty() {
+                root_builder = root_builder.add_functions(functions);
+            }
+
+            let mut procedures: Vec<Procedure> = Vec::new();
+            for procedure_xml in custom_sql_xml.procedure.iter() {
+                procedures.push(Procedure::new("", &procedure_xml.name, database_type, &procedure_xml.sql));
+            }
+            if !procedures.is_empty() {
+                root_builder = root_builder.add_procedures(procedures);
+            }
+            // cs.other has no order attribute; no clear mapping into OtherSql → skip
+        }
+    }
+
+    let root_schema = root_builder.build();
+    if !root_schema.tables().is_empty()
+        || !database.views.is_empty()
+        || !database.enums.is_empty()
+        || !database.functions.is_empty()
+        || !database.procedures.is_empty()
+        || !database.other_sql.is_empty()
+        || !database.custom_sql.is_empty()
+    {
+        return Some(root_schema)
+    }
+
+    None
 }
 
-fn str_to_database_type_opt(s: Option<&str>) -> Option<schema_model::model::types::DatabaseType> {
-    s.and_then(|v| match v.to_ascii_lowercase().as_str() {
-        "postgresql" | "postgres" => {
-            Some(schema_model::model::types::DatabaseType::Postgres)
+fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
+    let mut schema_builder = SchemaBuilder::new(Some(&schema_xml.name));
+
+    for table_xml in schema_xml.tables.iter() {
+        schema_builder = schema_builder.add_table(parse_table(table_xml, Some(&schema_xml.name)));
+    }
+
+    for view_xml in schema_xml.views.iter() {
+        if let Some(dt) = str_to_database_type_opt(view_xml.database_type.as_deref()) {
+            schema_builder = schema_builder.add_view(View::new(Some(&schema_xml.name), &view_xml.name, &view_xml.sql, dt));
         }
-        "mysql" => Some(schema_model::model::types::DatabaseType::Mysql),
-        "sqlite" => Some(schema_model::model::types::DatabaseType::Sqlite),
-        "sqlserver" => Some(schema_model::model::types::DatabaseType::SqlServer),
+    }
+
+    for enum_xml in schema_xml.enums.iter() {
+        let evs: Vec<EnumValue> = enum_xml
+            .value
+            .iter()
+            .map(|v| EnumValue::new(&v.name, v.code.clone()))
+            .collect();
+        schema_builder = schema_builder.add_enum_type(EnumType::new(&enum_xml.name, evs));
+    }
+
+    for functions_xml in schema_xml.functions.iter() {
+        let mut functions: Vec<Function> = Vec::new();
+        for f in functions_xml.function.iter() {
+            for sql in f.sql.iter() {
+                if let Some(dt) = str_to_database_type_opt(Some(&sql.database_type)) {
+                    functions.push(Function::new(&schema_xml.name, &f.name, dt, &sql.sql));
+                }
+            }
+        }
+        if !functions.is_empty() {
+            schema_builder = schema_builder.add_functions(functions);
+        }
+    }
+
+    for procedures_xml in schema_xml.procedures.iter() {
+        let mut procedures: Vec<Procedure> = Vec::new();
+        for p in procedures_xml.procedure.iter() {
+            for sql in p.sql.iter() {
+                if let Some(dt) = str_to_database_type_opt(Some(&sql.database_type)) {
+                    procedures.push(Procedure::new(&schema_xml.name, &p.name, dt, &sql.sql));
+                }
+            }
+        }
+        if !procedures.is_empty() {
+            schema_builder = schema_builder.add_procedures(procedures);
+        }
+    }
+
+    for other_sql_xml in schema_xml.other_sql.iter() {
+        if let (Some(dt), Some(order)) = (
+            str_to_database_type_opt(Some(&other_sql_xml.database_type)),
+            other_sql_order(&other_sql_xml.order),
+        ) {
+            schema_builder = schema_builder.add_other_sql(OtherSql::new(dt, order, &other_sql_xml.sql));
+        }
+    }
+
+    for custom_sql_xml in schema_xml.custom_sql.iter() {
+        if let Some(dt) = str_to_database_type_opt(Some(&custom_sql_xml.database_type)) {
+            let mut functions: Vec<Function> = Vec::new();
+            for f in custom_sql_xml.function.iter() {
+                functions.push(Function::new(&schema_xml.name, &f.name, dt, &f.sql));
+            }
+            if !functions.is_empty() {
+                schema_builder = schema_builder.add_functions(functions);
+            }
+            let mut procedures: Vec<Procedure> = Vec::new();
+            for p in custom_sql_xml.procedure.iter() {
+                procedures.push(Procedure::new(&schema_xml.name, &p.name, dt, &p.sql));
+            }
+            if !procedures.is_empty() {
+                schema_builder = schema_builder.add_procedures(procedures);
+            }
+        }
+    }
+
+    Some(schema_builder.build())
+}
+
+pub(crate) fn str_to_database_type_opt(s: Option<&str>) -> Option<schema_model::model::types::DatabaseType> {
+    s.and_then(|v| match v.to_ascii_lowercase().as_str() {
+        "postgresql" | "postgres" | "pgsql" => Some(DatabaseType::Postgres),
+        "mysql" => Some(DatabaseType::Mysql),
+        "sqlite" => Some(DatabaseType::Sqlite),
+        "sqlserver" | "mssql" => Some(DatabaseType::SqlServer),
+        // Map derby/hsql to H2 as a closest supported engine in this model
+        "derby" | "hsql" => Some(DatabaseType::H2),
         _ => None,
     })
+}
+
+fn other_sql_order(o: &OtherSqlOrderXml) -> Option<OtherSqlOrder> {
+    match o {
+        OtherSqlOrderXml::Top => Some(OtherSqlOrder::Top),
+        OtherSqlOrderXml::Bottom => Some(OtherSqlOrder::Bottom),
+    }
+}
+
+pub(crate) fn agg_frequency_from_str(s: &str) -> AggregationFrequency {
+    match s.to_ascii_lowercase().as_str() {
+        "daily" => AggregationFrequency::Daily,
+        "weekly" => AggregationFrequency::Weekly,
+        "monthly" => AggregationFrequency::Monthly,
+        "yearly" => AggregationFrequency::Yearly,
+        _ => AggregationFrequency::Monthly,
+    }
 }

@@ -4,10 +4,10 @@ use crate::model::relation::Relation;
 use crate::model::table::Table;
 use crate::model::types::{LockEscalation, TableOption};
 
-/// TableBuilder holds intermediate, mutable state for a table and produces an immutable Table.
+/// TableBuilder holds an intermediate, mutable state for a table and produces an immutable Table.
 #[derive(Debug)]
 pub struct TableBuilder {
-    schema_name: String,
+    schema_name: Option<String>,
     name: String,
     export_date_column: Option<String>,
     lock_escalation: LockEscalation,
@@ -21,13 +21,9 @@ pub struct TableBuilder {
 }
 
 impl TableBuilder {
-    pub fn new(schema_name: &str, name: &str) -> Self {
+    pub fn new<S: Into<String>>(schema_name: Option<S>, name: S) -> Self {
         Self {
-            schema_name: if schema_name.is_empty() {
-                "public".to_string()
-            } else {
-                schema_name.to_string()
-            },
+            schema_name: schema_name.map(|s| s.into()),
             name: name.into(),
             export_date_column: None,
             lock_escalation: LockEscalation::Auto,
@@ -44,10 +40,12 @@ impl TableBuilder {
         self.export_date_column = Some(col.into());
         self
     }
+
     pub fn lock_escalation(mut self, le: LockEscalation) -> Self {
         self.lock_escalation = le;
         self
     }
+
     pub fn no_export(mut self, v: bool) -> Self {
         self.no_export = v;
         self
@@ -57,18 +55,22 @@ impl TableBuilder {
         self.columns.push(column);
         self
     }
+
     pub fn add_key(mut self, key: Key) -> Self {
         self.keys.push(key);
         self
     }
+
     pub fn add_index(mut self, index: Key) -> Self {
         self.indexes.push(index);
         self
     }
+
     pub fn add_relation(mut self, relation: Relation) -> Self {
         self.relations.push(relation);
         self
     }
+
     pub fn add_option(mut self, o: TableOption) -> Self {
         self.options.push(o);
         self
@@ -101,9 +103,9 @@ mod tests {
 
     #[test]
     fn build_table_with_columns_and_pk() {
-        let t = TableBuilder::new("s", "t")
-            .add_column(Column::new("id", ColumnType::Int, 0, 0, true))
-            .add_column(Column::new("name", ColumnType::Varchar, 255, 0, false))
+        let t = TableBuilder::new(Some("s"), "t")
+            .add_column(Column::new(Some("s"), "id", ColumnType::Int, 0, 0, true))
+            .add_column(Column::new(Some("s"), "name", ColumnType::Varchar, 255, 0, false))
             .add_key(Key::new(KeyType::Primary, vec![KeyColumn::new("id")]))
             .build();
         assert_eq!(t.name(), "t");

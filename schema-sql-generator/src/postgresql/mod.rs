@@ -8,3 +8,7 @@ mod postgres_procedure_generator;
 mod postgres_trigger_generator;
 mod postgres_other_sql_generator;
 mod postgres_column_generator;
+mod postgres_column_type_generator;
+mod postgres_key_generator;
+mod postgres_column_constraint_generator;
+mod postgres_table_constraint_generator;

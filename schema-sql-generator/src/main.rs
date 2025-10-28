@@ -20,14 +20,6 @@ pub fn main() {
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
         .about("Manages database schemas")
-        // .arg(Arg::new("database-types")
-        //     .long("database-types")
-        //     .value_name("TYPES")
-        //     .value_parser(["h2", "postgres", "mysql", "sqlite", "sqlserver"])
-        //     .required(true)
-        //     .num_args(5)
-        //     .ignore_case(true)
-        //     .help("Sets the database type"))
         .arg(Arg::new("database-type")
             .long("database-type")
             .value_name("TYPE")
@@ -79,8 +71,6 @@ pub fn main() {
     };
 
     generator_type.generate(options);
-
-    println!("{:?}", arguments);
 }
 
 fn load_schema(schema_path: &Path) -> DatabaseModel {

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct Schema {
-    schema_name: String,
+    schema_name: Option<String>,
     tables: Vec<Table>,
     views: Vec<View>,
     functions: Vec<Function>,
@@ -22,15 +22,15 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn new(schema_name: String) -> Self {
+    pub fn new<S: Into<String>>(schema_name: Option<S>) -> Self {
         Self {
-            schema_name,
+            schema_name: schema_name.map(|s| s.into()),
             ..Default::default()
         }
     }
 
-    pub fn schema_name(&self) -> &str {
-        &self.schema_name
+    pub fn schema_name(&self) -> Option<&str> {
+        self.schema_name.as_deref()
     }
 
     pub fn tables(&self) -> &Vec<Table> {
@@ -177,28 +177,28 @@ mod tests {
     use crate::model::column_type::ColumnType;
 
     fn make_schema() -> Schema {
-        Schema::new("s".to_string())
+        Schema::new(Some("s"))
     }
 
     #[test]
     fn add_and_get_table_and_sort() {
         let mut s = make_schema();
         let mut t1 = Table::new(
-            "s",
+            Some("s"),
             "B",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
             false,
         );
         let t2 = Table::new(
-            "s",
+            Some("s"),
             "A",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
             false,
         );
         t1.columns_mut()
-            .push(Column::new("id", ColumnType::Int, 0, 0, true));
+            .push(Column::new(Some("s"), "id", ColumnType::Int, 0, 0, true));
         s.add_table(t1);
         s.add_table(t2);
         assert_eq!(s.get_table("b").name(), "B"); // case-insensitive
@@ -212,8 +212,8 @@ mod tests {
     #[test]
     fn views_filtered_by_database_type() {
         let mut s = make_schema();
-        s.add_view(View::new("s", "v1", "sql1", DatabaseType::Postgres));
-        s.add_view(View::new("s", "v2", "sql2", DatabaseType::Mysql));
+        s.add_view(View::new(Some("s"), "v1", "sql1", DatabaseType::Postgres));
+        s.add_view(View::new(Some("s"), "v2", "sql2", DatabaseType::Mysql));
         let pg = s.views(DatabaseType::Postgres);
         assert_eq!(pg.len(), 1);
         assert_eq!(pg[0].name(), "v1");
@@ -223,7 +223,7 @@ mod tests {
     fn validate_setnull_error_when_required() {
         let mut s = make_schema();
         let mut parent = Table::new(
-            "s",
+            Some("s"),
             "parent",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
@@ -231,11 +231,11 @@ mod tests {
         );
         parent
             .columns_mut()
-            .push(Column::new("id", ColumnType::Int, 0, 0, true));
+            .push(Column::new(Some("s"), "id", ColumnType::Int, 0, 0, true));
         s.add_table(parent);
 
         let mut child = Table::new(
-            "s",
+            Some("s"),
             "child",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
@@ -243,7 +243,7 @@ mod tests {
         );
         child
             .columns_mut()
-            .push(Column::new("pid", ColumnType::Int, 0, 0, true));
+            .push(Column::new(Some("s"), "pid", ColumnType::Int, 0, 0, true));
         child.relations_mut().push(Relation::new(
             "parent",
             "id",
@@ -263,7 +263,7 @@ mod tests {
     fn build_reverse_relations_creates_back_refs() {
         let mut s = make_schema();
         let mut parent = Table::new(
-            "s",
+            Some("s"),
             "p",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
@@ -271,9 +271,9 @@ mod tests {
         );
         parent
             .columns_mut()
-            .push(Column::new("id", ColumnType::Int, 0, 0, true));
+            .push(Column::new(Some("s"), "id", ColumnType::Int, 0, 0, true));
         let mut child = Table::new(
-            "s",
+            Some("s"),
             "c",
             Option::<&str>::None,
             crate::model::types::LockEscalation::Auto,
@@ -281,7 +281,7 @@ mod tests {
         );
         child
             .columns_mut()
-            .push(Column::new("pid", ColumnType::Int, 0, 0, false));
+            .push(Column::new(Some("s"), "pid", ColumnType::Int, 0, 0, false));
         child.relations_mut().push(Relation::new(
             "p",
             "id",

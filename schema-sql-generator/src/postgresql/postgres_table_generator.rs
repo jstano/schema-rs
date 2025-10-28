@@ -1,6 +1,11 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::table_generator::{DefaultTableGenerator, TableGenerator};
 use schema_model::model::table::Table;
+use crate::postgresql::postgres_column_constraint_generator::PostgresColumnConstraintGenerator;
+use crate::postgresql::postgres_column_generator::PostgresColumnGenerator;
+use crate::postgresql::postgres_index_generator::PostgresIndexGenerator;
+use crate::postgresql::postgres_key_generator::PostgresKeyGenerator;
+use crate::postgresql::postgres_table_constraint_generator::PostgresTableConstraintGenerator;
 
 pub struct PostgresTableGenerator {
     context: GeneratorContext,
@@ -10,7 +15,14 @@ pub struct PostgresTableGenerator {
 impl PostgresTableGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            table_generator: DefaultTableGenerator::new(context.clone()),
+            table_generator: DefaultTableGenerator::new(
+                context.clone(),
+                Box::new(PostgresColumnGenerator::new(context.clone())),
+                Box::new(PostgresKeyGenerator::new(context.clone())),
+                Box::new(PostgresColumnConstraintGenerator::new(context.clone())),
+                Box::new(PostgresTableConstraintGenerator::new(context.clone())),
+                Box::new(PostgresIndexGenerator::new(context.clone())),
+            ),
             context,
         }
     }

@@ -8,6 +8,7 @@ use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
 use crate::common::table_generator::DefaultTableGenerator;
 use crate::common::trigger_generator::DefaultTriggerGenerator;
 use crate::common::view_generator::DefaultViewGenerator;
+use crate::h2::h2_table_generator::H2TableGenerator;
 
 pub struct H2Generator {
     context: GeneratorContext,
@@ -18,7 +19,7 @@ impl H2Generator {
     pub fn new(context: GeneratorContext) -> Self {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
-            Box::new(DefaultTableGenerator::new(context.clone())),
+            Box::new(H2TableGenerator::new(context.clone())),
             Box::new(DefaultRelationGenerator::new(context.clone())),
             Box::new(DefaultIndexGenerator::new(context.clone())),
             Box::new(DefaultFunctionGenerator::new(context.clone())),

@@ -11,7 +11,7 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct Table {
-    schema_name: String,
+    schema_name: Option<String>,
     name: String,
     export_date_column: Option<String>,
     lock_escalation: LockEscalation,
@@ -31,14 +31,14 @@ pub struct Table {
 impl Table {
     #[allow(clippy::too_many_arguments)]
     pub fn new<S: Into<String>>(
-        schema_name: S,
+        schema_name: Option<S>,
         name: S,
         export_date_column: Option<S>,
         lock_escalation: LockEscalation,
         no_export: bool,
     ) -> Self {
         Self {
-            schema_name: schema_name.into(),
+            schema_name: schema_name.map(|s| s.into()),
             name: name.into(),
             export_date_column: export_date_column.map(|s| s.into()),
             lock_escalation,
@@ -56,86 +56,90 @@ impl Table {
         }
     }
 
-    pub fn schema_name(&self) -> &str {
-        &self.schema_name
+    pub fn schema_name(&self) -> Option<&str> {
+        self.schema_name.as_deref()
     }
+
     pub fn name(&self) -> &str {
         &self.name
     }
+
     pub fn export_date_column(&self) -> Option<&str> {
         self.export_date_column.as_deref()
     }
+
     pub fn lock_escalation(&self) -> LockEscalation {
         self.lock_escalation
     }
+
     pub fn is_no_export(&self) -> bool {
         self.no_export
     }
 
-    pub fn columns(&self) -> &Vec<Column> {
+    pub fn columns(&self) -> &[Column] {
         &self.columns
     }
     pub fn columns_mut(&mut self) -> &mut Vec<Column> {
         &mut self.columns
     }
 
-    pub fn keys(&self) -> &Vec<Key> {
+    pub fn keys(&self) -> &[Key] {
         &self.keys
     }
     pub fn keys_mut(&mut self) -> &mut Vec<Key> {
         &mut self.keys
     }
 
-    pub fn indexes(&self) -> &Vec<Key> {
+    pub fn indexes(&self) -> &[Key] {
         &self.indexes
     }
     pub fn indexes_mut(&mut self) -> &mut Vec<Key> {
         &mut self.indexes
     }
 
-    pub fn relations(&self) -> &Vec<Relation> {
+    pub fn relations(&self) -> &[Relation] {
         &self.relations
     }
     pub fn relations_mut(&mut self) -> &mut Vec<Relation> {
         &mut self.relations
     }
 
-    pub fn reverse_relations(&self) -> &Vec<Relation> {
+    pub fn reverse_relations(&self) -> &[Relation] {
         &self.reverse_relations
     }
     pub fn reverse_relations_mut(&mut self) -> &mut Vec<Relation> {
         &mut self.reverse_relations
     }
 
-    pub fn triggers(&self) -> &Vec<Trigger> {
+    pub fn triggers(&self) -> &[Trigger] {
         &self.triggers
     }
     pub fn triggers_mut(&mut self) -> &mut Vec<Trigger> {
         &mut self.triggers
     }
 
-    pub fn constraints(&self) -> &Vec<Constraint> {
+    pub fn constraints(&self) -> &[Constraint] {
         &self.constraints
     }
     pub fn constraints_mut(&mut self) -> &mut Vec<Constraint> {
         &mut self.constraints
     }
 
-    pub fn initial_data(&self) -> &Vec<InitialData> {
+    pub fn initial_data(&self) -> &[InitialData] {
         &self.initial_data
     }
     pub fn initial_data_mut(&mut self) -> &mut Vec<InitialData> {
         &mut self.initial_data
     }
 
-    pub fn options(&self) -> &Vec<TableOption> {
+    pub fn options(&self) -> &[TableOption] {
         &self.options
     }
     pub fn options_mut(&mut self) -> &mut Vec<TableOption> {
         &mut self.options
     }
 
-    pub fn aggregations(&self) -> &Vec<Aggregation> {
+    pub fn aggregations(&self) -> &[Aggregation] {
         &self.aggregations
     }
     pub fn aggregations_mut(&mut self) -> &mut Vec<Aggregation> {
@@ -204,13 +208,19 @@ impl Table {
     }
 
     pub fn fully_qualified_table_name(&self) -> String {
-        self.schema_name().to_string() + "." + self.name()
+        match self.schema_name() {
+            Some(schema_name) => format!("{}.{}", schema_name, self.name()),
+            None => self.name().to_string(),
+        }
     }
 }
 
 impl fmt::Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
+        match &self.schema_name {
+            Some(schema) => write!(f, "{}.{}", schema, self.name),
+            None => write!(f, "{}", self.name),
+        }
     }
 }
 
@@ -221,27 +231,33 @@ mod tests {
     use crate::model::types::{BooleanMode, KeyType, LockEscalation, TableOption};
 
     fn sample_table() -> Table {
-        Table::new("s", "t", Option::<&str>::None, LockEscalation::Auto, false)
+        Table::new(Some("s"), "t", Option::<&str>::None, LockEscalation::Auto, false)
     }
 
     #[test]
     fn constructor_and_basic_getters() {
         let t = sample_table();
-        assert_eq!(t.schema_name(), "s");
+        assert_eq!(t.schema_name().unwrap(), "s");
         assert_eq!(t.name(), "t");
         assert_eq!(t.export_date_column(), None);
         assert_eq!(t.lock_escalation(), LockEscalation::Auto);
         assert!(!t.is_no_export());
-        assert_eq!(format!("{}", t), "t");
+        assert_eq!(format!("{}", t), "s.t");
     }
 
     #[test]
     fn columns_and_keys_behavior() {
         let mut t = sample_table();
         t.columns_mut()
-            .push(Column::new("id", ColumnType::Int, 0, 0, true));
-        t.columns_mut()
-            .push(Column::new("name", ColumnType::Varchar, 255, 0, false));
+            .push(Column::new(None, "id", ColumnType::Int, 0, 0, true));
+        t.columns_mut().push(Column::new(
+            None,
+            "name",
+            ColumnType::Varchar,
+            255,
+            0,
+            false,
+        ));
         assert!(t.has_column("ID")); // case-insensitive
         assert_eq!(t.column("name").column_type(), ColumnType::Varchar);
 
@@ -251,17 +267,23 @@ mod tests {
         assert_eq!(t.primary_key_columns().unwrap(), vec!["id".to_string()]);
 
         assert!(t.identity_column().is_none());
-        t.columns_mut()
-            .push(Column::new("seq", ColumnType::Sequence, 0, 0, true));
+        t.columns_mut().push(Column::new(
+            None,
+            "seq",
+            ColumnType::Sequence,
+            0,
+            0,
+            true,
+        ));
         assert_eq!(t.identity_column().unwrap().name(), "seq");
 
         t.options_mut().push(TableOption::Compress);
         assert!(t.has_option(TableOption::Compress));
 
-        assert!(t.has_column_constraints(BooleanMode::Native) == false);
+        assert_eq!(t.has_column_constraints(BooleanMode::Native), false);
         // Add a boolean; in YesNo mode constraints exist
         t.columns_mut()
-            .push(Column::new("b", ColumnType::Boolean, 0, 0, false));
+            .push(Column::new(None, "b", ColumnType::Boolean, 0, 0, false));
         assert!(t.has_column_constraints(BooleanMode::YesNo));
         assert_eq!(
             t.columns_with_check_constraints(BooleanMode::YesNo).len(),
@@ -273,7 +295,7 @@ mod tests {
     fn relations_helpers() {
         let mut t = sample_table();
         t.columns_mut()
-            .push(Column::new("parent_id", ColumnType::Int, 0, 0, false));
+            .push(Column::new(None, "parent_id", ColumnType::Int, 0, 0, false));
         t.relations_mut().push(Relation::new(
             "parent",
             "id",

@@ -21,7 +21,7 @@ impl IndexGenerator for PostgresIndexGenerator {
         self.index_generator.output_indexes();
     }
 
-    fn output_indexes_for_table(&mut self, table: &Table) {
+    fn output_indexes_for_table(&self, table: &Table) {
         self.index_generator.output_indexes_for_table(table);
     }
 }

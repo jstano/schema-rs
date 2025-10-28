@@ -13,10 +13,9 @@ pub struct SchemaBuilder {
 }
 
 impl SchemaBuilder {
-    /// Create a new SchemaBuilder for a given schema name.
-    pub fn new<S: Into<String>>(schema_name: S) -> Self {
+    pub fn new<S: Into<String>>(schema_name: Option<S>) -> Self {
         Self {
-            schema: Schema::new(schema_name.into()),
+            schema: Schema::new(schema_name.map(|s| s.into())),
         }
     }
 
@@ -66,17 +65,17 @@ mod tests {
 
     #[test]
     fn build_schema_with_table_and_pk() {
-        let table = TableBuilder::new("public", "users")
+        let table = TableBuilder::new(None, "users")
             .add_column(
-                ColumnBuilder::new("id", ColumnType::Int)
+                ColumnBuilder::new(None, "id", ColumnType::Int)
                     .required(true)
                     .build(),
             )
-            .add_column(ColumnBuilder::new("name", ColumnType::Varchar).build())
+            .add_column(ColumnBuilder::new(None, "name", ColumnType::Varchar).build())
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build();
 
-        let schema = SchemaBuilder::new("public").add_table(table).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
 
         assert_eq!(schema.tables().len(), 1);
         assert_eq!(schema.tables()[0].name(), "users");

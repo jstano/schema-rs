@@ -4,6 +4,7 @@ use crate::model::column_type::ColumnType;
 /// ColumnBuilder holds intermediate settings for a column and produces a model::Column on build.
 #[derive(Debug)]
 pub struct ColumnBuilder {
+    schema_name: Option<String>,
     name: String,
     column_type: ColumnType,
     length: i32,
@@ -12,8 +13,9 @@ pub struct ColumnBuilder {
 }
 
 impl ColumnBuilder {
-    pub fn new<N: Into<String>>(name: N, column_type: ColumnType) -> Self {
+    pub fn new<S: Into<String>>(schema_name: Option<S>, name: S, column_type: ColumnType) -> Self {
         Self {
+            schema_name: schema_name.map(|s| s.into()),
             name: name.into(),
             column_type,
             length: 0,
@@ -36,6 +38,7 @@ impl ColumnBuilder {
 
     pub fn build(self) -> Column {
         Column::new(
+            self.schema_name,
             self.name,
             self.column_type,
             self.length,
@@ -51,7 +54,7 @@ mod tests {
 
     #[test]
     fn build_basic_column() {
-        let c = ColumnBuilder::new("name", ColumnType::Varchar)
+        let c = ColumnBuilder::new(None, "name", ColumnType::Varchar)
             .length(100)
             .required(true)
             .build();

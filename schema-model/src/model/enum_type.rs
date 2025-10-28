@@ -1,13 +1,23 @@
 #[derive(Debug, Clone)]
 pub struct EnumType {
     name: String,
+    values: Vec<EnumValue>,
 }
+
 impl EnumType {
-    pub fn new<S: Into<String>>(name: S) -> Self {
-        Self { name: name.into() }
+    pub fn new<S: Into<String>>(name: S, values: Vec<EnumValue>) -> Self {
+        Self {
+            name: name.into(),
+            values,
+        }
     }
+
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn values(&self) -> &Vec<EnumValue> {
+        &self.values
     }
 }
 
@@ -18,7 +28,7 @@ pub struct EnumValue {
 }
 
 impl EnumValue {
-    /// Create a new EnumValue. `code` may be None to mirror Java's nullable field.
+    /// Create a new EnumValue. `code` may be None.
     pub fn new<N: Into<String>, C: Into<String>>(name: N, code: Option<C>) -> Self {
         Self {
             name: name.into(),
@@ -30,8 +40,7 @@ impl EnumValue {
         &self.name
     }
 
-    /// Returns the explicit code if present; otherwise falls back to the name,
-    /// matching the Java getter behavior.
+    /// Returns the explicit code if present; otherwise falls back to the name
     pub fn code(&self) -> &str {
         self.code.as_deref().unwrap_or(&self.name)
     }
@@ -43,15 +52,22 @@ mod tests {
 
     #[test]
     fn enum_type_and_value_getters() {
-        let et = EnumType::new("Color");
+        let et = EnumType::new(
+            "Color",
+            vec![
+                EnumValue::new("RED", None::<String>),
+                EnumValue::new("GREEN", Some("G")),
+            ],
+        );
         assert_eq!(et.name(), "Color");
+        assert_eq!(et.values().len(), 2);
 
-        let v1 = EnumValue::new("RED", None::<String>);
+        let v1 = et.values()[0].clone();
         assert_eq!(v1.name(), "RED");
         // falls back to name
         assert_eq!(v1.code(), "RED");
 
-        let v2 = EnumValue::new("GREEN", Some("G"));
+        let v2 = et.values()[1].clone();
         assert_eq!(v2.code(), "G");
     }
 }

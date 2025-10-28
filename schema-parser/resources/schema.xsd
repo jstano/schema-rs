@@ -199,8 +199,8 @@
                         <element name="column">
                           <complexType>
                             <attribute name="source" type="string" use="required"/>
-                            <attribute name="sourceDerivedFrom" type="string"/>
                             <attribute name="destination" type="string" use="required"/>
+                            <attribute name="sourceDerivedFrom" type="string"/>
                           </complexType>
                         </element>
 

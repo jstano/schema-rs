@@ -3,7 +3,7 @@ use crate::common::generator_context::GeneratorContext;
 
 pub trait IndexGenerator {
     fn output_indexes(&self);
-    fn output_indexes_for_table(&mut self, table: &Table);
+    fn output_indexes_for_table(&self, table: &Table);
 }
 
 pub struct DefaultIndexGenerator {
@@ -22,6 +22,6 @@ impl IndexGenerator for DefaultIndexGenerator {
     fn output_indexes(&self) {
     }
 
-    fn output_indexes_for_table(&mut self, table: &Table) {
+    fn output_indexes_for_table(&self, table: &Table) {
     }
 }

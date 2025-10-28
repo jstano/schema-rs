@@ -17,7 +17,7 @@ fn test_parser() {
     assert_eq!(schemas[0].get_table("Region").name(), "Region");
     assert_eq!(schemas[0].get_table("KBI").name(), "KBI");
     assert_eq!(schemas[0].get_table("MasterKBICode").name(), "MasterKBICode");
-    assert_eq!(schemas[1].schema_name(), "test");
+    assert_eq!(schemas[1].schema_name().unwrap(), "test");
     assert_eq!(schemas[1].tables().len(), 1);
     assert_eq!(schemas[1].get_table("Unit").name(), "Unit");
 }

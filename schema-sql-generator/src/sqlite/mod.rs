@@ -1,1 +1,14 @@
 pub mod sqlite_generator;
+mod sqlite_column_constraint_generator;
+mod sqlite_column_generator;
+mod sqlite_column_type_generator;
+mod sqlite_function_generator;
+mod sqlite_index_generator;
+mod sqlite_key_generator;
+mod sqlite_other_sql_generator;
+mod sqlite_procedure_generator;
+mod sqlite_relation_generator;
+mod sqlite_table_constraint_generator;
+mod sqlite_table_generator;
+mod sqlite_trigger_generator;
+mod sqlite_view_generator;

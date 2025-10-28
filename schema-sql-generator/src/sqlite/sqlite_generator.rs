@@ -5,9 +5,9 @@ use crate::common::other_sql_generator::DefaultOtherSqlGenerator;
 use crate::common::procedure_generator::DefaultProcedureGenerator;
 use crate::common::relation_generator::DefaultRelationGenerator;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
-use crate::common::table_generator::DefaultTableGenerator;
 use crate::common::trigger_generator::DefaultTriggerGenerator;
 use crate::common::view_generator::DefaultViewGenerator;
+use crate::sqlite::sqlite_table_generator::SqliteTableGenerator;
 
 pub struct SqliteGenerator {
     context: GeneratorContext,
@@ -18,7 +18,7 @@ impl SqliteGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
-            Box::new(DefaultTableGenerator::new(context.clone())),
+            Box::new(SqliteTableGenerator::new(context.clone())),
             Box::new(DefaultRelationGenerator::new(context.clone())),
             Box::new(DefaultIndexGenerator::new(context.clone())),
             Box::new(DefaultFunctionGenerator::new(context.clone())),
