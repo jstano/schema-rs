@@ -1,131 +1,168 @@
+use std::collections::HashMap;
+use super::nodes::*;
+use crate::parser::table_parser::parse_table;
 use schema_model::builder::SchemaBuilder;
 use schema_model::model::database_model::DatabaseModel;
+use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
+use schema_model::model::table::Table;
 use schema_model::model::types::{
-    DatabaseType, OtherSqlOrder, Version,
+    BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder, Version,
 };
 use schema_model::model::view::View;
 use schema_model::model::{
-    aggregation::AggregationFrequency
-    ,
+    aggregation::AggregationFrequency,
+    database_model,
     enum_type::{EnumType, EnumValue},
-    function::Function
-    ,
+    function::Function,
     other_sql::OtherSql,
-    procedure::Procedure
-    ,
+    procedure::Procedure,
 };
-use crate::parser::table_parser::parse_table;
-use super::nodes::*;
 
-pub fn convert_database(database: DatabaseXml) -> Result<DatabaseModel, String> {
+pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
     let mut schemas: Vec<Schema> = Vec::new();
 
-    if let Some(root_schema) = root_schema(&database) {
-        schemas.push(root_schema);
+    if let Some(default_schema) = default_schema(&database_xml) {
+        schemas.push(default_schema);
     }
 
-    for schemaXml in database.schemas.into_iter() {
+    for schemaXml in database_xml.schemas.into_iter() {
         if let Some(s) = sub_schema(&schemaXml) {
             schemas.push(s);
         }
     }
 
-    let version = if database.version.is_some() {
-        Some(Version::parse(database.version.as_deref().unwrap_or("")))
-    } else {
-        None
-    };
+    let version = database_xml.version.as_deref().map(Version::parse);
+    let boolean_mode = database_xml
+        .boolean_mode
+        .as_deref()
+        .map(|s| s.parse::<BooleanMode>())
+        .unwrap_or(Ok(BooleanMode::Native))
+        .unwrap();
+    let foreign_key_mode = database_xml
+        .foreign_key_mode
+        .as_deref()
+        .map(|s| s.parse::<ForeignKeyMode>())
+        .unwrap_or(Ok(ForeignKeyMode::Relations))
+        .unwrap();
 
-    Ok(DatabaseModel::new(
-        version,
-        schemas,
-    ))
+    let mut database_model = DatabaseModel::new(version, boolean_mode, foreign_key_mode, schemas);
+
+    reverse_relations(&mut database_model);
+
+    database_model
 }
 
-fn root_schema(database: &DatabaseXml) -> Option<Schema> {
-    let mut root_builder = SchemaBuilder::new(None::<&str>);
+fn default_schema(database: &DatabaseXml) -> Option<Schema> {
+    let mut schema_builder = SchemaBuilder::new(None::<&str>);
 
     for table_xml in database.tables.iter() {
         let table = parse_table(table_xml, None);
-        root_builder = root_builder.add_table(table);
+        schema_builder = schema_builder.add_table(table);
     }
 
     for view_xml in database.views.iter() {
-        if let Some(database_type) = str_to_database_type_opt(view_xml.database_type.as_deref()) {
-            root_builder = root_builder.add_view(View::new(None, &view_xml.name, &view_xml.sql, database_type));
-        }
+        let database_type = str_to_database_type(view_xml.database_type.as_deref());
+        schema_builder = schema_builder.add_view(View::new(
+            None,
+            &view_xml.name,
+            &view_xml.sql,
+            database_type,
+        ));
     }
 
-    // Root-level enums
     for enum_xml in database.enums.iter() {
         let evs: Vec<EnumValue> = enum_xml
             .value
             .iter()
             .map(|v| EnumValue::new(&v.name, v.code.clone()))
             .collect();
-        root_builder = root_builder.add_enum_type(EnumType::new(&enum_xml.name, evs));
+        schema_builder = schema_builder.add_enum_type(EnumType::new(&enum_xml.name, evs));
     }
 
-    for functions_xml in database.functions.iter() {
+    for function_xml in database.functions.iter() {
         let mut functions: Vec<Function> = Vec::new();
-        for function_xml in functions_xml.function.iter() {
-            for sql in function_xml.sql.iter() {
-                if let Some(database_type) = str_to_database_type_opt(Some(&sql.database_type)) {
-                    functions.push(Function::new("", &function_xml.name, database_type, &sql.sql));
-                }
+        for vendor_sql_xml in function_xml.sql.iter() {
+            if let Some(database_type) =
+                str_to_database_type(Some(&vendor_sql_xml.database_type))
+            {
+                functions.push(Function::new(
+                    None,
+                    &function_xml.name,
+                    database_type,
+                    &vendor_sql_xml.sql,
+                ));
             }
         }
         if !functions.is_empty() {
-            root_builder = root_builder.add_functions(functions);
+            schema_builder = schema_builder.add_functions(functions);
         }
     }
 
-    for procedure_xmls in database.procedures.iter() {
+    for procedure_xml in database.procedures.iter() {
         let mut procedures: Vec<Procedure> = Vec::new();
-        for procedure_xml in procedure_xmls.procedure.iter() {
-            for sql in procedure_xml.sql.iter() {
-                if let Some(database_type) = str_to_database_type_opt(Some(&sql.database_type)) {
-                    procedures.push(Procedure::new("", &procedure_xml.name, database_type, &sql.sql));
-                }
+        for vendor_sql_xml in procedure_xml.sql.iter() {
+            if let Some(database_type) =
+                str_to_database_type(Some(&vendor_sql_xml.database_type))
+            {
+                procedures.push(Procedure::new(
+                    None,
+                    &procedure_xml.name,
+                    database_type,
+                    &vendor_sql_xml.sql,
+                ));
             }
         }
         if !procedures.is_empty() {
-            root_builder = root_builder.add_procedures(procedures);
+            schema_builder = schema_builder.add_procedures(procedures);
         }
     }
 
     for other_sql_xml in database.other_sql.iter() {
         if let (Some(database_type), Some(order)) = (
-            str_to_database_type_opt(Some(&other_sql_xml.database_type)),
+            str_to_database_type(Some(&other_sql_xml.database_type)),
             other_sql_order(&other_sql_xml.order),
         ) {
-            root_builder = root_builder.add_other_sql(OtherSql::new(database_type, order, &other_sql_xml.sql));
+            schema_builder = schema_builder.add_other_sql(OtherSql::new(
+                database_type,
+                order,
+                &other_sql_xml.sql,
+            ));
         }
     }
 
     for custom_sql_xml in database.custom_sql.iter() {
-        if let Some(database_type) = str_to_database_type_opt(Some(&custom_sql_xml.database_type)) {
+        if let Some(database_type) = str_to_database_type(Some(&custom_sql_xml.database_type)) {
             let mut functions: Vec<Function> = Vec::new();
             for function_xml in custom_sql_xml.function.iter() {
-                functions.push(Function::new("", &function_xml.name, database_type, &function_xml.sql));
+                functions.push(Function::new(
+                    None,
+                    &function_xml.name,
+                    database_type,
+                    &function_xml.sql,
+                ));
             }
             if !functions.is_empty() {
-                root_builder = root_builder.add_functions(functions);
+                schema_builder = schema_builder.add_functions(functions);
             }
 
             let mut procedures: Vec<Procedure> = Vec::new();
             for procedure_xml in custom_sql_xml.procedure.iter() {
-                procedures.push(Procedure::new("", &procedure_xml.name, database_type, &procedure_xml.sql));
+                procedures.push(Procedure::new(
+                    None,
+                    &procedure_xml.name,
+                    database_type,
+                    &procedure_xml.sql,
+                ));
             }
             if !procedures.is_empty() {
-                root_builder = root_builder.add_procedures(procedures);
+                schema_builder = schema_builder.add_procedures(procedures);
             }
             // cs.other has no order attribute; no clear mapping into OtherSql → skip
         }
     }
 
-    let root_schema = root_builder.build();
+    let root_schema = schema_builder.build();
     if !root_schema.tables().is_empty()
         || !database.views.is_empty()
         || !database.enums.is_empty()
@@ -134,7 +171,7 @@ fn root_schema(database: &DatabaseXml) -> Option<Schema> {
         || !database.other_sql.is_empty()
         || !database.custom_sql.is_empty()
     {
-        return Some(root_schema)
+        return Some(root_schema);
     }
 
     None
@@ -148,27 +185,36 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
     }
 
     for view_xml in schema_xml.views.iter() {
-        if let Some(dt) = str_to_database_type_opt(view_xml.database_type.as_deref()) {
-            schema_builder = schema_builder.add_view(View::new(Some(&schema_xml.name), &view_xml.name, &view_xml.sql, dt));
-        }
+        let database_type = str_to_database_type(view_xml.database_type.as_deref());
+        schema_builder = schema_builder.add_view(View::new(
+            Some(&schema_xml.name),
+            &view_xml.name,
+            &view_xml.sql,
+            database_type,
+        ));
     }
 
     for enum_xml in schema_xml.enums.iter() {
-        let evs: Vec<EnumValue> = enum_xml
+        let enum_values: Vec<EnumValue> = enum_xml
             .value
             .iter()
             .map(|v| EnumValue::new(&v.name, v.code.clone()))
             .collect();
-        schema_builder = schema_builder.add_enum_type(EnumType::new(&enum_xml.name, evs));
+        schema_builder = schema_builder.add_enum_type(EnumType::new(&enum_xml.name, enum_values));
     }
 
-    for functions_xml in schema_xml.functions.iter() {
+    for function_xml in schema_xml.functions.iter() {
         let mut functions: Vec<Function> = Vec::new();
-        for f in functions_xml.function.iter() {
-            for sql in f.sql.iter() {
-                if let Some(dt) = str_to_database_type_opt(Some(&sql.database_type)) {
-                    functions.push(Function::new(&schema_xml.name, &f.name, dt, &sql.sql));
-                }
+        for vendor_sql_xml in function_xml.sql.iter() {
+            if let Some(database_type) =
+                str_to_database_type(Some(&vendor_sql_xml.database_type))
+            {
+                functions.push(Function::new(
+                    Some(schema_xml.name.as_str()),
+                    &function_xml.name,
+                    database_type,
+                    &vendor_sql_xml.sql,
+                ));
             }
         }
         if !functions.is_empty() {
@@ -176,13 +222,18 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
         }
     }
 
-    for procedures_xml in schema_xml.procedures.iter() {
+    for procedure_xml in schema_xml.procedures.iter() {
         let mut procedures: Vec<Procedure> = Vec::new();
-        for p in procedures_xml.procedure.iter() {
-            for sql in p.sql.iter() {
-                if let Some(dt) = str_to_database_type_opt(Some(&sql.database_type)) {
-                    procedures.push(Procedure::new(&schema_xml.name, &p.name, dt, &sql.sql));
-                }
+        for vendor_sql_xml in procedure_xml.sql.iter() {
+            if let Some(database_type) =
+                str_to_database_type(Some(&vendor_sql_xml.database_type))
+            {
+                procedures.push(Procedure::new(
+                    Some(schema_xml.name.as_str()),
+                    &procedure_xml.name,
+                    database_type,
+                    &vendor_sql_xml.sql,
+                ));
             }
         }
         if !procedures.is_empty() {
@@ -191,26 +242,40 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
     }
 
     for other_sql_xml in schema_xml.other_sql.iter() {
-        if let (Some(dt), Some(order)) = (
-            str_to_database_type_opt(Some(&other_sql_xml.database_type)),
+        if let (Some(database_type), Some(order)) = (
+            str_to_database_type(Some(&other_sql_xml.database_type)),
             other_sql_order(&other_sql_xml.order),
         ) {
-            schema_builder = schema_builder.add_other_sql(OtherSql::new(dt, order, &other_sql_xml.sql));
+            schema_builder = schema_builder.add_other_sql(OtherSql::new(
+                database_type,
+                order,
+                &other_sql_xml.sql,
+            ));
         }
     }
 
     for custom_sql_xml in schema_xml.custom_sql.iter() {
-        if let Some(dt) = str_to_database_type_opt(Some(&custom_sql_xml.database_type)) {
+        if let Some(database_type) = str_to_database_type(Some(&custom_sql_xml.database_type)) {
             let mut functions: Vec<Function> = Vec::new();
-            for f in custom_sql_xml.function.iter() {
-                functions.push(Function::new(&schema_xml.name, &f.name, dt, &f.sql));
+            for function_xml in custom_sql_xml.function.iter() {
+                functions.push(Function::new(
+                    Some(schema_xml.name.as_str()),
+                    &function_xml.name,
+                    database_type,
+                    &function_xml.sql,
+                ));
             }
             if !functions.is_empty() {
                 schema_builder = schema_builder.add_functions(functions);
             }
             let mut procedures: Vec<Procedure> = Vec::new();
-            for p in custom_sql_xml.procedure.iter() {
-                procedures.push(Procedure::new(&schema_xml.name, &p.name, dt, &p.sql));
+            for procedure_xml in custom_sql_xml.procedure.iter() {
+                procedures.push(Procedure::new(
+                    Some(schema_xml.name.as_str()),
+                    &procedure_xml.name,
+                    database_type,
+                    &procedure_xml.sql,
+                ));
             }
             if !procedures.is_empty() {
                 schema_builder = schema_builder.add_procedures(procedures);
@@ -221,14 +286,12 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
     Some(schema_builder.build())
 }
 
-pub(crate) fn str_to_database_type_opt(s: Option<&str>) -> Option<schema_model::model::types::DatabaseType> {
+pub(crate) fn str_to_database_type(s: Option<&str>) -> Option<DatabaseType> {
     s.and_then(|v| match v.to_ascii_lowercase().as_str() {
         "postgresql" | "postgres" | "pgsql" => Some(DatabaseType::Postgres),
         "mysql" => Some(DatabaseType::Mysql),
         "sqlite" => Some(DatabaseType::Sqlite),
         "sqlserver" | "mssql" => Some(DatabaseType::SqlServer),
-        // Map derby/hsql to H2 as a closest supported engine in this model
-        "derby" | "hsql" => Some(DatabaseType::H2),
         _ => None,
     })
 }
@@ -247,5 +310,46 @@ pub(crate) fn agg_frequency_from_str(s: &str) -> AggregationFrequency {
         "monthly" => AggregationFrequency::Monthly,
         "yearly" => AggregationFrequency::Yearly,
         _ => AggregationFrequency::Monthly,
+    }
+}
+
+fn reverse_relations(database_model: &mut DatabaseModel) {
+    // First pass: collect all reverse relation updates
+    let mut updates = Vec::new();
+
+    for table in database_model.all_tables() {
+        for relation in table.relations() {
+            let parent_table_name = relation.to_table_name();
+            let parent_table_parts = split_schema_table(&parent_table_name);
+
+            updates.push((
+                parent_table_parts.0,
+                parent_table_parts.1.to_string(),
+                Relation::new(
+                    relation.to_table_name(),
+                    relation.to_column_name(),
+                    relation.from_table_name(),
+                    relation.from_column_name(),
+                    relation.relation_type(),
+                    false,
+                ),
+            ));
+        }
+    }
+
+    // Second pass: apply updates using mutable borrows
+    for (schema, table_name, reverse_relation) in updates {
+        let parent_table = database_model.find_table_mut(schema.as_deref(), &table_name);
+        parent_table.add_reverse_relation(reverse_relation);
+    }
+}
+
+fn split_schema_table(table_name: &str) -> (Option<String>, String) {
+    if let Some(pos) = table_name.find('.') {
+        let schema = table_name[..pos].to_string();
+        let table = table_name[pos + 1..].to_string();
+        (Some(schema), table)
+    } else {
+        (None, table_name.to_string())
     }
 }

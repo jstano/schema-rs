@@ -31,14 +31,14 @@
     <initialData>
       <sql>insert into ParentTable (Name,Extra,Gender) values ('AAA','Extra AAA','M')</sql>
       <sql>insert into ParentTable (Name,Extra,Gender) values ('BBB','Extra BBB','F')</sql>
-      <sql databaseType="pgsql">insert into ParentTable (Name,Extra,Gender) values ('PGSQL','Extra PGSQL','M')</sql>
-      <sql databaseType="mssql">insert into ParentTable (Name,Extra,Gender) values ('MSSQL','Extra MSSQL','F')</sql>
+      <sql databaseType="postgres">insert into ParentTable (Name,Extra,Gender) values ('PGSQL','Extra PGSQL','M')</sql>
+      <sql databaseType="sqlserver">insert into ParentTable (Name,Extra,Gender) values ('MSSQL','Extra MSSQL','F')</sql>
     </initialData>
     <triggers>
-      <delete databaseType="pgsql">delete from pgsql</delete>
-      <delete databaseType="mssql">delete from mssql</delete>
-      <update databaseType="pgsql">update pgsql</update>
-      <update databaseType="mssql">update mssql</update>
+      <delete databaseType="postgres">delete from pgsql</delete>
+      <delete databaseType="sqlserver">delete from mssql</delete>
+      <update databaseType="postgres">update pgsql</update>
+      <update databaseType="sqlserver">update mssql</update>
     </triggers>
     <aggregations>
       <aggregate destinationTable="ParentTableAggregation" dateColumn="Extra" criteria="criteria" timestampColumn="timestamp" frequency="daily">
@@ -187,7 +187,7 @@
     </keys>
     <relations>
       <relation src="PropertyID" table="Property" column="ID" type="cascade"/>
-      <relation src="UnitID" table="Unit" column="ID" type="setnull"/>
+      <relation src="UnitID" table="test.Unit" column="ID" type="setnull"/>
       <relation src="MasterKBICodeID" table="MasterKBICode" column="ID" type="setnull"/>
     </relations>
   </table>
@@ -210,6 +210,52 @@
       </unique>
     </keys>
   </table>
+
+  <function name="TestFunction1">
+    <sql databaseType="postgres">sql-function-1</sql>
+  </function>
+  <function name="TestFunction2">
+    <sql databaseType="postgres">sql-function-2</sql>
+  </function>
+  <function name="customFunction1">
+    <sql databaseType="postgres">
+      custom function sql for pgsql 1
+    </sql>
+    <sql databaseType="sqlserver">
+      custom function sql for mssql 1
+    </sql>
+  </function>
+  <function name="customFunction2">
+    <sql databaseType="postgres">
+      custom function sql for pgsql 2
+    </sql>
+    <sql databaseType="sqlserver">
+      custom function sql for mssql 2
+    </sql>
+  </function>
+
+  <procedure name="TestProcedure1">
+    <sql databaseType="postgres">sql-procedure-1</sql>
+  </procedure>
+  <procedure name="TestProcedure2">
+    <sql databaseType="postgres">sql-procedure-2</sql>
+  </procedure>
+  <procedure name="customProcedure1">
+    <sql databaseType="postgres">
+      custom procedure sql for pgsql 1
+    </sql>
+    <sql databaseType="sqlserver">
+      custom procedure sql for mssql 1
+    </sql>
+  </procedure>
+  <procedure name="customProcedure2">
+    <sql databaseType="postgres">
+      custom procedure sql for pgsql 2
+    </sql>
+    <sql databaseType="postgres">
+      custom procedure sql for mssql 2
+    </sql>
+  </procedure>
 
   <schema name="test">
     <table name="Unit">
@@ -242,39 +288,17 @@
     <view name="TestView1">
       select * from ParentTable
     </view>
-
-    <functions>
-      <function name="testCustomFunction1">
-        <sql databaseType="pgsql">
-          test custom function sql for pgsql 1
-        </sql>
-        <sql databaseType="mssql">
-          test custom function sql for mssql 1
-        </sql>
-      </function>
-    </functions>
-
-    <procedures>
-      <procedure name="testCustomProcedure1">
-        <sql databaseType="pgsql">
-          test custom procedure sql for pgsql 1
-        </sql>
-        <sql databaseType="mssql">
-          test custom procedure sql for mssql 1
-        </sql>
-      </procedure>
-    </procedures>
   </schema>
 
   <view name="TestView1">
     select * from ParentTable
   </view>
 
-  <view name="TestView2" databaseType="pgsql">
+  <view name="TestView2" databaseType="postgres">
     select * from pgsql
   </view>
 
-  <view name="TestView2" databaseType="mssql">
+  <view name="TestView2" databaseType="sqlserver">
     select * from mssql
   </view>
 
@@ -288,83 +312,39 @@
     <value name="TWO" code="2"/>
   </enum>
 
-  <functions>
-    <function name="customFunction1">
-      <sql databaseType="pgsql">
-        custom function sql for pgsql 1
-      </sql>
-      <sql databaseType="mssql">
-        custom function sql for mssql 1
-      </sql>
-    </function>
-  </functions>
-
-  <functions>
-    <function name="customFunction2">
-      <sql databaseType="pgsql">
-        custom function sql for pgsql 2
-      </sql>
-      <sql databaseType="mssql">
-        custom function sql for mssql 2
-      </sql>
-    </function>
-  </functions>
-
-  <procedures>
-    <procedure name="customProcedure1">
-      <sql databaseType="pgsql">
-        custom procedure sql for pgsql 1
-      </sql>
-      <sql databaseType="mssql">
-        custom procedure sql for mssql 1
-      </sql>
-    </procedure>
-  </procedures>
-
-  <procedures>
-    <procedure name="customProcedure2">
-      <sql databaseType="pgsql">
-        custom procedure sql for pgsql 2
-      </sql>
-      <sql databaseType="pgsql">
-        custom procedure sql for mssql 2
-      </sql>
-    </procedure>
-  </procedures>
-
-  <otherSql databaseType="pgsql" order="top">
+  <otherSql databaseType="postgres" order="top">
     other top sql for pgsql 1
   </otherSql>
 
-  <otherSql databaseType="pgsql" order="top">
+  <otherSql databaseType="postgres" order="top">
     other top sql for pgsql 2
   </otherSql>
 
-  <otherSql databaseType="pgsql" order="bottom">
+  <otherSql databaseType="postgres" order="bottom">
     other bottom sql for pgsql 1
   </otherSql>
 
-  <otherSql databaseType="pgsql" order="bottom">
+  <otherSql databaseType="postgres" order="bottom">
     other bottom sql for pgsql 2
   </otherSql>
 
-  <otherSql databaseType="mssql" order="top">
+  <otherSql databaseType="sqlserver" order="top">
     other top sql for mssql 1
   </otherSql>
 
-  <otherSql databaseType="mssql" order="top">
+  <otherSql databaseType="sqlserver" order="top">
     other top sql for mssql 2
   </otherSql>
 
-  <otherSql databaseType="mssql" order="bottom">
+  <otherSql databaseType="sqlserver" order="bottom">
     other bottom sql for mssql 1
   </otherSql>
 
-  <otherSql databaseType="mssql" order="bottom">
+  <otherSql databaseType="sqlserver" order="bottom">
     other bottom sql for mssql 2
   </otherSql>
 
-  <customSQL databaseType="pgsql">
+  <customSQL databaseType="postgres">
     <function name="customSQLFunction1">
       customSQL function sql for pgsql 1
     </function>
@@ -382,7 +362,7 @@
     </other>
   </customSQL>
 
-  <customSQL databaseType="mssql">
+  <customSQL databaseType="sqlserver">
     <function name="customSQLFunction1">
       customSQL function sql for mssql 1
     </function>

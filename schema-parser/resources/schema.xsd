@@ -16,9 +16,9 @@
 
           <element name="view" type="database:viewType"/>
 
-          <element name="functions" type="database:functionsType"/>
+          <element name="function" type="database:functionType"/>
 
-          <element name="procedures" type="database:proceduresType"/>
+          <element name="procedure" type="database:procedureType"/>
 
           <element name="otherSql" type="database:otherSqlType"/>
 
@@ -34,9 +34,9 @@
 
                   <element name="view" type="database:viewType"/>
 
-                  <element name="functions" type="database:functionsType"/>
+                  <element name="function" type="database:functionType"/>
 
-                  <element name="procedures" type="database:proceduresType"/>
+                  <element name="procedure" type="database:procedureType"/>
 
                   <element name="otherSql" type="database:otherSqlType"/>
 
@@ -253,23 +253,11 @@
     </simpleContent>
   </complexType>
 
-  <complexType name="functionsType">
-    <sequence>
-      <element name="function" type="database:functionType" minOccurs="0" maxOccurs="unbounded"/>
-    </sequence>
-  </complexType>
-
   <complexType name="functionType">
     <sequence>
       <element name="sql" type="database:vendorSqlType" minOccurs="1" maxOccurs="unbounded"/>
     </sequence>
     <attribute name="name" type="string" use="required"/>
-  </complexType>
-
-  <complexType name="proceduresType">
-    <sequence>
-      <element name="procedure" type="database:procedureType" minOccurs="0" maxOccurs="unbounded"/>
-    </sequence>
   </complexType>
 
   <complexType name="procedureType">
@@ -420,11 +408,11 @@
 
   <simpleType name="databaseTypeEnum">
     <restriction base="string">
-      <enumeration value="mssql"/>
-      <enumeration value="pgsql"/>
-      <enumeration value="derby"/>
-      <enumeration value="hsql"/>
+      <enumeration value="h2"/>
       <enumeration value="mysql"/>
+      <enumeration value="postgres"/>
+      <enumeration value="sqlite"/>
+      <enumeration value="sqlserver"/>
     </restriction>
   </simpleType>
 

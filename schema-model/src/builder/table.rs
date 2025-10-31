@@ -1,7 +1,11 @@
+use crate::model::aggregation::Aggregation;
 use crate::model::column::Column;
+use crate::model::constraint::Constraint;
+use crate::model::initial_data::InitialData;
 use crate::model::key::Key;
 use crate::model::relation::Relation;
 use crate::model::table::Table;
+use crate::model::trigger::Trigger;
 use crate::model::types::{LockEscalation, TableOption};
 
 /// TableBuilder holds an intermediate, mutable state for a table and produces an immutable Table.
@@ -12,12 +16,15 @@ pub struct TableBuilder {
     export_date_column: Option<String>,
     lock_escalation: LockEscalation,
     no_export: bool,
-
     columns: Vec<Column>,
     keys: Vec<Key>,
     indexes: Vec<Key>,
     relations: Vec<Relation>,
+    triggers: Vec<Trigger>,
+    constraints: Vec<Constraint>,
+    initial_data: Vec<InitialData>,
     options: Vec<TableOption>,
+    aggregations: Vec<Aggregation>,
 }
 
 impl TableBuilder {
@@ -32,7 +39,11 @@ impl TableBuilder {
             keys: Vec::new(),
             indexes: Vec::new(),
             relations: Vec::new(),
+            triggers: Vec::new(),
+            constraints: Vec::new(),
+            initial_data: Vec::new(),
             options: Vec::new(),
+            aggregations: Vec::new(),
         }
     }
 
@@ -71,25 +82,48 @@ impl TableBuilder {
         self
     }
 
+    pub fn add_trigger(mut self, trigger: Trigger) -> Self {
+        self.triggers.push(trigger);
+        self
+    }
+
+    pub fn add_constraint(mut self, constraint: Constraint) -> Self {
+        self.constraints.push(constraint);
+        self
+    }
+
+    pub fn add_initial_data(mut self, initial_data: InitialData) -> Self {
+        self.initial_data.push(initial_data);
+        self
+    }
+
     pub fn add_option(mut self, o: TableOption) -> Self {
         self.options.push(o);
         self
     }
 
+    pub fn add_aggregation(mut self, aggregation: Aggregation) -> Self {
+        self.aggregations.push(aggregation);
+        self
+    }
+
     pub fn build(self) -> Table {
-        let mut t = Table::new(
+        Table::new(
             self.schema_name,
             self.name,
             self.export_date_column,
             self.lock_escalation,
             self.no_export,
-        );
-        t.columns_mut().extend(self.columns);
-        t.keys_mut().extend(self.keys);
-        t.indexes_mut().extend(self.indexes);
-        t.relations_mut().extend(self.relations);
-        t.options_mut().extend(self.options);
-        t
+            self.columns,
+            self.keys,
+            self.indexes,
+            self.relations,
+            self.triggers,
+            self.constraints,
+            self.initial_data,
+            self.options,
+            self.aggregations,
+        )
     }
 }
 

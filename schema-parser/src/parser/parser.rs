@@ -1,15 +1,13 @@
 use quick_xml::de::from_str as qx_from_str;
 
-use super::convert;
-use super::nodes;
-
-pub use convert::convert_database;
 use schema_model::model::database_model::DatabaseModel;
+use crate::parser::convert::convert_database;
+use crate::parser::nodes::DatabaseXml;
 
-/// parse an instance XML into a Database with one or more Schema values.
+/// parse a string containing XML into a DatabaseModel.
 pub fn parse_database_xml(xml: &str) -> Result<DatabaseModel, String> {
-    let db: nodes::DatabaseXml = qx_from_str(xml).map_err(|e| format!("XML parse error: {e}"))?;
-    Ok(convert_database(db)?)
+    let database_xml: DatabaseXml = qx_from_str(xml).map_err(|e| format!("XML parse error: {e}"))?;
+    Ok(convert_database(database_xml))
 }
 
 #[cfg(test)]
@@ -27,19 +25,19 @@ mod tests {
         assert_eq!(version.minor_version(), 2);
         let schemas = database.schemas();
         assert_eq!(schemas.len(), 2);
-        let s = &schemas[0];
+        let default_schema = &schemas[0];
         // Expect at least 3 tables shown in the sample
-        assert!(s.tables().len() >= 3);
+        assert!(default_schema.tables().len() >= 3);
 
-        let parent = s.get_table("ParentTable");
+        let parent = default_schema.get_table("ParentTable");
         assert_eq!(parent.columns().len(), 4);
         assert!(parent.primary_key().is_some());
 
-        let child = s.get_table("ChildTable");
+        let child = default_schema.get_table("ChildTable");
         assert_eq!(child.columns().len(), 3);
         assert!(child.primary_key().is_some());
 
-        let tester = s.get_table("ColumnTesterTable");
+        let tester = default_schema.get_table("ColumnTesterTable");
         assert!(tester.has_column("varchar"));
         assert!(tester.has_column("sequence"));
     }

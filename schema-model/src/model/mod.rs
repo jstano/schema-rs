@@ -9,7 +9,6 @@ pub mod initial_data;
 pub mod key;
 pub mod other_sql;
 pub mod procedure;
-pub mod procedures;
 pub mod relation;
 pub mod schema;
 pub mod table;

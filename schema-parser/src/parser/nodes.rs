@@ -25,12 +25,12 @@ pub struct DatabaseXml {
     pub views: Vec<ViewXml>,
 
     #[serde(default)]
-    #[serde(rename = "functions")]
-    pub functions: Vec<FunctionsXml>,
+    #[serde(rename = "function")]
+    pub functions: Vec<FunctionXml>,
 
     #[serde(default)]
-    #[serde(rename = "procedures")]
-    pub procedures: Vec<ProceduresXml>,
+    #[serde(rename = "procedure")]
+    pub procedures: Vec<ProcedureXml>,
 
     #[serde(default)]
     #[serde(rename = "otherSql")]
@@ -63,12 +63,12 @@ pub struct SchemaXml {
     pub views: Vec<ViewXml>,
 
     #[serde(default)]
-    #[serde(rename = "functions")]
-    pub functions: Vec<FunctionsXml>,
+    #[serde(rename = "function")]
+    pub functions: Vec<FunctionXml>,
 
     #[serde(default)]
-    #[serde(rename = "procedures")]
-    pub procedures: Vec<ProceduresXml>,
+    #[serde(rename = "procedure")]
+    pub procedures: Vec<ProcedureXml>,
 
     #[serde(default)]
     #[serde(rename = "otherSql")]
@@ -217,12 +217,6 @@ pub struct ViewXml {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct FunctionsXml {
-    #[serde(rename = "function")]
-    pub function: Vec<FunctionXml>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FunctionXml {
     #[serde(rename = "@name")]
     pub name: String,
@@ -236,12 +230,6 @@ pub struct VendorSqlXml {
     pub database_type: String,
     #[serde(rename = "$text")]
     pub sql: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProceduresXml {
-    #[serde(rename = "procedure")]
-    pub procedure: Vec<ProcedureXml>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

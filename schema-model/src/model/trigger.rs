@@ -37,9 +37,9 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let t = Trigger::new("trg", TriggerType::Delete, DatabaseType::Mysql);
+        let t = Trigger::new("trg", TriggerType::Delete, DatabaseType::Postgres);
         assert_eq!(t.trigger_text(), "trg");
         assert_eq!(t.trigger_type(), TriggerType::Delete);
-        assert_eq!(t.database_type(), DatabaseType::Mysql);
+        assert_eq!(t.database_type(), DatabaseType::Postgres);
     }
 }
