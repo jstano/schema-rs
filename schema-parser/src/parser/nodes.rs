@@ -37,10 +37,6 @@ pub struct DatabaseXml {
     pub other_sql: Vec<OtherSqlXml>,
 
     #[serde(default)]
-    #[serde(rename = "customSQL")]
-    pub custom_sql: Vec<CustomSqlXml>,
-
-    #[serde(default)]
     #[serde(rename = "schema")]
     pub schemas: Vec<SchemaXml>,
 }
@@ -73,10 +69,6 @@ pub struct SchemaXml {
     #[serde(default)]
     #[serde(rename = "otherSql")]
     pub other_sql: Vec<OtherSqlXml>,
-
-    #[serde(default)]
-    #[serde(rename = "customSQL")]
-    pub custom_sql: Vec<CustomSqlXml>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -259,42 +251,6 @@ pub struct OtherSqlXml {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CustomSqlXml {
-    #[serde(rename = "@databaseType")]
-    pub database_type: String,
-    #[serde(default)]
-    #[serde(rename = "function")]
-    pub function: Vec<LegacyFunctionXml>,
-    #[serde(default)]
-    #[serde(rename = "procedure")]
-    pub procedure: Vec<LegacyProcedureXml>,
-    #[serde(rename = "other")]
-    pub other: Option<OtherXml>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LegacyFunctionXml {
-    #[serde(rename = "@name")]
-    pub name: String,
-    #[serde(rename = "$text")]
-    pub sql: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LegacyProcedureXml {
-    #[serde(rename = "@name")]
-    pub name: String,
-    #[serde(rename = "$text")]
-    pub sql: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct OtherXml {
-    #[serde(rename = "$text")]
-    pub sql: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EnumXml {
     #[serde(rename = "@name")]
     pub name: String,
@@ -311,7 +267,10 @@ pub struct EnumValueXml {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CheckXml {}
+pub struct CheckXml {
+    #[serde(rename = "$text")]
+    pub value: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TriggersXml {

@@ -66,6 +66,15 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Vec<Column>
                 .length(column_xml.length.unwrap_or(0))
                 .scale(column_xml.scale.unwrap_or(0))
                 .required(column_xml.required.unwrap_or(false))
+                .check_constraint(column_xml.check.as_ref().and_then(|c| c.value.as_ref().cloned()))
+                .default_constraint(column_xml.default_value.clone())
+                .generated(column_xml.generated.clone())
+                .min_value(column_xml.min_value)
+                .max_value(column_xml.max_value)
+                .enum_type(column_xml.enum_type.clone())
+                .element_type(column_xml.element_type.clone())
+                .unicode(column_xml.unicode.unwrap_or(false))
+                .ignore_case(column_xml.ignore_case.unwrap_or(false))
                 .build();
             columns.push(column);
         }

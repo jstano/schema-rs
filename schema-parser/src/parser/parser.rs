@@ -1,13 +1,17 @@
 use quick_xml::de::from_str as qx_from_str;
 
 use schema_model::model::database_model::DatabaseModel;
+use crate::parse_database_roxml;
 use crate::parser::convert::convert_database;
 use crate::parser::nodes::DatabaseXml;
 
 /// parse a string containing XML into a DatabaseModel.
 pub fn parse_database_xml(xml: &str) -> Result<DatabaseModel, String> {
-    let database_xml: DatabaseXml = qx_from_str(xml).map_err(|e| format!("XML parse error: {e}"))?;
+    let database_xml: DatabaseXml = parse_database_roxml(xml).map_err(|e| format!("XML parse error: {e}"))?;
     Ok(convert_database(database_xml))
+
+    // let database_xml: DatabaseXml = qx_from_str(xml).map_err(|e| format!("XML parse error: {e}"))?;
+    // Ok(convert_database(database_xml))
 }
 
 #[cfg(test)]

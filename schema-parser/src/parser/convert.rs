@@ -5,7 +5,6 @@ use schema_model::builder::SchemaBuilder;
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
-use schema_model::model::table::Table;
 use schema_model::model::types::{
     BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder, Version,
 };
@@ -131,37 +130,6 @@ fn default_schema(database: &DatabaseXml) -> Option<Schema> {
         }
     }
 
-    for custom_sql_xml in database.custom_sql.iter() {
-        if let Some(database_type) = str_to_database_type(Some(&custom_sql_xml.database_type)) {
-            let mut functions: Vec<Function> = Vec::new();
-            for function_xml in custom_sql_xml.function.iter() {
-                functions.push(Function::new(
-                    None,
-                    &function_xml.name,
-                    database_type,
-                    &function_xml.sql,
-                ));
-            }
-            if !functions.is_empty() {
-                schema_builder = schema_builder.add_functions(functions);
-            }
-
-            let mut procedures: Vec<Procedure> = Vec::new();
-            for procedure_xml in custom_sql_xml.procedure.iter() {
-                procedures.push(Procedure::new(
-                    None,
-                    &procedure_xml.name,
-                    database_type,
-                    &procedure_xml.sql,
-                ));
-            }
-            if !procedures.is_empty() {
-                schema_builder = schema_builder.add_procedures(procedures);
-            }
-            // cs.other has no order attribute; no clear mapping into OtherSql → skip
-        }
-    }
-
     let root_schema = schema_builder.build();
     if !root_schema.tables().is_empty()
         || !database.views.is_empty()
@@ -169,7 +137,6 @@ fn default_schema(database: &DatabaseXml) -> Option<Schema> {
         || !database.functions.is_empty()
         || !database.procedures.is_empty()
         || !database.other_sql.is_empty()
-        || !database.custom_sql.is_empty()
     {
         return Some(root_schema);
     }
@@ -251,35 +218,6 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
                 order,
                 &other_sql_xml.sql,
             ));
-        }
-    }
-
-    for custom_sql_xml in schema_xml.custom_sql.iter() {
-        if let Some(database_type) = str_to_database_type(Some(&custom_sql_xml.database_type)) {
-            let mut functions: Vec<Function> = Vec::new();
-            for function_xml in custom_sql_xml.function.iter() {
-                functions.push(Function::new(
-                    Some(schema_xml.name.as_str()),
-                    &function_xml.name,
-                    database_type,
-                    &function_xml.sql,
-                ));
-            }
-            if !functions.is_empty() {
-                schema_builder = schema_builder.add_functions(functions);
-            }
-            let mut procedures: Vec<Procedure> = Vec::new();
-            for procedure_xml in custom_sql_xml.procedure.iter() {
-                procedures.push(Procedure::new(
-                    Some(schema_xml.name.as_str()),
-                    &procedure_xml.name,
-                    database_type,
-                    &procedure_xml.sql,
-                ));
-            }
-            if !procedures.is_empty() {
-                schema_builder = schema_builder.add_procedures(procedures);
-            }
         }
     }
 

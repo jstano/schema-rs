@@ -257,6 +257,12 @@
     </sql>
   </procedure>
 
+  <enum name="ShowInModuleType">
+    <value name="ALL" code="A"/>
+    <value name="BUDGET" code="B"/>
+    <value name="LABOR" code="L"/>
+  </enum>
+
   <schema name="test">
     <table name="Unit">
       <columns>
@@ -343,40 +349,4 @@
   <otherSql databaseType="sqlserver" order="bottom">
     other bottom sql for mssql 2
   </otherSql>
-
-  <customSQL databaseType="postgres">
-    <function name="customSQLFunction1">
-      customSQL function sql for pgsql 1
-    </function>
-    <function name="customSQLFunction2">
-      customSQL function sql for pgsql 2
-    </function>
-    <procedure name="customSQLProcedure1">
-      customSQL procedure sql for pgsql 1
-    </procedure>
-    <procedure name="customSQLProcedure2">
-      customSQL procedure sql for pgsql 2
-    </procedure>
-    <other>
-      customSQL other sql for pgsql
-    </other>
-  </customSQL>
-
-  <customSQL databaseType="sqlserver">
-    <function name="customSQLFunction1">
-      customSQL function sql for mssql 1
-    </function>
-    <function name="customSQLFunction2">
-      customSQL function sql for mssql 2
-    </function>
-    <procedure name="customSQLProcedure1">
-      customSQL procedure sql for mssql 1
-    </procedure>
-    <procedure name="customSQLProcedure2">
-      customSQL procedure sql for mssql 2
-    </procedure>
-    <other>
-      customSQL other sql for mssql
-    </other>
-  </customSQL>
 </database>

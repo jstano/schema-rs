@@ -8,45 +8,8 @@ use schema_model::model::types::BooleanMode;
 use crate::common::generator_context::GeneratorContext;
 
 pub trait ColumnTypeGenerator {
-    fn column_type_sql(&self, table: &Table, column: &Column) -> String;
-    fn sequence_sql(&self) -> String;
-    fn long_sequence_sql(&self) -> String;
-    fn text_sql(&self, column: &Column) -> String;
-    fn binary_sql(&self) -> String;
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String;
-    fn array_sql(&self, column: &Column) -> String;
-    fn byte_sql(&self) -> String;
-    fn short_sql(&self) -> String;
-    fn int_sql(&self) -> String;
-    fn long_sql(&self) -> String;
-    fn float_sql(&self) -> String;
-    fn double_sql(&self) -> String;
-    fn decimal_sql(&self, column: &Column) -> String;
-    fn boolean_sql(&self) -> String;
-    fn date_sql(&self) -> String;
-    fn date_time_sql(&self) -> String;
-    fn time_sql(&self) -> String;
-    fn char_sql(&self, column: &Column) -> String;
-    fn varchar_sql(&self, column: &Column) -> String;
-    fn uuid_sql(&self, column: &Column) -> String;
-    fn json_sql(&self, column: &Column) -> String;
-    fn enum_sql(&self, column: &Column) -> String;
-    fn native_boolean_sql(&self) -> String;
-}
+    fn context(&self) -> &GeneratorContext;
 
-pub struct DefaultColumnTypeGenerator {
-    context: GeneratorContext,
-}
-
-impl DefaultColumnTypeGenerator {
-    pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
-    }
-}
-
-impl ColumnTypeGenerator for DefaultColumnTypeGenerator {
     fn column_type_sql(&self, table: &Table, column: &Column) -> String {
         match column.column_type() {
             ColumnType::Sequence => self.sequence_sql(),
@@ -74,29 +37,17 @@ impl ColumnTypeGenerator for DefaultColumnTypeGenerator {
         }
     }
 
-    fn sequence_sql(&self) -> String {
-        panic!("Not implemented");
-    }
+    fn sequence_sql(&self) -> String;
 
-    fn long_sequence_sql(&self) -> String {
-        panic!("Not implemented");
-    }
+    fn long_sequence_sql(&self) -> String;
 
-    fn text_sql(&self, column: &Column) -> String {
-        panic!("Not implemented");
-    }
+    fn text_sql(&self, column: &Column) -> String;
 
-    fn binary_sql(&self) -> String {
-        panic!("Not implemented");
-    }
+    fn binary_sql(&self) -> String;
 
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String {
-        panic!("Not implemented");
-    }
+    fn uuid_default_value_sql(&self, schema: &Schema) -> String;
 
-    fn array_sql(&self, column: &Column) -> String {
-        panic!("Not implemented");
-    }
+    fn array_sql(&self, column: &Column) -> String;
 
     fn byte_sql(&self) -> String {
         "tinyint".to_string()
@@ -138,7 +89,7 @@ impl ColumnTypeGenerator for DefaultColumnTypeGenerator {
     }
 
     fn boolean_sql(&self) -> String {
-        match self.context.settings().boolean_mode() {
+        match self.context().settings().boolean_mode() {
             BooleanMode::Native => self.native_boolean_sql(),
             BooleanMode::YesNo => "varchar(3)".to_string(),
             BooleanMode::YN => "char(1)".to_string()
@@ -169,12 +120,10 @@ impl ColumnTypeGenerator for DefaultColumnTypeGenerator {
         "varchar(36)".to_string()
     }
 
-    fn json_sql(&self, column: &Column) -> String {
-        self.text_sql(column)
-    }
+    fn json_sql(&self, column: &Column) -> String;
 
     fn enum_sql(&self, column: &Column) -> String {
-        let database_model = self.context.settings().database_model();
+        let database_model = self.context().settings().database_model();
         let enum_type: &EnumType = database_model.find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
 
         let mut min_length = usize::MAX;
@@ -194,7 +143,5 @@ impl ColumnTypeGenerator for DefaultColumnTypeGenerator {
         format!("char({})", max_length)
     }
 
-    fn native_boolean_sql(&self) -> String {
-        "boolean".to_string()
-    }
+    fn native_boolean_sql(&self) -> String;
 }

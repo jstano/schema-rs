@@ -11,36 +11,22 @@
       <sequence>
         <choice minOccurs="0" maxOccurs="unbounded">
           <element name="table" type="database:tableType"/>
-
           <element name="enum" type="database:enumType"/>
-
           <element name="view" type="database:viewType"/>
-
           <element name="function" type="database:functionType"/>
-
           <element name="procedure" type="database:procedureType"/>
-
           <element name="otherSql" type="database:otherSqlType"/>
-
-          <element name="customSQL" type="database:customSQLType"/>
 
           <element name="schema">
             <complexType>
               <sequence>
                 <choice minOccurs="0" maxOccurs="unbounded">
                   <element name="table" type="database:tableType"/>
-
                   <element name="enum" type="database:enumType"/>
-
                   <element name="view" type="database:viewType"/>
-
                   <element name="function" type="database:functionType"/>
-
                   <element name="procedure" type="database:procedureType"/>
-
                   <element name="otherSql" type="database:otherSqlType"/>
-
-                  <element name="customSQL" type="database:customSQLType"/>
                 </choice>
               </sequence>
               <attribute name="name" type="string" use="required"/>
@@ -297,40 +283,6 @@
         <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
       </extension>
     </simpleContent>
-  </complexType>
-
-  <complexType name="legacyFunctionType">
-    <simpleContent>
-      <extension base="string">
-        <attribute name="name" type="string" use="required"/>
-      </extension>
-    </simpleContent>
-  </complexType>
-
-  <complexType name="legacyProcedureType">
-    <simpleContent>
-      <extension base="string">
-        <attribute name="name" type="string" use="required"/>
-      </extension>
-    </simpleContent>
-  </complexType>
-
-  <complexType name="otherType">
-    <simpleContent>
-      <extension base="string">
-      </extension>
-    </simpleContent>
-  </complexType>
-
-  <complexType name="customSQLType">
-    <sequence>
-      <element name="function" type="database:legacyFunctionType" minOccurs="0" maxOccurs="unbounded"/>
-
-      <element name="procedure" type="database:legacyProcedureType" minOccurs="0" maxOccurs="unbounded"/>
-
-      <element name="other" type="database:otherType" minOccurs="0" maxOccurs="1"/>
-    </sequence>
-    <attribute name="databaseType" type="database:databaseTypeEnum" use="required"/>
   </complexType>
 
   <complexType name="policySqlType">

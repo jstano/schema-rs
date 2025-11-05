@@ -1,4 +1,4 @@
-use crate::common::column_type_generator::{ColumnTypeGenerator, DefaultColumnTypeGenerator};
+use crate::common::column_type_generator::{ColumnTypeGenerator};
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;

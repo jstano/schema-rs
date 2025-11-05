@@ -1,3 +1,4 @@
+use std::cmp::min;
 use crate::model::column_type::ColumnType;
 use crate::model::types::BooleanMode;
 
@@ -12,8 +13,8 @@ pub struct Column {
     check_constraint: Option<String>,
     default_constraint: Option<String>,
     generated: Option<String>,
-    min_value: Option<String>,
-    max_value: Option<String>,
+    min_value: Option<f64>,
+    max_value: Option<f64>,
     enum_type: Option<String>,
     element_type: Option<String>,
     unicode: bool,
@@ -45,6 +46,42 @@ impl Column {
             element_type: None,
             unicode: false,
             ignore_case: false,
+        }
+    }
+
+    pub fn new_all<S: Into<String>>(
+        schema_name: Option<S>,
+        name: S,
+        column_type: ColumnType,
+        length: i32,
+        scale: i32,
+        required: bool,
+        check_constraint: Option<String>,
+        default_constraint: Option<String>,
+        generated: Option<String>,
+        min_value: Option<f64>,
+        max_value: Option<f64>,
+        enum_type: Option<String>,
+        element_type: Option<String>,
+        unicode: bool,
+        ignore_case: bool,
+    ) -> Self {
+        Self {
+            schema_name: schema_name.map(|s| s.into()),
+            name: name.into(),
+            column_type,
+            length,
+            scale,
+            required,
+            check_constraint: check_constraint,
+            default_constraint: default_constraint,
+            generated: generated,
+            min_value: min_value,
+            max_value: max_value,
+            enum_type: enum_type,
+            element_type: element_type,
+            unicode: unicode,
+            ignore_case: ignore_case,
         }
     }
 
@@ -89,12 +126,12 @@ impl Column {
         self.generated.as_deref()
     }
 
-    pub fn min_value(&self) -> Option<&str> {
-        self.min_value.as_deref()
+    pub fn min_value(&self) -> Option<f64> {
+        self.min_value
     }
 
-    pub fn max_value(&self) -> Option<&str> {
-        self.max_value.as_deref()
+    pub fn max_value(&self) -> Option<f64> {
+        self.max_value
     }
 
     pub fn enum_type(&self) -> Option<&str> {

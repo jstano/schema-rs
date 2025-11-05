@@ -8,4 +8,5 @@ version.workspace = true
 schema-model = { path = "../schema-model" }
 rust-embed = "^8.7.2"
 quick-xml = { version = "^0.38.3", features = ["serialize"] }
+roxmltree = "^0.20"
 serde = { version = "^1", features = ["derive"] }

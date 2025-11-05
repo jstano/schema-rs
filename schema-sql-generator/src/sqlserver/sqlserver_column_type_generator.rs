@@ -1,115 +1,99 @@
 use schema_model::model::column::Column;
 use schema_model::model::schema::Schema;
 use schema_model::model::table::Table;
-use crate::common::column_type_generator::{ColumnTypeGenerator, DefaultColumnTypeGenerator};
+use schema_model::model::types::BooleanMode;
+use crate::common::column_type_generator::{ColumnTypeGenerator};
 use crate::common::generator_context::GeneratorContext;
 
 pub struct SqlServerColumnTypeGenerator {
-    column_type_generator: DefaultColumnTypeGenerator,
+    context: GeneratorContext
 }
 
 impl SqlServerColumnTypeGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            column_type_generator: DefaultColumnTypeGenerator::new(context),
+            context
         }
     }
 }
 
 impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
-    fn column_type_sql(&self, table: &Table, column: &Column) -> String {
-        self.column_type_generator.column_type_sql(table, column)
+    fn context(&self) -> &GeneratorContext {
+        &self.context
     }
 
     fn sequence_sql(&self) -> String {
-        self.column_type_generator.sequence_sql()
+        "integer identity(1,1)".to_string()
     }
 
     fn long_sequence_sql(&self) -> String {
-        self.column_type_generator.long_sequence_sql()
+        "bigint identity(1,1)".to_string()
     }
 
     fn text_sql(&self, column: &Column) -> String {
-        self.column_type_generator.text_sql(column)
+        let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
+
+        if column.unicode() {
+            format!("nvarchar({})", length).to_string()
+        } else {
+            format!("varchar({})", length).to_string()
+        }
     }
 
     fn binary_sql(&self) -> String {
-        self.column_type_generator.binary_sql()
+        "varbinary(max)".to_string()
     }
 
     fn uuid_default_value_sql(&self, schema: &Schema) -> String {
-        self.column_type_generator.uuid_default_value_sql(schema)
+        "newid()".to_string()
     }
 
     fn array_sql(&self, column: &Column) -> String {
-        self.column_type_generator.array_sql(column)
-    }
-
-    fn byte_sql(&self) -> String {
-        self.column_type_generator.byte_sql()
-    }
-
-    fn short_sql(&self) -> String {
-        self.column_type_generator.short_sql()
-    }
-
-    fn int_sql(&self) -> String {
-        self.column_type_generator.int_sql()
-    }
-
-    fn long_sql(&self) -> String {
-        self.column_type_generator.long_sql()
-    }
-
-    fn float_sql(&self) -> String {
-        self.column_type_generator.float_sql()
-    }
-
-    fn double_sql(&self) -> String {
-        self.column_type_generator.double_sql()
-    }
-
-    fn decimal_sql(&self, column: &Column) -> String {
-        self.column_type_generator.decimal_sql(column)
+        panic!("Sql Server does not support arrays")
     }
 
     fn boolean_sql(&self) -> String {
-        self.column_type_generator.boolean_sql()
-    }
-
-    fn date_sql(&self) -> String {
-        self.column_type_generator.date_sql()
+        match self.context.settings().boolean_mode() {
+            BooleanMode::YesNo  => "nvarchar(3)".to_string(),
+            BooleanMode::YN => "nchar(1)".to_string(),
+            BooleanMode::Native => "bit".to_string()
+        }
     }
 
     fn date_time_sql(&self) -> String {
-        self.column_type_generator.date_time_sql()
-    }
-
-    fn time_sql(&self) -> String {
-        self.column_type_generator.time_sql()
+        "datetime".to_string()
     }
 
     fn char_sql(&self, column: &Column) -> String {
-        self.column_type_generator.char_sql(column)
+        let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
+
+        if column.unicode() {
+            format!("nchar({})", length).to_string()
+        } else {
+            format!("char({})", length).to_string()
+        }
     }
 
     fn varchar_sql(&self, column: &Column) -> String {
-        self.column_type_generator.varchar_sql(column)
+        let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
+
+        if column.unicode() {
+            format!("nvarchar({})", length).to_string()
+        } else {
+            format!("varchar({})", length).to_string()
+        }
     }
 
     fn uuid_sql(&self, column: &Column) -> String {
-        self.column_type_generator.uuid_sql(column)
+        "uniqueidentifier".to_string()
     }
 
     fn json_sql(&self, column: &Column) -> String {
-        self.column_type_generator.json_sql(column)
+        "json".to_string()
     }
 
-    fn enum_sql(&self, column: &Column) -> String {
-        self.column_type_generator.enum_sql(column)
-    }
 
     fn native_boolean_sql(&self) -> String {
-        self.column_type_generator.native_boolean_sql()
+        "bit".to_string()
     }
 }
