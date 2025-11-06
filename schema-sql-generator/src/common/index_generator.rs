@@ -16,12 +16,16 @@ impl DefaultIndexGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl IndexGenerator for DefaultIndexGenerator {
     fn output_indexes(&self) {
     }
 
-    fn output_indexes_for_table(&self, table: &Table) {
+    fn output_indexes_for_table(&self, _table: &Table) {
     }
 }

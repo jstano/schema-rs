@@ -2,7 +2,6 @@ use crate::model::enum_type::EnumType;
 use crate::model::function::Function;
 use crate::model::other_sql::OtherSql;
 use crate::model::procedure::Procedure;
-use crate::model::relation::Relation;
 use crate::model::table::Table;
 use crate::model::types::{DatabaseType, RelationType};
 use crate::model::view::View;
@@ -111,15 +110,6 @@ impl Schema {
         errors
     }
 
-    pub(crate) fn sort_tables_by_name(&mut self) {
-        self.tables.sort_by_key(|t| t.name().to_string());
-        // Rebuild the table_map to reflect new indices
-        self.table_map.clear();
-        for (idx, t) in self.tables.iter().enumerate() {
-            self.table_map.insert(t.name().to_lowercase(), idx);
-        }
-    }
-
     // pub fn build_reverse_relations(&mut self) {
     //     // We need mutable access to parent tables too, so handle indices carefully.
     //     // First, collect the relations to add per parent table to avoid multiple mutable borrows.
@@ -185,6 +175,7 @@ mod tests {
     use super::*;
     use crate::model::column::Column;
     use crate::model::column_type::ColumnType;
+    use crate::model::relation::Relation;
 
     fn make_schema() -> Schema {
         Schema::new(Some("schema"))
@@ -228,7 +219,6 @@ mod tests {
         schema.add_table(table1);
         schema.add_table(table2);
         assert_eq!(schema.get_table("Table2").name(), "Table2"); // case-insensitive
-        schema.sort_tables_by_name();
         let names: Vec<_> = schema.tables().iter().map(|t| t.name()).collect();
         assert_eq!(names, vec!["Table1", "Table2"]);
         // table_map rebuilt so get_table still works

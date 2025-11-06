@@ -15,10 +15,14 @@ impl DefaultTableConstraintGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl TableConstraintGenerator for DefaultTableConstraintGenerator {
-    fn table_check_constraints(&self, table: &Table) -> Vec<String> {
+    fn table_check_constraints(&self, _table: &Table) -> Vec<String> {
         vec![]
     }
 }

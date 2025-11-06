@@ -14,6 +14,10 @@ impl DefaultFunctionGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl FunctionGenerator for DefaultFunctionGenerator {

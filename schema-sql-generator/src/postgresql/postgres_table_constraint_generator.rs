@@ -3,15 +3,13 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::table_constraint_generator::{DefaultTableConstraintGenerator, TableConstraintGenerator};
 
 pub struct PostgresTableConstraintGenerator {
-    context: GeneratorContext,
     table_constraint_generator: DefaultTableConstraintGenerator,
 }
 
 impl PostgresTableConstraintGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            table_constraint_generator: DefaultTableConstraintGenerator::new(context.clone()),
-            context,
+            table_constraint_generator: DefaultTableConstraintGenerator::new(context),
         }
     }   
 }

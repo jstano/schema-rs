@@ -134,7 +134,7 @@ impl ColumnGenerator for DefaultColumnGenerator {
         )
     }
 
-    fn column_options(&self, table: &Table, column: &Column) -> String {
+    fn column_options(&self, _table: &Table, _column: &Column) -> String {
         "".to_string()
     }
 

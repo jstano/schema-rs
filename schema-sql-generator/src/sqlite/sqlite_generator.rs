@@ -1,16 +1,15 @@
-use crate::common::function_generator::DefaultFunctionGenerator;
 use crate::common::generator_context::GeneratorContext;
-use crate::common::index_generator::DefaultIndexGenerator;
-use crate::common::other_sql_generator::DefaultOtherSqlGenerator;
-use crate::common::procedure_generator::DefaultProcedureGenerator;
-use crate::common::relation_generator::DefaultRelationGenerator;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
-use crate::common::trigger_generator::DefaultTriggerGenerator;
-use crate::common::view_generator::DefaultViewGenerator;
+use crate::sqlite::sqlite_function_generator::SqliteFunctionGenerator;
+use crate::sqlite::sqlite_index_generator::SqliteIndexGenerator;
+use crate::sqlite::sqlite_other_sql_generator::SqliteOtherSqlGenerator;
+use crate::sqlite::sqlite_procedure_generator::SqliteProcedureGenerator;
+use crate::sqlite::sqlite_relation_generator::SqliteRelationGenerator;
 use crate::sqlite::sqlite_table_generator::SqliteTableGenerator;
+use crate::sqlite::sqlite_trigger_generator::SqliteTriggerGenerator;
+use crate::sqlite::sqlite_view_generator::SqliteViewGenerator;
 
 pub struct SqliteGenerator {
-    context: GeneratorContext,
     sql_generator: DefaultSqlGenerator,
 }
 
@@ -19,17 +18,16 @@ impl SqliteGenerator {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
             Box::new(SqliteTableGenerator::new(context.clone())),
-            Box::new(DefaultRelationGenerator::new(context.clone())),
-            Box::new(DefaultIndexGenerator::new(context.clone())),
-            Box::new(DefaultFunctionGenerator::new(context.clone())),
-            Box::new(DefaultViewGenerator::new(context.clone())),
-            Box::new(DefaultProcedureGenerator::new(context.clone())),
-            Box::new(DefaultTriggerGenerator::new(context.clone())),
-            Box::new(DefaultOtherSqlGenerator::new(context.clone())),
+            Box::new(SqliteRelationGenerator::new(context.clone())),
+            Box::new(SqliteIndexGenerator::new(context.clone())),
+            Box::new(SqliteFunctionGenerator::new(context.clone())),
+            Box::new(SqliteViewGenerator::new(context.clone())),
+            Box::new(SqliteProcedureGenerator::new(context.clone())),
+            Box::new(SqliteTriggerGenerator::new(context.clone())),
+            Box::new(SqliteOtherSqlGenerator::new(context.clone())),
         );
 
         Self {
-            context,
             sql_generator,
         }
     }

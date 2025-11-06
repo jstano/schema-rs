@@ -28,7 +28,7 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
         "integer auto_increment".to_string()
     }
 
-    fn text_sql(&self, column: &Column) -> String {
+    fn text_sql(&self, _column: &Column) -> String {
         "text".to_string()
     }
 
@@ -36,11 +36,11 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
         "blob".to_string()
     }
 
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String {
+    fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
         "uuidv4()".to_string()
     }
 
-    fn array_sql(&self, column: &Column) -> String {
+    fn array_sql(&self, _column: &Column) -> String {
         panic!("SQLite does not support arrays")
     }
 
@@ -56,11 +56,11 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
         "text".to_string()
     }
 
-    fn uuid_sql(&self, column: &Column) -> String {
+    fn uuid_sql(&self, _column: &Column) -> String {
         "text".to_string()
     }
 
-    fn json_sql(&self, column: &Column) -> String {
+    fn json_sql(&self, _column: &Column) -> String {
         "text".to_string()
     }
 

@@ -8,7 +8,6 @@ use crate::h2::h2_key_generator::H2KeyGenerator;
 use crate::h2::h2_table_constraint_generator::H2TableConstraintGenerator;
 
 pub struct H2TableGenerator {
-    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -23,7 +22,6 @@ impl H2TableGenerator {
                 Box::new(H2TableConstraintGenerator::new(context.clone())),
                 Box::new(H2IndexGenerator::new(context.clone())),
             ),
-            context,
         }
     }
 }

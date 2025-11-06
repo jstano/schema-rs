@@ -1,17 +1,15 @@
-use crate::common::function_generator::DefaultFunctionGenerator;
 use crate::common::generator_context::GeneratorContext;
-use crate::common::index_generator::DefaultIndexGenerator;
-use crate::common::other_sql_generator::DefaultOtherSqlGenerator;
-use crate::common::procedure_generator::DefaultProcedureGenerator;
-use crate::common::relation_generator::DefaultRelationGenerator;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
-use crate::common::table_generator::DefaultTableGenerator;
-use crate::common::trigger_generator::DefaultTriggerGenerator;
-use crate::common::view_generator::DefaultViewGenerator;
+use crate::h2::h2_function_generator::H2FunctionGenerator;
+use crate::h2::h2_index_generator::H2IndexGenerator;
+use crate::h2::h2_other_sql_generator::H2OtherSqlGenerator;
+use crate::h2::h2_procedure_generator::H2ProcedureGenerator;
+use crate::h2::h2_relation_generator::H2RelationGenerator;
 use crate::h2::h2_table_generator::H2TableGenerator;
+use crate::h2::h2_trigger_generator::H2TriggerGenerator;
+use crate::h2::h2_view_generator::H2ViewGenerator;
 
 pub struct H2Generator {
-    context: GeneratorContext,
     sql_generator: DefaultSqlGenerator,
 }
 
@@ -20,17 +18,16 @@ impl H2Generator {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
             Box::new(H2TableGenerator::new(context.clone())),
-            Box::new(DefaultRelationGenerator::new(context.clone())),
-            Box::new(DefaultIndexGenerator::new(context.clone())),
-            Box::new(DefaultFunctionGenerator::new(context.clone())),
-            Box::new(DefaultViewGenerator::new(context.clone())),
-            Box::new(DefaultProcedureGenerator::new(context.clone())),
-            Box::new(DefaultTriggerGenerator::new(context.clone())),
-            Box::new(DefaultOtherSqlGenerator::new(context.clone())),
+            Box::new(H2RelationGenerator::new(context.clone())),
+            Box::new(H2IndexGenerator::new(context.clone())),
+            Box::new(H2FunctionGenerator::new(context.clone())),
+            Box::new(H2ViewGenerator::new(context.clone())),
+            Box::new(H2ProcedureGenerator::new(context.clone())),
+            Box::new(H2TriggerGenerator::new(context.clone())),
+            Box::new(H2OtherSqlGenerator::new(context.clone())),
         );
 
         Self {
-            context,
             sql_generator,
         }
     }

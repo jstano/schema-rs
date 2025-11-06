@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use super::nodes::*;
 use crate::parser::table_parser::parse_table;
 use schema_model::builder::SchemaBuilder;
@@ -11,7 +10,6 @@ use schema_model::model::types::{
 use schema_model::model::view::View;
 use schema_model::model::{
     aggregation::AggregationFrequency,
-    database_model,
     enum_type::{EnumType, EnumValue},
     function::Function,
     other_sql::OtherSql,
@@ -25,8 +23,8 @@ pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
         schemas.push(default_schema);
     }
 
-    for schemaXml in database_xml.schemas.into_iter() {
-        if let Some(s) = sub_schema(&schemaXml) {
+    for schema_xml in database_xml.schemas.into_iter() {
+        if let Some(s) = sub_schema(&schema_xml) {
             schemas.push(s);
         }
     }

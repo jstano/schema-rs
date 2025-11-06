@@ -14,6 +14,10 @@ impl DefaultViewGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl ViewGenerator for DefaultViewGenerator {

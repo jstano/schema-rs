@@ -2,15 +2,13 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::view_generator::{DefaultViewGenerator, ViewGenerator};
 
 pub struct SqliteViewGenerator {
-    context: GeneratorContext,
     view_generator: DefaultViewGenerator,
 }
 
 impl SqliteViewGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            view_generator: DefaultViewGenerator::new(context.clone()),
-            context,
+            view_generator: DefaultViewGenerator::new(context),
         }
     }
 }

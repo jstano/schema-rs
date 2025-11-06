@@ -1,16 +1,15 @@
-use crate::common::function_generator::DefaultFunctionGenerator;
 use crate::common::generator_context::GeneratorContext;
-use crate::common::index_generator::DefaultIndexGenerator;
-use crate::common::other_sql_generator::DefaultOtherSqlGenerator;
-use crate::common::procedure_generator::DefaultProcedureGenerator;
-use crate::common::relation_generator::DefaultRelationGenerator;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
-use crate::common::trigger_generator::DefaultTriggerGenerator;
-use crate::common::view_generator::DefaultViewGenerator;
+use crate::mysql::mysql_function_generator::MySqlFunctionGenerator;
+use crate::mysql::mysql_index_generator::MySqlIndexGenerator;
+use crate::mysql::mysql_other_sql_generator::MySqlOtherSqlGenerator;
+use crate::mysql::mysql_procedure_generator::MySqlProcedureGenerator;
+use crate::mysql::mysql_relation_generator::MySqlRelationGenerator;
 use crate::mysql::mysql_table_generator::MySqlTableGenerator;
+use crate::mysql::mysql_trigger_generator::MySqlTriggerGenerator;
+use crate::mysql::mysql_view_generator::MySqlViewGenerator;
 
 pub struct MySqlGenerator {
-    context: GeneratorContext,
     sql_generator: DefaultSqlGenerator,
 }
 
@@ -19,17 +18,16 @@ impl MySqlGenerator {
         let sql_generator = DefaultSqlGenerator::new(
             context.clone(),
             Box::new(MySqlTableGenerator::new(context.clone())),
-            Box::new(DefaultRelationGenerator::new(context.clone())),
-            Box::new(DefaultIndexGenerator::new(context.clone())),
-            Box::new(DefaultFunctionGenerator::new(context.clone())),
-            Box::new(DefaultViewGenerator::new(context.clone())),
-            Box::new(DefaultProcedureGenerator::new(context.clone())),
-            Box::new(DefaultTriggerGenerator::new(context.clone())),
-            Box::new(DefaultOtherSqlGenerator::new(context.clone())),
+            Box::new(MySqlRelationGenerator::new(context.clone())),
+            Box::new(MySqlIndexGenerator::new(context.clone())),
+            Box::new(MySqlFunctionGenerator::new(context.clone())),
+            Box::new(MySqlViewGenerator::new(context.clone())),
+            Box::new(MySqlProcedureGenerator::new(context.clone())),
+            Box::new(MySqlTriggerGenerator::new(context.clone())),
+            Box::new(MySqlOtherSqlGenerator::new(context.clone())),
         );
 
         Self {
-            context,
             sql_generator,
         }
     }

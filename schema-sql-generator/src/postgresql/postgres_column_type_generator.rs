@@ -41,7 +41,7 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
         "bytea".to_string()
     }
 
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String {
+    fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
         "generate_uuid()".to_string()
     }
 
@@ -67,11 +67,11 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
         "text".to_string()
     }
 
-    fn uuid_sql(&self, column: &Column) -> String {
+    fn uuid_sql(&self, _column: &Column) -> String {
         "uuid".to_string()
     }
 
-    fn json_sql(&self, column: &Column) -> String {
+    fn json_sql(&self, _column: &Column) -> String {
         "jsonb".to_string()
     }
 

@@ -1,21 +1,21 @@
 use schema_model::model::table::Table;
 use crate::common::generator_context::GeneratorContext;
-use crate::common::table_constraint_generator::TableConstraintGenerator;
+use crate::common::table_constraint_generator::{DefaultTableConstraintGenerator, TableConstraintGenerator};
 
 pub struct SqliteTableConstraintGenerator {
-    context: GeneratorContext,
+    table_constraint_generator: DefaultTableConstraintGenerator,
 }
 
 impl SqliteTableConstraintGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            context,
+            table_constraint_generator: DefaultTableConstraintGenerator::new(context),
         }
     }   
 }
 
 impl TableConstraintGenerator for SqliteTableConstraintGenerator {
     fn table_check_constraints(&self, table: &Table) -> Vec<String> {
-        todo!()
+        self.table_constraint_generator.table_check_constraints(table)
     }
 }

@@ -28,7 +28,7 @@ impl ColumnTypeGenerator for MySqlColumnTypeGenerator {
         "bigint auto_increment".to_string()
     }
 
-    fn text_sql(&self, column: &Column) -> String {
+    fn text_sql(&self, _column: &Column) -> String {
         "mediumtext".to_string()
     }
 
@@ -36,19 +36,19 @@ impl ColumnTypeGenerator for MySqlColumnTypeGenerator {
         "mediumblob".to_string()
     }
 
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String {
+    fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
         "uuid()".to_string()
     }
 
-    fn array_sql(&self, column: &Column) -> String {
+    fn array_sql(&self, _column: &Column) -> String {
         panic!("MySQL does not support arrays")
     }
 
-    fn uuid_sql(&self, column: &Column) -> String {
+    fn uuid_sql(&self, _column: &Column) -> String {
         "char(36)".to_string()
     }
 
-    fn json_sql(&self, column: &Column) -> String {
+    fn json_sql(&self, _column: &Column) -> String {
         "mediumtext".to_string()
     }
 

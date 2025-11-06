@@ -14,6 +14,10 @@ impl DefaultProcedureGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl ProcedureGenerator for DefaultProcedureGenerator {

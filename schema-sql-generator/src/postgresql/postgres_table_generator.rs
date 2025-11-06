@@ -8,7 +8,6 @@ use crate::postgresql::postgres_key_generator::PostgresKeyGenerator;
 use crate::postgresql::postgres_table_constraint_generator::PostgresTableConstraintGenerator;
 
 pub struct PostgresTableGenerator {
-    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -23,7 +22,6 @@ impl PostgresTableGenerator {
                 Box::new(PostgresTableConstraintGenerator::new(context.clone())),
                 Box::new(PostgresIndexGenerator::new(context.clone())),
             ),
-            context,
         }
     }
 }

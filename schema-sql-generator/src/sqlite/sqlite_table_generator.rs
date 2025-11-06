@@ -8,7 +8,6 @@ use crate::sqlite::sqlite_table_constraint_generator::SqliteTableConstraintGener
 use schema_model::model::table::Table;
 
 pub struct SqliteTableGenerator {
-    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -23,7 +22,6 @@ impl SqliteTableGenerator {
                 Box::new(SqliteTableConstraintGenerator::new(context.clone())),
                 Box::new(SqliteIndexGenerator::new(context.clone())),
             ),
-            context,
         }
     }
 }

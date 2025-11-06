@@ -1,11 +1,11 @@
+use crate::common::column_constraint_generator::ColumnConstraintGenerator;
+use crate::common::column_generator::ColumnGenerator;
 use crate::common::generator_context::GeneratorContext;
-use schema_model::model::table::Table;
+use crate::common::index_generator::IndexGenerator;
+use crate::common::key_generator::KeyGenerator;
+use crate::common::table_constraint_generator::TableConstraintGenerator;
 use crate::{sql_newline, sql_print, sql_println};
-use crate::common::column_constraint_generator::{ColumnConstraintGenerator, DefaultColumnConstraintGenerator};
-use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator};
-use crate::common::index_generator::{DefaultIndexGenerator, IndexGenerator};
-use crate::common::key_generator::{DefaultKeyGenerator, KeyGenerator};
-use crate::common::table_constraint_generator::{DefaultTableConstraintGenerator, TableConstraintGenerator};
+use schema_model::model::table::Table;
 
 pub trait TableGenerator {
     fn output_tables(&self);
@@ -94,7 +94,7 @@ impl TableGenerator for DefaultTableGenerator {
         });
     }
 
-    fn output_table_footer(&self, table: &Table) {
+    fn output_table_footer(&self, _table: &Table) {
         self.context.with_writer(|writer| {
             sql_println!(writer, "){}", self.context.settings().statement_separator());
             sql_newline!(writer);

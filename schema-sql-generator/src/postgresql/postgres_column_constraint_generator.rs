@@ -3,15 +3,13 @@ use crate::common::column_constraint_generator::{ColumnConstraintGenerator, Defa
 use crate::common::generator_context::GeneratorContext;
 
 pub struct PostgresColumnConstraintGenerator {
-    context: GeneratorContext,
     column_constraint_generator: DefaultColumnConstraintGenerator,
 }
 
 impl PostgresColumnConstraintGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
-            column_constraint_generator: DefaultColumnConstraintGenerator::new(context.clone()),
-            context,
+            column_constraint_generator: DefaultColumnConstraintGenerator::new(context),
         }
     }
 }

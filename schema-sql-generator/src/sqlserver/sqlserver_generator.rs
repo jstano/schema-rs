@@ -10,7 +10,6 @@ use crate::sqlserver::sqlserver_trigger_generator::SqlServerTriggerGenerator;
 use crate::sqlserver::sqlserver_view_generator::SqlServerViewGenerator;
 
 pub struct SqlServerGenerator {
-    context: GeneratorContext,
     sql_generator: DefaultSqlGenerator,
 }
 
@@ -29,7 +28,6 @@ impl SqlServerGenerator {
         );
 
         Self {
-            context,
             sql_generator,
         }
     }

@@ -8,7 +8,6 @@ use schema_model::model::table::Table;
 use crate::mysql::mysql_index_generator::MySqlIndexGenerator;
 
 pub struct MySqlTableGenerator {
-    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -23,7 +22,6 @@ impl MySqlTableGenerator {
                 Box::new(MySqlTableConstraintGenerator::new(context.clone())),
                 Box::new(MySqlIndexGenerator::new(context.clone())),
             ),
-            context,
         }
     }
 }

@@ -15,10 +15,14 @@ impl DefaultKeyGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl KeyGenerator for DefaultKeyGenerator {
-    fn key_constraints(&self, table: &Table) -> Vec<String> {
+    fn key_constraints(&self, _table: &Table) -> Vec<String> {
         vec![]
     }
 }

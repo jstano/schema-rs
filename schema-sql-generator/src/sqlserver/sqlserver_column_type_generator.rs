@@ -1,6 +1,5 @@
 use schema_model::model::column::Column;
 use schema_model::model::schema::Schema;
-use schema_model::model::table::Table;
 use schema_model::model::types::BooleanMode;
 use crate::common::column_type_generator::{ColumnTypeGenerator};
 use crate::common::generator_context::GeneratorContext;
@@ -44,11 +43,11 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
         "varbinary(max)".to_string()
     }
 
-    fn uuid_default_value_sql(&self, schema: &Schema) -> String {
+    fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
         "newid()".to_string()
     }
 
-    fn array_sql(&self, column: &Column) -> String {
+    fn array_sql(&self, _column: &Column) -> String {
         panic!("Sql Server does not support arrays")
     }
 
@@ -84,11 +83,11 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
         }
     }
 
-    fn uuid_sql(&self, column: &Column) -> String {
+    fn uuid_sql(&self, _column: &Column) -> String {
         "uniqueidentifier".to_string()
     }
 
-    fn json_sql(&self, column: &Column) -> String {
+    fn json_sql(&self, _column: &Column) -> String {
         "json".to_string()
     }
 

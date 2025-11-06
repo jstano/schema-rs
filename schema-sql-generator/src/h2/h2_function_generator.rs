@@ -2,7 +2,6 @@ use crate::common::function_generator::{DefaultFunctionGenerator, FunctionGenera
 use crate::common::generator_context::GeneratorContext;
 
 pub struct H2FunctionGenerator {
-    context: GeneratorContext,
     function_generator: DefaultFunctionGenerator
 }
 
@@ -10,7 +9,6 @@ impl H2FunctionGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
             function_generator: DefaultFunctionGenerator::new(context.clone()),
-            context,
         }
     }
 }

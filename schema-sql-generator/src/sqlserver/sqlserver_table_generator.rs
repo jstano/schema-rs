@@ -8,7 +8,6 @@ use crate::sqlserver::sqlserver_key_generator::SqlServerKeyGenerator;
 use crate::sqlserver::sqlserver_table_constraint_generator::SqlServerTableConstraintGenerator;
 
 pub struct SqlServerTableGenerator {
-    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -23,7 +22,6 @@ impl SqlServerTableGenerator {
                 Box::new(SqlServerTableConstraintGenerator::new(context.clone())),
                 Box::new(SqlServerIndexGenerator::new(context.clone())),
             ),
-            context,
         }
     }
 }

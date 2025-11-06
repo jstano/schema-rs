@@ -10,7 +10,7 @@ use crate::common::generator_context::GeneratorContext;
 pub trait ColumnTypeGenerator {
     fn context(&self) -> &GeneratorContext;
 
-    fn column_type_sql(&self, table: &Table, column: &Column) -> String {
+    fn column_type_sql(&self, _table: &Table, column: &Column) -> String {
         match column.column_type() {
             ColumnType::Sequence => self.sequence_sql(),
             ColumnType::LongSequence => self.long_sequence_sql(),
@@ -116,7 +116,7 @@ pub trait ColumnTypeGenerator {
         format!("varchar({})", column.length())
     }
 
-    fn uuid_sql(&self, column: &Column) -> String {
+    fn uuid_sql(&self, _column: &Column) -> String {
         "varchar(36)".to_string()
     }
 

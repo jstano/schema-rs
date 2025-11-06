@@ -35,11 +35,6 @@ impl PostgresGenerator {
         }
     }
 
-    pub fn output_header(&mut self) {
-        self.create_uuid_generator_function();
-        self.create_extensions();
-    }
-
     fn create_uuid_generator_function(&self) {
         let separator = self.context.settings().statement_separator().to_string();
 

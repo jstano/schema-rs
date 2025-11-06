@@ -1,4 +1,3 @@
-use std::cmp::min;
 use crate::model::column_type::ColumnType;
 use crate::model::types::BooleanMode;
 

@@ -15,10 +15,14 @@ impl DefaultColumnConstraintGenerator {
             context,
         }
     }
+
+    pub fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
 }
 
 impl ColumnConstraintGenerator for DefaultColumnConstraintGenerator {
-    fn column_check_constraints(&self, table: &Table) -> Vec<String> {
+    fn column_check_constraints(&self, _table: &Table) -> Vec<String> {
         vec![]
     }
 }

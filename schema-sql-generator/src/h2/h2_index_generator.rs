@@ -3,7 +3,6 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::index_generator::{DefaultIndexGenerator, IndexGenerator};
 
 pub struct H2IndexGenerator {
-    context: GeneratorContext,
     index_generator: DefaultIndexGenerator,
 }
 
@@ -11,7 +10,6 @@ impl H2IndexGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
             index_generator: DefaultIndexGenerator::new(context.clone()),
-            context,
         }
     }
 }
