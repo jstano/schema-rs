@@ -11,17 +11,53 @@ use crate::common::view_generator::ViewGenerator;
 use schema_model::model::types::ForeignKeyMode;
 
 pub trait SqlGenerator {
-    fn generate(&self);
-    fn output_sql(&self);
+    fn context(&self) -> &GeneratorContext;
+
+    fn generate(&self)  {
+        self.output_sql();
+    }
+
+    fn output_sql(&self) {
+        self.output_header();
+
+        if self.context().settings().output_mode() == OutputMode::IndexesOnly {
+            self.output_indexes();
+        } else if self.context().settings().output_mode() == OutputMode::TriggersOnly {
+            self.output_triggers();
+        } else {
+            self.output_other_sql_top();
+            self.output_tables();
+
+            if self.context().settings().foreign_key_mode() == ForeignKeyMode::Relations {
+                self.output_relations();
+            }
+
+            self.output_triggers();
+            self.output_functions();
+            self.output_views();
+            self.output_procedures();
+            self.output_other_sql_bottom();
+        }
+    }
+
     fn output_header(&self);
+
     fn output_tables(&self);
+
     fn output_relations(&self);
+
     fn output_indexes(&self);
+
     fn output_triggers(&self);
+
     fn output_functions(&self);
+
     fn output_views(&self);
+
     fn output_procedures(&self);
+
     fn output_other_sql_top(&self);
+
     fn output_other_sql_bottom(&self);
 }
 
@@ -64,6 +100,10 @@ impl DefaultSqlGenerator {
 }
 
 impl SqlGenerator for DefaultSqlGenerator {
+    fn context(&self) -> &GeneratorContext {
+        &self.context
+    }
+
     fn generate(&self) {
         self.output_sql();
     }

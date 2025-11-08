@@ -83,12 +83,8 @@ impl PostgresGenerator {
 }
 
 impl SqlGenerator for PostgresGenerator {
-    fn generate(&self) {
-        self.sql_generator.generate()
-    }
-
-    fn output_sql(&self) {
-        self.sql_generator.output_sql();
+    fn context(&self) -> &GeneratorContext {
+        &self.context
     }
 
     fn output_header(&self) {

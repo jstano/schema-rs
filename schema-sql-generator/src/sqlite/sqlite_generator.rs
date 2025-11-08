@@ -34,6 +34,10 @@ impl SqliteGenerator {
 }
 
 impl SqlGenerator for SqliteGenerator {
+    fn context(&self) -> &GeneratorContext {
+        self.sql_generator.context()
+    }
+
     fn generate(&self) {
         self.sql_generator.generate()
     }

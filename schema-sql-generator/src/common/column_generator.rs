@@ -104,6 +104,10 @@ impl DefaultColumnGenerator {
 
         None
     }
+
+    fn default_constraint(&self, _table: &Table, column: &Column, default_value: &str) -> String {
+        format!("constraint {} default {}", column.name(), default_value)
+    }
 }
 
 impl ColumnGenerator for DefaultColumnGenerator {
@@ -134,8 +138,28 @@ impl ColumnGenerator for DefaultColumnGenerator {
         )
     }
 
-    fn column_options(&self, _table: &Table, _column: &Column) -> String {
-        "".to_string()
+    fn column_options(&self, table: &Table, column: &Column) -> String {
+        let mut options = String::new();
+
+        if column.required() {
+            if column.length() > 0 {
+                options.push_str(" ");
+            }
+
+            options.push_str("not null")
+        }
+
+        let default_value = self.default_value(table, column);
+
+        if default_value.is_some() {
+            if !options.is_empty() {
+                options.push_str(" ");
+            }
+
+            options.push_str(self.default_constraint(table, column, default_value.unwrap().as_ref()).as_str());
+        }
+
+        options.trim().to_string()
     }
 
     fn default_value(&self, table: &Table, column: &Column) -> Option<String> {

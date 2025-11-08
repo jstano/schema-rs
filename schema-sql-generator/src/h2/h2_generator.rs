@@ -34,6 +34,10 @@ impl H2Generator {
 }
 
 impl SqlGenerator for H2Generator {
+    fn context(&self) -> &GeneratorContext {
+        self.sql_generator.context()
+    }
+
     fn generate(&self) {
         self.sql_generator.generate()
     }

@@ -34,6 +34,10 @@ impl SqlServerGenerator {
 }
 
 impl SqlGenerator for SqlServerGenerator {
+    fn context(&self) -> &GeneratorContext {
+        self.sql_generator.context()
+    }
+
     fn generate(&self) {
         self.sql_generator.generate()
     }
