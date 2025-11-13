@@ -144,7 +144,6 @@ fn parse_column_node(node: Node) -> ColumnXml {
         length: attr_i32(node, "length"),
         scale: attr_i32(node, "scale"),
         required: attr_bool(node, "required"),
-        unicode: attr_bool(node, "unicode"),
         ignore_case: attr_bool(node, "ignoreCase"),
         default_value: attr_string(node, "default"),
         generated: attr_string(node, "generated"),

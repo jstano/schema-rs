@@ -31,12 +31,7 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
 
     fn text_sql(&self, column: &Column) -> String {
         let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
-
-        if column.unicode() {
-            format!("nvarchar({})", length).to_string()
-        } else {
-            format!("varchar({})", length).to_string()
-        }
+        format!("nvarchar({})", length).to_string()
     }
 
     fn binary_sql(&self) -> String {
@@ -65,22 +60,12 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
 
     fn char_sql(&self, column: &Column) -> String {
         let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
-
-        if column.unicode() {
-            format!("nchar({})", length).to_string()
-        } else {
-            format!("char({})", length).to_string()
-        }
+        format!("nchar({})", length).to_string()
     }
 
     fn varchar_sql(&self, column: &Column) -> String {
         let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
-
-        if column.unicode() {
-            format!("nvarchar({})", length).to_string()
-        } else {
-            format!("varchar({})", length).to_string()
-        }
+        format!("nvarchar({})", length).to_string()
     }
 
     fn uuid_sql(&self, _column: &Column) -> String {

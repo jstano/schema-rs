@@ -119,8 +119,6 @@ pub struct ColumnXml {
     pub scale: Option<i32>,
     #[serde(rename = "@required")]
     pub required: Option<bool>,
-    #[serde(rename = "@unicode")]
-    pub unicode: Option<bool>,
     #[serde(rename = "@ignoreCase")]
     pub ignore_case: Option<bool>,
     #[serde(rename = "@default")]

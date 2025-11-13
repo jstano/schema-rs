@@ -16,7 +16,6 @@ pub struct Column {
     max_value: Option<f64>,
     enum_type: Option<String>,
     element_type: Option<String>,
-    unicode: bool,
     ignore_case: bool,
 }
 
@@ -43,7 +42,6 @@ impl Column {
             max_value: None,
             enum_type: None,
             element_type: None,
-            unicode: false,
             ignore_case: false,
         }
     }
@@ -62,7 +60,6 @@ impl Column {
         max_value: Option<f64>,
         enum_type: Option<String>,
         element_type: Option<String>,
-        unicode: bool,
         ignore_case: bool,
     ) -> Self {
         Self {
@@ -79,7 +76,6 @@ impl Column {
             max_value: max_value,
             enum_type: enum_type,
             element_type: element_type,
-            unicode: unicode,
             ignore_case: ignore_case,
         }
     }
@@ -141,10 +137,6 @@ impl Column {
         self.element_type.as_deref()
     }
 
-    pub fn unicode(&self) -> bool {
-        self.unicode
-    }
-
     pub fn ignore_case(&self) -> bool {
         self.ignore_case
     }
@@ -176,7 +168,6 @@ mod tests {
         assert_eq!(c.scale(), 0);
         assert!(c.required());
         assert!(c.is_required());
-        assert!(!c.unicode());
         assert!(!c.ignore_case());
     }
 

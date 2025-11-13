@@ -73,7 +73,6 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Vec<Column>
                 .max_value(column_xml.max_value)
                 .enum_type(column_xml.enum_type.clone())
                 .element_type(column_xml.element_type.clone())
-                .unicode(column_xml.unicode.unwrap_or(false))
                 .ignore_case(column_xml.ignore_case.unwrap_or(false))
                 .build();
             columns.push(column);

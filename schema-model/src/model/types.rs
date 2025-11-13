@@ -7,6 +7,28 @@ pub enum DatabaseType {
     SqlServer,
 }
 
+impl DatabaseType {
+    pub fn statement_separator(&self) -> &'static str {
+        match self {
+            DatabaseType::H2 => ";",
+            DatabaseType::Mysql => ";",
+            DatabaseType::Postgres => ";",
+            DatabaseType::Sqlite => ";",
+            DatabaseType::SqlServer => "\nGO",
+        }
+    }
+
+    pub fn max_key_name_length(&self) -> usize {
+        match self {
+            DatabaseType::H2 => 64,
+            DatabaseType::Mysql => 64,
+            DatabaseType::Postgres => 63,
+            DatabaseType::Sqlite => 128,
+            DatabaseType::SqlServer => 128,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelationType {
     Cascade,

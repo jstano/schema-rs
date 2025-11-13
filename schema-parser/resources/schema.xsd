@@ -55,7 +55,6 @@
                 <attribute name="length" type="integer"/>
                 <attribute name="scale" type="integer"/>
                 <attribute name="required" type="boolean"/>
-                <attribute name="unicode" type="boolean"/>
                 <attribute name="ignoreCase" type="boolean"/>
                 <attribute name="default" type="string"/>
                 <attribute name="generated" type="string"/>

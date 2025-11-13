@@ -57,7 +57,7 @@ pub fn main() {
     let boolean_mode = arguments.get_one::<String>("boolean-mode").unwrap_or(&empty);
     let output_mode = arguments.get_one::<String>("output-mode").unwrap_or(&empty);
     let schema_path = Path::new(schema_file);
-    let output_path = schema_path.with_extension("sql");
+    let output_path = build_output_path(schema_path, database_type.to_string().to_lowercase());
     let output_file = File::create(output_path).expect("");
     let print_writer = PrintWriter::new(Box::new(output_file));
     let generator_type: GeneratorType = database_type.parse().unwrap();
@@ -76,4 +76,12 @@ pub fn main() {
 fn load_schema(schema_path: &Path) -> DatabaseModel {
     let contents = fs::read_to_string(schema_path).expect("failed to read the schema file");
     parse_database_xml(contents.as_str()).expect("failed to parse the schema")
+}
+
+fn build_output_path(path: &Path, database_type: String) -> String {
+    let parent = path.parent().expect("Path has no parent");
+    let stem = path.file_stem().expect("No file stem").to_string_lossy();
+    let new_filename = format!("{}-{}.sql", stem, database_type);
+
+    parent.join(new_filename).to_string_lossy().to_string()
 }

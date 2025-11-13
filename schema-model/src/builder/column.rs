@@ -17,7 +17,6 @@ pub struct ColumnBuilder {
     max_value: Option<f64>,
     enum_type: Option<String>,
     element_type: Option<String>,
-    unicode: bool,
     ignore_case: bool,
 }
 
@@ -37,7 +36,6 @@ impl ColumnBuilder {
             max_value: None,
             enum_type: None,
             element_type: None,
-            unicode: false,
             ignore_case: false,
         }
     }
@@ -91,11 +89,6 @@ impl ColumnBuilder {
         self
     }
 
-    pub fn unicode(mut self, unicode: bool) -> Self {
-        self.unicode = unicode;
-        self
-    }
-
     pub fn ignore_case(mut self, ignore_case: bool) -> Self {
         self.ignore_case = ignore_case;
         self
@@ -116,7 +109,6 @@ impl ColumnBuilder {
             self.max_value,
             self.enum_type,
             self.element_type,
-            self.unicode,
             self.ignore_case,
         )
     }
