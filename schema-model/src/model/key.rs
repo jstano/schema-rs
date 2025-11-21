@@ -17,7 +17,7 @@ impl KeyColumn {
 
 #[derive(Debug, Clone)]
 pub struct Key {
-    r#type: KeyType,
+    key_type: KeyType,
     columns: Vec<KeyColumn>,
     cluster: bool,
     compress: bool,
@@ -26,9 +26,9 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn new(r#type: KeyType, columns: Vec<KeyColumn>) -> Self {
+    pub fn new(key_type: KeyType, columns: Vec<KeyColumn>) -> Self {
         Self {
-            r#type,
+            key_type,
             columns,
             cluster: false,
             compress: false,
@@ -38,7 +38,7 @@ impl Key {
     }
 
     pub fn new_full<S: Into<String>>(
-        r#type: KeyType,
+        key_type: KeyType,
         columns: Vec<KeyColumn>,
         cluster: bool,
         compress: bool,
@@ -46,7 +46,7 @@ impl Key {
         include: Option<S>,
     ) -> Self {
         Self {
-            r#type,
+            key_type,
             columns,
             cluster,
             compress,
@@ -55,23 +55,32 @@ impl Key {
         }
     }
 
-    pub fn r#type(&self) -> KeyType {
-        self.r#type
+    pub fn key_type(&self) -> KeyType {
+        self.key_type
     }
+
     pub fn columns(&self) -> &Vec<KeyColumn> {
         &self.columns
     }
+
     pub fn is_cluster(&self) -> bool {
         self.cluster
     }
+
     pub fn is_compress(&self) -> bool {
         self.compress
     }
+
     pub fn is_unique(&self) -> bool {
         self.unique
     }
+
     pub fn include(&self) -> Option<&str> {
         self.include.as_deref()
+    }
+
+    pub fn is_index(&self) -> bool {
+        self.key_type == KeyType::Index
     }
 
     pub fn contains_column(&self, column_name: &str) -> bool {
@@ -96,7 +105,7 @@ mod tests {
     fn key_column_and_key_basics() {
         let cols = vec![KeyColumn::new("id"), KeyColumn::new("code")];
         let k = Key::new(KeyType::Primary, cols.clone());
-        assert_eq!(k.r#type(), KeyType::Primary);
+        assert_eq!(k.key_type(), KeyType::Primary);
         assert_eq!(k.columns().len(), 2);
         assert!(!k.is_cluster());
         assert!(!k.is_compress());

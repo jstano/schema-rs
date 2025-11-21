@@ -1,5 +1,7 @@
 use crate::common::function_generator::{DefaultFunctionGenerator, FunctionGenerator};
 use crate::common::generator_context::GeneratorContext;
+use crate::common::sql_writer::SqlWriter;
+use schema_model::model::function::Function;
 
 pub struct H2FunctionGenerator {
     function_generator: DefaultFunctionGenerator
@@ -16,5 +18,9 @@ impl H2FunctionGenerator {
 impl FunctionGenerator for H2FunctionGenerator {
     fn output_functions(&self) {
         self.function_generator.output_functions();
+    }
+
+    fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
+        self.function_generator.output_function(writer, statement_separator, function);
     }
 }

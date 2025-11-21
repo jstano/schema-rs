@@ -102,7 +102,9 @@ impl TableGenerator for DefaultTableGenerator {
     }
 
     fn output_indexes(&self, table: &Table) {
-        self.index_generator.output_indexes_for_table(table);
+        self.context.with_writer(|writer| {
+            self.index_generator.output_indexes_for_table(writer, table);
+        });
     }
 
     fn output_initial_data(&self, table: &Table) {

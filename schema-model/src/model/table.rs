@@ -139,7 +139,7 @@ impl Table {
     }
 
     pub fn primary_key(&self) -> Option<&Key> {
-        self.keys.iter().find(|k| k.r#type() == KeyType::Primary)
+        self.keys.iter().find(|k| k.key_type() == KeyType::Primary)
     }
 
     pub fn has_column(&self, column_name: &str) -> bool {
@@ -210,8 +210,7 @@ impl fmt::Display for Table {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::key::{Key, KeyColumn};
-    use crate::model::types::{BooleanMode, KeyType, LockEscalation, TableOption};
+    use crate::model::types::LockEscalation;
 
     fn sample_table() -> Table {
         Table::new(
