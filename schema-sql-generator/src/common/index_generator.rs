@@ -107,18 +107,6 @@ impl IndexGenerator for DefaultIndexGenerator {
         if index_options.is_some() {
             writer.println(
                 format!(
-                    "create {}index {} on {} ({}){}",
-                    if key.is_unique() { "unique " } else { "" },
-                    key_name,
-                    table.name(),
-                    index_columns,
-                    statement_separator
-                )
-                .as_str(),
-            );
-        } else {
-            writer.println(
-                format!(
                     "create {}index {} on {} ({}) {}{}",
                     if key.is_unique() { "unique " } else { "" },
                     key_name,
@@ -127,7 +115,19 @@ impl IndexGenerator for DefaultIndexGenerator {
                     index_options.unwrap(),
                     statement_separator
                 )
-                .as_str(),
+                    .as_str(),
+            );
+        } else {
+            writer.println(
+                format!(
+                    "create {}index {} on {} ({}){}",
+                    if key.is_unique() { "unique " } else { "" },
+                    key_name,
+                    table.name(),
+                    index_columns,
+                    statement_separator
+                )
+                    .as_str(),
             );
         }
     }
