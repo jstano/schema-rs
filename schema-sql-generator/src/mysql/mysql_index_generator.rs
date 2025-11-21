@@ -25,8 +25,8 @@ impl IndexGenerator for MySqlIndexGenerator {
         self.index_generator.output_indexes_for_table(writer, table);
     }
 
-    fn output_index(&self, writer: &mut SqlWriter, statement_separator: &str, key: &Key) {
-        self.index_generator.output_index(writer, statement_separator, key);
+    fn output_index(&self, writer: &mut SqlWriter, statement_separator: &str, table: &Table, key_name: &str, key: &Key) {
+        self.index_generator.output_index(writer, statement_separator, table, key_name, key);
     }
 
     fn index_options(&self, key: &Key) -> Option<String> {
