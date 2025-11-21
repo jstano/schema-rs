@@ -22,3 +22,25 @@ run_task = [
     { name = "coverage-linux", condition = { platforms = ["linux"] } },
     { name = "coverage-mac", condition = { platforms = ["mac"] } }
 ]
+
+[tasks.build-linux-arm64]
+script = [
+    "cross build --release --target aarch64-unknown-linux-gnu"
+]
+
+[tasks.build-linux-x86_64]
+script = [
+    "cross build --release --target x86_64-unknown-linux-gnu"
+]
+
+[tasks.build-windows-x86_64]
+script = [
+    "cross build --release --target x86_64-pc-windows-gnu"
+]
+
+[tasks.build-all]
+dependencies = [
+    "build-linux-arm64",
+    "build-linux-x86_64",
+    "build-windows-x86_64"
+]
