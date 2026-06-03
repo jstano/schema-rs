@@ -1,0 +1,14 @@
+[package]
+name = "schema-diagram-generator"
+license = "MIT OR Apache-2.0"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "schema-diagram-generator"
+path = "src/main.rs"
+
+[dependencies]
+schema-model = { path = "../schema-model" }
+schema-parser = { path = "../schema-parser" }
+clap = "^4.5.50"
