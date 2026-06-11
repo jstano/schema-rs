@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<database xmlns="http://stano.com/database" version="1.0">
+    <table name="users">
+        <columns>
+            <column name="id" type="Sequence" required="true"/>
+            <column name="name" type="Varchar" length="100" required="true"/>
+            <column name="email" type="Varchar" length="100"/>
+        </columns>
+        <keys>
+            <primary>
+                <column name="id"/>
+            </primary>
+        </keys>
+    </table>
+</database>

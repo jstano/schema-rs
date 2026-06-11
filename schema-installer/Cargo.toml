@@ -5,3 +5,16 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+schema-model = { path = "../schema-model" }
+schema-parser = { path = "../schema-parser" }
+schema-sql-generator = { path = "../schema-sql-generator" }
+
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "any"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+clap = { version = "4.5", features = ["derive"] }
+
+[[bin]]
+name = "schema-installer"
+path = "src/main.rs"
