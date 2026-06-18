@@ -25,7 +25,7 @@ impl DefaultColumnConstraintGenerator {
         &self.context
     }
 
-    fn generate_constraint(&self, table: &Table, column: &Column) -> String {
+    pub fn generate_constraint(&self, table: &Table, column: &Column) -> String {
         let constraint_sql = self.check_constraint_sql(column);
 
         if constraint_sql.is_some() {

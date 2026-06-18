@@ -7,6 +7,7 @@ use crate::postgresql::postgres_procedure_generator::PostgresProcedureGenerator;
 use crate::postgresql::postgres_relation_generator::PostgresRelationGenerator;
 use crate::postgresql::postgres_table_generator::PostgresTableGenerator;
 use crate::postgresql::postgres_trigger_generator::PostgresTriggerGenerator;
+use crate::postgresql::postgres_util::to_snake_case;
 use crate::postgresql::postgres_view_generator::PostgresViewGenerator;
 use crate::sql_println;
 
@@ -80,6 +81,54 @@ impl PostgresGenerator {
             sql_println!(writer, "");
         });
     }
+
+    fn create_enum_types(&self) {
+        let separator = self.context.settings().statement_separator().to_string();
+        let database_model = self.context.settings().database_model();
+
+        let mut has_enums = false;
+        let mut enum_ddl = String::new();
+
+        for schema in database_model.schemas() {
+            for enum_type in schema.enum_types() {
+                has_enums = true;
+                let schema_prefix = if let Some(schema_name) = schema.schema_name() {
+                    format!("{}.", schema_name.to_lowercase())
+                } else {
+                    String::new()
+                };
+
+                let enum_type_name = to_snake_case(enum_type.name());
+                let values = enum_type
+                    .values()
+                    .iter()
+                    .map(|v| format!("'{}'", v.code()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                enum_ddl.push_str(&format!("drop type if exists {}{} cascade{}",
+                    schema_prefix,
+                    enum_type_name,
+                    separator
+                ));
+                enum_ddl.push('\n');
+                enum_ddl.push_str(&format!("create type {}{} as enum ({}){}",
+                    schema_prefix,
+                    enum_type_name,
+                    values,
+                    separator
+                ));
+                enum_ddl.push('\n');
+            }
+        }
+
+        if has_enums {
+            self.context.with_writer(|writer| {
+                writer.println(&enum_ddl);
+                sql_println!(writer, "");
+            });
+        }
+    }
 }
 
 impl SqlGenerator for PostgresGenerator {
@@ -88,8 +137,11 @@ impl SqlGenerator for PostgresGenerator {
     }
 
     fn output_header(&self) {
-        self.create_uuid_generator_function();
+        if self.context.settings().target_postgres_version() < 18 {
+            self.create_uuid_generator_function();
+        }
         self.create_extensions();
+        self.create_enum_types();
     }
 
     fn output_tables(&self) {

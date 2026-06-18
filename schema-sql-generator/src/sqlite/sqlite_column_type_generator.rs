@@ -1,7 +1,7 @@
+use crate::common::column_type_generator::ColumnTypeGenerator;
+use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::schema::Schema;
-use crate::common::column_type_generator::{ColumnTypeGenerator};
-use crate::common::generator_context::GeneratorContext;
 
 pub struct SqliteColumnTypeGenerator {
     context: GeneratorContext
@@ -29,6 +29,14 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
     }
 
     fn text_sql(&self, _column: &Column) -> String {
+        "text".to_string()
+    }
+
+    fn citext_sql(&self) -> String {
+        "text".to_string()
+    }
+
+    fn cstext_sql(&self) -> String {
         "text".to_string()
     }
 

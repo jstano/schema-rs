@@ -12,6 +12,9 @@ pub struct DatabaseXml {
     #[serde(rename = "@booleanMode")]
     pub boolean_mode: Option<String>,
 
+    #[serde(rename = "@caseSensitiveText")]
+    pub case_sensitive_text: Option<bool>,
+
     #[serde(default)]
     #[serde(rename = "table")]
     pub tables: Vec<TableXml>,
@@ -45,6 +48,9 @@ pub struct DatabaseXml {
 pub struct SchemaXml {
     #[serde(rename = "@name")]
     pub name: String,
+
+    #[serde(rename = "@caseSensitiveText")]
+    pub case_sensitive_text: Option<bool>,
 
     #[serde(default)]
     #[serde(rename = "table")]
@@ -119,8 +125,6 @@ pub struct ColumnXml {
     pub scale: Option<i32>,
     #[serde(rename = "@required")]
     pub required: Option<bool>,
-    #[serde(rename = "@ignoreCase")]
-    pub ignore_case: Option<bool>,
     #[serde(rename = "@default")]
     pub default_value: Option<String>,
     #[serde(rename = "@generated")]

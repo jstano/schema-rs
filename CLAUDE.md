@@ -52,6 +52,8 @@ cargo run -p schema-sql-generator -- \
 cargo make coverage
 ```
 
+The CLI writes output to a file named `{schema-stem}-{database-type}.sql` in the same directory as the input schema file (e.g. `schema-parser-test-schema-postgres.sql`), not to stdout.
+
 ## Architecture
 
 ### Workspace Structure
@@ -99,8 +101,19 @@ DatabaseModel
 - Case-insensitive table/column lookups via HashMap index
 - Multi-schema support with default schema fallback
 - Validation for SETNULL relations on required columns
-- 20+ column types: Sequence, Int, Long, Varchar, Boolean, UUID, JSON, Array, etc.
+- Column types: Sequence, LongSequence, Byte, Short, Int, Long, Float, Double, Decimal, Boolean, Date, DateTime, Time, Timestamp, Char, Varchar, Enum, Text, Binary, Uuid, Json, Array
 - Relation types: Cascade, Enforce, SetNull, DoNothing
+
+**Builder Pattern:** Model objects are constructed via builders in `schema-model/src/builder/`. Use `ColumnBuilder`, `TableBuilder`, `SchemaBuilder`, etc. rather than calling constructors directly.
+
+```rust
+ColumnBuilder::new(schema_name, "col_name", ColumnType::Varchar)
+    .length(100)
+    .required(true)
+    .build()
+```
+
+**EnumType:** `EnumValue` has both a `name` (human-readable label, e.g. `"MALE"`) and an optional `code` (compact storage value, e.g. `"M"`). `code()` falls back to `name` when not set. Enum types live on `Schema`, not `Table`; columns reference them by name via `Column::enum_type: Option<String>`.
 
 ### SQL Generator Architecture
 
@@ -109,43 +122,57 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
 **Component Traits** (in `common/`):
 - `SqlGenerator` - Main orchestrator, defines output order
 - `TableGenerator` - CREATE TABLE statements
+- `ColumnTypeGenerator` - Maps `ColumnType` to database-specific SQL type strings
+- `ColumnConstraintGenerator` - CHECK constraints per column
 - `RelationGenerator` - Foreign key constraints
 - `FunctionGenerator` - CREATE FUNCTION
 - `ProcedureGenerator` - CREATE PROCEDURE
 - `TriggerGenerator` - CREATE TRIGGER
 - `ViewGenerator` - CREATE VIEW
 - `IndexGenerator` - CREATE INDEX
-- `OtherSqlGenerator` - Custom SQL
+- `OtherSqlGenerator` - Custom SQL passthrough
 
 **Database-Specific Implementations** (in `{database}/`):
 - Each database has a folder: `mysql/`, `postgresql/`, `sqlite/`, `sqlserver/`, `h2/`
-- Each implements all component generator traits
+- Each overrides only the trait methods that differ from the common defaults
 - Example: `postgresql/postgres_table_generator.rs`, `mysql/mysql_function_generator.rs`
 
 **Shared Context:**
-- `GeneratorContext` wraps `SqlGeneratorSettings` and `SqlWriter`
-- Uses `Rc<RefCell<>>` for shared mutable state across generators
-- Passed to all component generators for access to configuration
+- `GeneratorContext` wraps `Rc<SqlGeneratorSettings>` and `Rc<RefCell<SqlWriter>>`
+- Cloned cheaply (reference-counted) and passed to all component generators
+- Access settings via `context.settings()`, write SQL via `context.with_writer(|w| { ... })`
+
+**Writing SQL in generators** — use the macros from `sql_writer.rs`:
+
+```rust
+self.context.with_writer(|writer| {
+    sql_println!(writer, "create table {} (", table.name());
+    sql_println!(writer, "   {} integer not null,", col.name());
+    sql_println!(writer, ");");
+    sql_println!(writer, "");
+});
+```
 
 **SQL Generation Flow:**
-1. `GeneratorType::generate()` factory creates database-specific generator
+1. `GeneratorType::generate()` factory creates the database-specific generator
 2. `DefaultSqlGenerator` orchestrates component generators in order:
-   - output_header()
-   - output_other_sql_top()
-   - output_tables()
-   - output_relations() [if ForeignKeyMode::Relations]
-   - output_triggers()
-   - output_functions()
-   - output_views()
-   - output_procedures()
-   - output_other_sql_bottom()
+   - `output_header()`
+   - `output_other_sql_top()`
+   - `output_tables()`
+   - `output_relations()` [if ForeignKeyMode::Relations]
+   - `output_triggers()`
+   - `output_functions()`
+   - `output_views()`
+   - `output_procedures()`
+   - `output_other_sql_bottom()`
 
 ### Database-Specific Behaviors
 
 **PostgreSQL:**
 - Sequence: `SERIAL` / `BIGSERIAL`
-- UUID: Custom RFC 4122 v7 generator function
-- Extensions: uuid-ossp, citext, btree_gist
+- UUID: Custom RFC 4122 v7 generator function emitted in `output_header()`
+- Extensions: uuid-ossp, citext, btree_gist (emitted in `output_header()`)
+- `varchar` → `text` (or `citext` when `ignore_case = true`)
 - Array support: `type[]` syntax
 
 **MySQL:**
@@ -156,7 +183,7 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
 
 **SQL Server:**
 - Sequence: `INT IDENTITY(1,1)`
-- Unicode: Always generates `NVARCHAR` (unicode flag removed)
+- Always generates `NVARCHAR` for string types
 - Statement separator: `GO` instead of `;`
 
 **SQLite:**
@@ -168,14 +195,13 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
 
 ## Testing
 
-**Integration Tests:**
-- Parser tests in `schema-parser/tests/parser_integration_tests.rs`
-- Test resources in `schema-parser/resources/`
-- Example schemas: `schema-parser-test-schema.xml`, `schema-parser-example-schema.xml`
+**Unit tests** live in the same file as the code they test (e.g. `column_type.rs`, `builder/column.rs`).
 
-**Test Data:**
-- XML schemas define multi-table test databases
-- Generated SQL output in resources: `schema-parser-test-schema.sql`, etc.
+**Integration tests:**
+- Parser tests: `schema-parser/tests/parser_integration_tests.rs`
+- Test resources: `schema-parser/resources/`
+- Reference XML schemas: `schema-parser-test-schema.xml`, `schema-parser-example-schema.xml`
+- The `.sql` files in `schema-parser/resources/` are generated SQL output checked in as reference; there are no automated SQL output comparison tests.
 
 ## Adding a New Database
 
@@ -183,6 +209,7 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
 2. Implement all generator traits:
    - `{dbname}_table_generator.rs`
    - `{dbname}_column_type_generator.rs`
+   - `{dbname}_column_constraint_generator.rs`
    - `{dbname}_relation_generator.rs`
    - `{dbname}_function_generator.rs`
    - `{dbname}_procedure_generator.rs`
@@ -191,34 +218,26 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
    - `{dbname}_index_generator.rs`
    - `{dbname}_other_sql_generator.rs`
    - `{dbname}_table_constraint_generator.rs`
-3. Override `column_type_sql()` in column type generator for type mappings
+3. In the column type generator, override the specific `{type}_sql()` methods that differ from the common defaults (e.g. `sequence_sql()`, `text_sql()`, `binary_sql()`). The `column_type_sql()` dispatch method should not be overridden.
 4. Add variant to `GeneratorType` enum in `common/generator_type.rs`
-5. Update CLI parser in `main.rs` to accept new database type
+5. Update CLI parser in `main.rs` to accept the new database type string
 
 ## Extending the Schema Model
 
-1. Add structs to `schema-model/src/model/` (e.g., `new_entity.rs`)
+1. Add structs to `schema-model/src/model/`
 2. Update parent container (`DatabaseModel`, `Schema`, or `Table`)
 3. Add parser logic in `schema-parser/src/parser/convert.rs` or create new parser module
 4. Update XML schema definition (`schema.xsd` in resources)
-5. Implement generator trait in `common/` folder
+5. Implement a generator trait in `common/` folder
 6. Override in database-specific folders as needed
 
 ## Configuration Options
 
 **GenerateOptions** (in `schema-sql-generator`):
-- `database_model`: Shared Rc<RefCell<DatabaseModel>>
+- `database_model`: Shared `Rc<RefCell<DatabaseModel>>`
 - `writer`: Output sink (file or stdout)
-- `boolean_mode`: Native | YesNo | YN
-- `foreign_key_mode`: None | Relations | Triggers
-- `output_mode`: All | IndexesOnly | TriggersOnly
+- `boolean_mode`: `Native` | `YesNo` | `YN`
+- `foreign_key_mode`: `None` | `Relations` | `Triggers`
+- `output_mode`: `All` | `IndexesOnly` | `TriggersOnly`
 
 **Edition:** Rust 2024
-
-## Key Implementation Notes
-
-- **SQL Server Unicode:** Always generates `NVARCHAR` (unicode flag removed in recent commit)
-- **Relations Generator:** Implemented in recent commits, removes unicode flag
-- **Parser:** Switched from custom parser to roxmltree for safer XML handling
-- **Index Generation:** Separate from table constraints, generated after relations
-- **Case Sensitivity:** Model uses case-insensitive lookups for table/column names

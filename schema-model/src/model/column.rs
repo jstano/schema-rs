@@ -16,7 +16,6 @@ pub struct Column {
     max_value: Option<f64>,
     enum_type: Option<String>,
     element_type: Option<String>,
-    ignore_case: bool,
 }
 
 impl Column {
@@ -42,7 +41,6 @@ impl Column {
             max_value: None,
             enum_type: None,
             element_type: None,
-            ignore_case: false,
         }
     }
 
@@ -60,7 +58,6 @@ impl Column {
         max_value: Option<f64>,
         enum_type: Option<String>,
         element_type: Option<String>,
-        ignore_case: bool,
     ) -> Self {
         Self {
             schema_name: schema_name.map(|s| s.into()),
@@ -69,14 +66,13 @@ impl Column {
             length,
             scale,
             required,
-            check_constraint: check_constraint,
-            default_constraint: default_constraint,
-            generated: generated,
-            min_value: min_value,
-            max_value: max_value,
-            enum_type: enum_type,
-            element_type: element_type,
-            ignore_case: ignore_case,
+            check_constraint,
+            default_constraint,
+            generated,
+            min_value,
+            max_value,
+            enum_type,
+            element_type,
         }
     }
 
@@ -137,10 +133,6 @@ impl Column {
         self.element_type.as_deref()
     }
 
-    pub fn ignore_case(&self) -> bool {
-        self.ignore_case
-    }
-
     pub fn has_min_or_max_value(&self) -> bool {
         self.min_value.is_some() || self.max_value.is_some()
     }
@@ -168,7 +160,6 @@ mod tests {
         assert_eq!(c.scale(), 0);
         assert!(c.required());
         assert!(c.is_required());
-        assert!(!c.ignore_case());
     }
 
     #[test]

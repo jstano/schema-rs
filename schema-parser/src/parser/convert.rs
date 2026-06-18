@@ -53,6 +53,10 @@ pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
 fn default_schema(database: &DatabaseXml) -> Option<Schema> {
     let mut schema_builder = SchemaBuilder::new(None::<&str>);
 
+    if let Some(cst) = database.case_sensitive_text {
+        schema_builder = schema_builder.case_sensitive_text(cst);
+    }
+
     for table_xml in database.tables.iter() {
         let table = parse_table(table_xml, None);
         schema_builder = schema_builder.add_table(table);
@@ -145,6 +149,10 @@ fn default_schema(database: &DatabaseXml) -> Option<Schema> {
 fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
     let mut schema_builder = SchemaBuilder::new(Some(&schema_xml.name));
 
+    if let Some(cst) = schema_xml.case_sensitive_text {
+        schema_builder = schema_builder.case_sensitive_text(cst);
+    }
+
     for table_xml in schema_xml.tables.iter() {
         schema_builder = schema_builder.add_table(parse_table(table_xml, Some(&schema_xml.name)));
     }
@@ -225,7 +233,6 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
 pub(crate) fn str_to_database_type(s: Option<&str>) -> Option<DatabaseType> {
     s.and_then(|v| match v.to_ascii_lowercase().as_str() {
         "postgresql" | "postgres" | "pgsql" => Some(DatabaseType::Postgres),
-        "mysql" => Some(DatabaseType::Mysql),
         "sqlite" => Some(DatabaseType::Sqlite),
         "sqlserver" | "mssql" => Some(DatabaseType::SqlServer),
         _ => None,

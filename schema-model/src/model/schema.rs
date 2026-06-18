@@ -7,9 +7,10 @@ use crate::model::types::{DatabaseType, RelationType};
 use crate::model::view::View;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Schema {
     schema_name: Option<String>,
+    case_sensitive_text: bool,
     tables: Vec<Table>,
     views: Vec<View>,
     functions: Vec<Function>,
@@ -18,6 +19,22 @@ pub struct Schema {
     // Case-insensitive map: store lowercase name -> index in tables vec
     table_map: HashMap<String, usize>,
     enum_types: HashMap<String, EnumType>,
+}
+
+impl Default for Schema {
+    fn default() -> Self {
+        Self {
+            schema_name: None,
+            case_sensitive_text: true,
+            tables: Vec::new(),
+            views: Vec::new(),
+            functions: Vec::new(),
+            procedures: Vec::new(),
+            other_sql: Vec::new(),
+            table_map: HashMap::new(),
+            enum_types: HashMap::new(),
+        }
+    }
 }
 
 impl Schema {
@@ -30,6 +47,14 @@ impl Schema {
 
     pub fn schema_name(&self) -> Option<&str> {
         self.schema_name.as_deref()
+    }
+
+    pub fn case_sensitive_text(&self) -> bool {
+        self.case_sensitive_text
+    }
+
+    pub fn set_case_sensitive_text(&mut self, value: bool) {
+        self.case_sensitive_text = value;
     }
 
     pub fn tables(&self) -> &[Table] {
@@ -229,7 +254,7 @@ mod tests {
     fn views_filtered_by_database_type() {
         let mut s = make_schema();
         s.add_view(View::new(Some("s"), "v1", "sql1", Some(DatabaseType::Postgres)));
-        s.add_view(View::new(Some("s"), "v2", "sql2", Some(DatabaseType::Mysql)));
+        s.add_view(View::new(Some("s"), "v2", "sql2", Some(DatabaseType::SqlServer)));
         let pg = s.views(DatabaseType::Postgres);
         assert_eq!(pg.len(), 1);
         assert_eq!(pg[0].name(), "v1");

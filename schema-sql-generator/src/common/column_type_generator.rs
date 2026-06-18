@@ -1,11 +1,11 @@
-use std::cmp;
+use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::enum_type::EnumType;
 use schema_model::model::schema::Schema;
 use schema_model::model::table::Table;
 use schema_model::model::types::BooleanMode;
-use crate::common::generator_context::GeneratorContext;
+use std::cmp;
 
 pub trait ColumnTypeGenerator {
     fn context(&self) -> &GeneratorContext;
@@ -26,10 +26,13 @@ pub trait ColumnTypeGenerator {
             ColumnType::DateTime => self.date_time_sql(),
             ColumnType::Time => self.time_sql(),
             ColumnType::Timestamp => self.date_time_sql(),
+            ColumnType::TimestampTz => self.timestamp_tz_sql(),
             ColumnType::Char => self.char_sql(column),
             ColumnType::Varchar => self.varchar_sql(column),
             ColumnType::Enum => self.enum_sql(column),
             ColumnType::Text => self.text_sql(column),
+            ColumnType::CiText => self.citext_sql(),
+            ColumnType::CsText => self.cstext_sql(),
             ColumnType::Binary => self.binary_sql(),
             ColumnType::Uuid => self.uuid_sql(column),
             ColumnType::Json => self.json_sql(column),
@@ -42,6 +45,10 @@ pub trait ColumnTypeGenerator {
     fn long_sequence_sql(&self) -> String;
 
     fn text_sql(&self, column: &Column) -> String;
+
+    fn citext_sql(&self) -> String;
+
+    fn cstext_sql(&self) -> String;
 
     fn binary_sql(&self) -> String;
 
@@ -106,6 +113,10 @@ pub trait ColumnTypeGenerator {
 
     fn time_sql(&self) -> String {
         "time".to_string()
+    }
+
+    fn timestamp_tz_sql(&self) -> String {
+        "timestamp".to_string()
     }
 
     fn char_sql(&self, column: &Column) -> String {

@@ -12,3 +12,4 @@ mod postgres_column_type_generator;
 mod postgres_key_generator;
 mod postgres_column_constraint_generator;
 mod postgres_table_constraint_generator;
+mod postgres_util;

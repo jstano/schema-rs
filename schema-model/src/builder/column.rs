@@ -17,7 +17,6 @@ pub struct ColumnBuilder {
     max_value: Option<f64>,
     enum_type: Option<String>,
     element_type: Option<String>,
-    ignore_case: bool,
 }
 
 impl ColumnBuilder {
@@ -36,7 +35,6 @@ impl ColumnBuilder {
             max_value: None,
             enum_type: None,
             element_type: None,
-            ignore_case: false,
         }
     }
     pub fn length(mut self, length: i32) -> Self {
@@ -89,11 +87,6 @@ impl ColumnBuilder {
         self
     }
 
-    pub fn ignore_case(mut self, ignore_case: bool) -> Self {
-        self.ignore_case = ignore_case;
-        self
-    }
-
     pub fn build(self) -> Column {
         Column::new_all(
             self.schema_name,
@@ -109,7 +102,6 @@ impl ColumnBuilder {
             self.max_value,
             self.enum_type,
             self.element_type,
-            self.ignore_case,
         )
     }
 }

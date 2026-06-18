@@ -1,8 +1,8 @@
-use std::rc::Rc;
-use schema_model::model::database_model::DatabaseModel;
-use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
 use crate::common::generate_options::GenerateOptions;
 use crate::common::output_mode::OutputMode;
+use schema_model::model::database_model::DatabaseModel;
+use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct SqlGeneratorSettings {
@@ -12,6 +12,7 @@ pub struct SqlGeneratorSettings {
     foreign_key_mode: ForeignKeyMode,
     boolean_mode: BooleanMode,
     output_mode: OutputMode,
+    target_postgres_version: u32,
 }
 
 impl SqlGeneratorSettings {
@@ -23,6 +24,7 @@ impl SqlGeneratorSettings {
             foreign_key_mode: options.foreign_key_mode,
             boolean_mode: options.boolean_mode,
             output_mode: options.output_mode,
+            target_postgres_version: options.target_postgres_version,
         }
     }
 
@@ -48,5 +50,9 @@ impl SqlGeneratorSettings {
 
     pub fn output_mode(&self) -> OutputMode {
         self.output_mode
+    }
+
+    pub fn target_postgres_version(&self) -> u32 {
+        self.target_postgres_version
     }
 }

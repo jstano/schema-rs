@@ -14,17 +14,20 @@ pub enum ColumnType {
     DateTime,
     Time,
     Timestamp,
+    TimestampTz,
     Char,
     Varchar,
     Enum,
     Text,
+    CiText,
+    CsText,
     Binary,
     Uuid,
     Json,
     Array,
 }
 impl ColumnType {
-    pub const VARIANTS: [ColumnType; 22] = [
+    pub const VARIANTS: [ColumnType; 25] = [
         ColumnType::Sequence,
         ColumnType::LongSequence,
         ColumnType::Byte,
@@ -39,10 +42,13 @@ impl ColumnType {
         ColumnType::DateTime,
         ColumnType::Time,
         ColumnType::Timestamp,
+        ColumnType::TimestampTz,
         ColumnType::Char,
         ColumnType::Varchar,
         ColumnType::Enum,
         ColumnType::Text,
+        ColumnType::CiText,
+        ColumnType::CsText,
         ColumnType::Binary,
         ColumnType::Uuid,
         ColumnType::Json,
@@ -65,10 +71,13 @@ impl ColumnType {
             ColumnType::DateTime => "DATETIME",
             ColumnType::Time => "TIME",
             ColumnType::Timestamp => "TIMESTAMP",
+            ColumnType::TimestampTz => "TIMESTAMPTZ",
             ColumnType::Char => "CHAR",
             ColumnType::Varchar => "VARCHAR",
             ColumnType::Enum => "ENUM",
             ColumnType::Text => "TEXT",
+            ColumnType::CiText => "CITEXT",
+            ColumnType::CsText => "CSTEXT",
             ColumnType::Binary => "BINARY",
             ColumnType::Uuid => "UUID",
             ColumnType::Json => "JSON",
@@ -83,6 +92,8 @@ impl ColumnType {
                 | ColumnType::Varchar
                 | ColumnType::Enum
                 | ColumnType::Text
+                | ColumnType::CiText
+                | ColumnType::CsText
                 | ColumnType::Json
                 | ColumnType::Uuid
         )

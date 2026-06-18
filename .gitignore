@@ -1,4 +1,8 @@
-/target
-/.idea
-!.gitkeep
+.idea/
+release/
+target/
 profraw
+!.gitkeep
+
+# AI assistant artifacts
+context-snapshot.json

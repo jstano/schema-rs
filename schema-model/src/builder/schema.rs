@@ -50,6 +50,11 @@ impl SchemaBuilder {
         self
     }
 
+    pub fn case_sensitive_text(mut self, value: bool) -> Self {
+        self.schema.set_case_sensitive_text(value);
+        self
+    }
+
     /// Finalize and return the fully-populated Schema.
     pub fn build(self) -> Schema {
         self.schema

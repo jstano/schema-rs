@@ -1,7 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DatabaseType {
-    H2,
-    Mysql,
     Postgres,
     Sqlite,
     SqlServer,
@@ -10,8 +8,6 @@ pub enum DatabaseType {
 impl DatabaseType {
     pub fn statement_separator(&self) -> &'static str {
         match self {
-            DatabaseType::H2 => ";",
-            DatabaseType::Mysql => ";",
             DatabaseType::Postgres => ";",
             DatabaseType::Sqlite => ";",
             DatabaseType::SqlServer => "\nGO",
@@ -20,8 +16,6 @@ impl DatabaseType {
 
     pub fn max_key_name_length(&self) -> usize {
         match self {
-            DatabaseType::H2 => 64,
-            DatabaseType::Mysql => 64,
             DatabaseType::Postgres => 63,
             DatabaseType::Sqlite => 128,
             DatabaseType::SqlServer => 128,
@@ -120,9 +114,9 @@ pub enum LockEscalation {
     Auto,
 }
 
-use std::str::FromStr;
 // Re-export Version so external crates can access it via model::types
 pub use crate::model::version::Version;
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests {
@@ -136,9 +130,8 @@ mod tests {
 
     #[test]
     fn enums_equality_and_copy() {
-        // Just ensure variants compare and copy derives exist
         let db: DatabaseType = DatabaseType::Postgres;
-        let db2 = db; // Copy
+        let db2 = db;
         assert_eq!(db, db2);
 
         let t1 = TriggerType::Update;

@@ -31,8 +31,8 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let o = OtherSql::new(DatabaseType::Mysql, OtherSqlOrder::Bottom, "SQL");
-        assert_eq!(o.database_type(), DatabaseType::Mysql);
+        let o = OtherSql::new(DatabaseType::Postgres, OtherSqlOrder::Bottom, "SQL");
+        assert_eq!(o.database_type(), DatabaseType::Postgres);
         assert_eq!(o.order(), OtherSqlOrder::Bottom);
         assert_eq!(o.sql(), "SQL");
     }

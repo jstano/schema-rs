@@ -17,6 +17,7 @@ fn parse_database_node(node: Node) -> DatabaseXml {
     let version = attr_string(node, "version");
     let foreign_key_mode = attr_string(node, "foreignKeyMode");
     let boolean_mode = attr_string(node, "booleanMode");
+    let case_sensitive_text = attr_bool(node, "caseSensitiveText");
 
     let mut tables = Vec::new();
     let mut enums = Vec::new();
@@ -43,6 +44,7 @@ fn parse_database_node(node: Node) -> DatabaseXml {
         version,
         foreign_key_mode,
         boolean_mode,
+        case_sensitive_text,
         tables,
         enums,
         views,
@@ -55,6 +57,7 @@ fn parse_database_node(node: Node) -> DatabaseXml {
 
 fn parse_schema_node(node: Node) -> SchemaXml {
     let name = attr_string_required(node, "name");
+    let case_sensitive_text = attr_bool(node, "caseSensitiveText");
 
     let mut tables = Vec::new();
     let mut enums = Vec::new();
@@ -75,7 +78,7 @@ fn parse_schema_node(node: Node) -> SchemaXml {
         }
     }
 
-    SchemaXml { name, tables, enums, views, functions, procedures, other_sql }
+    SchemaXml { name, case_sensitive_text, tables, enums, views, functions, procedures, other_sql }
 }
 
 fn parse_table_node(node: Node) -> TableXml {
@@ -144,7 +147,6 @@ fn parse_column_node(node: Node) -> ColumnXml {
         length: attr_i32(node, "length"),
         scale: attr_i32(node, "scale"),
         required: attr_bool(node, "required"),
-        ignore_case: attr_bool(node, "ignoreCase"),
         default_value: attr_string(node, "default"),
         generated: attr_string(node, "generated"),
         enum_type: attr_string(node, "enumType"),
