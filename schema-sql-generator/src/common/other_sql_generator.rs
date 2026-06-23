@@ -35,7 +35,7 @@ impl OtherSqlGenerator for DefaultOtherSqlGenerator {
                     .iter()
                     .filter(|sql| sql.database_type() == database_type)
                     .filter(|sql| sql.order() == OtherSqlOrder::Top)
-                    .filter(|sql| sql.sql().is_empty())
+                    .filter(|sql| !sql.sql().is_empty())
                     .for_each(|sql| {
                         self.output_other_sql(writer, statement_separator, sql.sql());
                     })
@@ -55,7 +55,7 @@ impl OtherSqlGenerator for DefaultOtherSqlGenerator {
                     .iter()
                     .filter(|sql| sql.database_type() == database_type)
                     .filter(|sql| sql.order() == OtherSqlOrder::Bottom)
-                    .filter(|sql| sql.sql().is_empty())
+                    .filter(|sql| !sql.sql().is_empty())
                     .for_each(|sql| {
                         self.output_other_sql(writer, statement_separator, sql.sql());
                     })

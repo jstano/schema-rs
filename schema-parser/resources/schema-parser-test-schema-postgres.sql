@@ -28,13 +28,17 @@ begin
 end;
 $createextensions$;
 
-drop type if exists show_in_module_type cascade;
-create type show_in_module_type as enum ('A', 'B', 'L');
 drop type if exists gender_type cascade;
 create type gender_type as enum ('M', 'F');
+drop type if exists show_in_module_type cascade;
+create type show_in_module_type as enum ('A', 'B', 'L');
 drop type if exists test_enum_type cascade;
 create type test_enum_type as enum ('1', '2');
 
+
+other top sql for pgsql 1;
+
+other top sql for pgsql 2;
 
 /* ParentTable */
 create table ParentTable
@@ -65,7 +69,7 @@ create table ColumnTesterTable
 (
    sequence serial not null,
    longsequence bigserial,
-   byte tinyint,
+   byte smallint,
    short smallint,
    int integer,
    long bigint,
@@ -150,11 +154,35 @@ create table test.Unit
 
 /* relations */
 alter table ChildTable add constraint fk_childtable1 foreign key (ParentID) references ParentTable(ID) on delete cascade;
-alter table Property add constraint fk_property1 foreign key (RegionID) references Region(ID) on delete setnull;
+alter table Property add constraint fk_property1 foreign key (RegionID) references Region(ID) on delete set null;
 alter table KBI add constraint fk_kbi1 foreign key (PropertyID) references Property(ID) on delete cascade;
-alter table KBI add constraint fk_kbi2 foreign key (UnitID) references test.Unit(ID) on delete setnull;
-alter table KBI add constraint fk_kbi3 foreign key (MasterKBICodeID) references MasterKBICode(ID) on delete setnull;
+alter table KBI add constraint fk_kbi2 foreign key (UnitID) references test.Unit(ID) on delete set null;
+alter table KBI add constraint fk_kbi3 foreign key (MasterKBICodeID) references MasterKBICode(ID) on delete set null;
 alter table test.Unit add constraint fk_unit1 foreign key (PropertyID) references Property(ID) on delete cascade;
+
+/* public.parenttable_delete */
+create or replace function public.parenttable_delete() returns trigger as $BODY$
+begin
+delete from pgsql
+   return null;
+end;
+$BODY$ language plpgsql;
+
+drop trigger if exists parenttable on ParentTable cascade;
+create trigger parenttable after delete on ParentTable
+   for each row execute procedure public.parenttable_delete();
+
+/* public.parenttable_update */
+create or replace function public.parenttable_update() returns trigger as $BODY$
+begin
+update pgsql
+   return new;
+end;
+$BODY$ language plpgsql;
+
+drop trigger if exists parenttable on ParentTable cascade;
+create trigger parenttable after insert or update on ParentTable
+   for each row execute procedure public.parenttable_update();
 
 sql-function-1;
 
@@ -163,6 +191,18 @@ sql-function-2;
 custom function sql for pgsql 1;
 
 custom function sql for pgsql 2;
+
+/* TestView1 */
+create or replace view TestView1 as
+   select * from ParentTable;
+
+/* TestView2 */
+create or replace view TestView2 as
+   select * from pgsql;
+
+/* test.TestView1 */
+create or replace view test.TestView1 as
+   select * from ParentTable;
 
 sql-procedure-1;
 
@@ -173,4 +213,8 @@ custom procedure sql for pgsql 1;
 custom procedure sql for pgsql 2;
 
 custom procedure sql for mssql 2;
+
+other bottom sql for pgsql 1;
+
+other bottom sql for pgsql 2;
 

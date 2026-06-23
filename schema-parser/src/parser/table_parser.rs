@@ -44,12 +44,9 @@ pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Ta
 }
 
 fn lock_escalation(table_xml: &TableXml) -> LockEscalation {
-    match table_xml
-        .lock_escalation
-        .as_deref()
-        .map(|s| s.to_ascii_lowercase())
-    {
-        Some(s) if s == "auto" => LockEscalation::Auto,
+    use std::str::FromStr;
+    match table_xml.lock_escalation.as_deref() {
+        Some(s) => LockEscalation::from_str(s).unwrap_or_default(),
         _ => LockEscalation::Auto,
     }
 }

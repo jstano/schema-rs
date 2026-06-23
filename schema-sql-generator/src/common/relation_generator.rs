@@ -73,7 +73,7 @@ impl DefaultRelationGenerator {
         match relation_type {
             RelationType::Cascade => {"cascade"}
             RelationType::Enforce => {"no action"}
-            RelationType::SetNull => {"setnull"}
+            RelationType::SetNull => {"set null"}
             RelationType::DoNothing => {"no action"}
         }
     }

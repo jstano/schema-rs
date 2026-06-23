@@ -112,6 +112,27 @@ pub enum KeyType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LockEscalation {
     Auto,
+    Disable,
+    Table,
+}
+
+impl Default for LockEscalation {
+    fn default() -> Self {
+        LockEscalation::Auto
+    }
+}
+
+impl FromStr for LockEscalation {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "auto" => Ok(LockEscalation::Auto),
+            "disable" => Ok(LockEscalation::Disable),
+            "table" => Ok(LockEscalation::Table),
+            _ => Err(format!("Unknown lock escalation: {}", s)),
+        }
+    }
 }
 
 // Re-export Version so external crates can access it via model::types
