@@ -1,14 +1,14 @@
-use std::cell::RefCell;
-use std::fs;
-use std::rc::Rc;
-use schema_parser::parse_database_xml;
-use schema_sql_generator::common::generate_options::GenerateOptions;
-use schema_sql_generator::common::print_writer::PrintWriter;
-use schema_sql_generator::common::generator_type::GeneratorType;
-use schema_sql_generator::common::output_mode::OutputMode;
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
+use schema_parser::parse_database_xml;
+use schema_sql_generator::common::generate_options::GenerateOptions;
+use schema_sql_generator::common::generator_type::GeneratorType;
+use schema_sql_generator::common::output_mode::OutputMode;
+use schema_sql_generator::common::print_writer::PrintWriter;
+use std::cell::RefCell;
+use std::fs;
+use std::rc::Rc;
 
 pub struct SchemaInstaller;
 
@@ -43,7 +43,11 @@ impl SchemaInstaller {
 
         // Generate SQL by writing to temp file
         // (PrintWriter's BufWriter makes it difficult to extract bytes in memory)
-        let temp_file = std::env::temp_dir().join("schema_install_temp.sql");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let temp_file = std::env::temp_dir().join(format!("schema_install_temp_{}.sql", nanos));
         let file = std::fs::File::create(&temp_file)
             .map_err(|e| SchemaInstallerError::Io(e))?;
 
@@ -122,7 +126,7 @@ impl SchemaInstaller {
 
     async fn check_if_installed(pool: &AnyPool) -> Result<bool, SchemaInstallerError> {
         match pool.get_applied_migrations().await {
-            Ok(migrations) => Ok(!migrations.is_empty()),
+            Ok(migrations) => Ok(migrations.iter().any(|m| m.status == "success")),
             Err(e) => {
                 // Table might not exist yet, which is fine
                 if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
@@ -165,8 +169,6 @@ impl SchemaInstaller {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_sql_script_splitting() {
         // Test PostgreSQL delimiter

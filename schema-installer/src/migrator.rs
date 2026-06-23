@@ -1,11 +1,11 @@
+use schema_sql_generator::common::generator_type::GeneratorType;
 use std::collections::HashSet;
 use std::time::Instant;
-use schema_sql_generator::common::generator_type::GeneratorType;
 
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::migration::{compute_checksum, MigrationSource};
+use crate::migration::{compare_versions, compute_checksum, MigrationSource};
 
 pub struct Migrator;
 
@@ -26,27 +26,27 @@ impl Migrator {
             .map(|m| m.version.clone())
             .collect();
 
+        let source_migrations = source.migrations()?;
+
         for applied_migration in &applied {
             if applied_migration.status == "success" {
-                if let Ok(source_migrations) = source.migrations() {
-                    if let Some(source_migration) = source_migrations
-                        .iter()
-                        .find(|m| m.version == applied_migration.version)
-                    {
-                        let checksum = compute_checksum(&source_migration.sql);
-                        if checksum != applied_migration.checksum {
-                            return Err(SchemaInstallerError::ChecksumMismatch {
-                                version: applied_migration.version.clone(),
-                                expected: applied_migration.checksum.clone(),
-                                found: checksum,
-                            });
-                        }
+                if let Some(source_migration) = source_migrations
+                    .iter()
+                    .find(|m| m.version == applied_migration.version)
+                {
+                    let checksum = compute_checksum(&source_migration.sql);
+                    if checksum != applied_migration.checksum {
+                        return Err(SchemaInstallerError::ChecksumMismatch {
+                            version: applied_migration.version.clone(),
+                            expected: applied_migration.checksum.clone(),
+                            found: checksum,
+                        });
                     }
                 }
             }
         }
 
-        let mut migrations = source.migrations()?;
+        let mut migrations = source_migrations;
         migrations.retain(|m| !applied_versions.contains(&m.version));
 
         if migrations.is_empty() {
@@ -125,6 +125,8 @@ impl Migrator {
             }
         }
 
+        all_versions.sort_by(|a, b| compare_versions(a, b));
+
         for version in all_versions {
             if let Some(applied_mig) = applied.iter().find(|m| m.version == version) {
                 println!(
@@ -155,6 +157,9 @@ impl Migrator {
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+
+        pool.ensure_migration_table(&config.database_type)
+            .await?;
 
         let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;

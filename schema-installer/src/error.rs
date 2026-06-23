@@ -35,10 +35,4 @@ pub enum SchemaInstallerError {
 
     #[error("Migration failed for version {version}: {error}")]
     MigrationFailed { version: String, error: String },
-
-    #[error("Invalid migration filename: {0}")]
-    InvalidMigrationFilename(String),
-
-    #[error("Migration source is empty")]
-    MigrationSourceEmpty,
 }

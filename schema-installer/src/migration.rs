@@ -1,7 +1,8 @@
-use std::path::PathBuf;
-use sha2::{Sha256, Digest};
 use crate::error::SchemaInstallerError;
+use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct Migration {
     pub version: String,
     pub description: String,
@@ -194,16 +195,6 @@ pub fn compute_checksum(sql: &str) -> String {
     hex::encode(result)
 }
 
-impl Clone for Migration {
-    fn clone(&self) -> Self {
-        Migration {
-            version: self.version.clone(),
-            description: self.description.clone(),
-            script_path: self.script_path.clone(),
-            sql: self.sql.clone(),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
