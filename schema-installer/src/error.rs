@@ -25,4 +25,20 @@ pub enum SchemaInstallerError {
 
     #[error("Database error: {0}")]
     Database(String),
+
+    #[error("Checksum mismatch for migration {version}: expected {expected}, found {found}")]
+    ChecksumMismatch {
+        version: String,
+        expected: String,
+        found: String,
+    },
+
+    #[error("Migration failed for version {version}: {error}")]
+    MigrationFailed { version: String, error: String },
+
+    #[error("Invalid migration filename: {0}")]
+    InvalidMigrationFilename(String),
+
+    #[error("Migration source is empty")]
+    MigrationSourceEmpty,
 }

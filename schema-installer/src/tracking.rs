@@ -1,32 +1,51 @@
 use schema_sql_generator::common::generator_type::GeneratorType;
 
-pub struct TrackingTableDdl;
+pub struct SchemaMigrationDdl;
 
-impl TrackingTableDdl {
-    pub fn database_version_ddl(database_type: &GeneratorType) -> String {
+impl SchemaMigrationDdl {
+    pub fn schema_migration_ddl(database_type: &GeneratorType) -> String {
         match database_type {
             GeneratorType::Postgres => {
-                "CREATE TABLE IF NOT EXISTS databaseversion (\n  version VARCHAR(10) PRIMARY KEY\n);\n".to_string()
+                r#"CREATE TABLE IF NOT EXISTS schema_migration (
+    id BIGSERIAL PRIMARY KEY,
+    version TEXT NOT NULL,
+    script_path TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    execution_time_ms INT NOT NULL,
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL,
+    tool_version TEXT NOT NULL
+);"#
+                    .to_string()
             }
             GeneratorType::SqlServer => {
-                "IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='databaseversion')\n  CREATE TABLE dbo.databaseversion (\n    version NVARCHAR(10) PRIMARY KEY\n  );\n".to_string()
+                r#"IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='schema_migration')
+BEGIN
+  CREATE TABLE dbo.schema_migration (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    version NVARCHAR(MAX) NOT NULL,
+    script_path NVARCHAR(MAX) NOT NULL,
+    checksum NVARCHAR(MAX) NOT NULL,
+    execution_time_ms INT NOT NULL,
+    installed_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+    status NVARCHAR(MAX) NOT NULL,
+    tool_version NVARCHAR(MAX) NOT NULL
+  );
+END"#
+                    .to_string()
             }
             GeneratorType::Sqlite => {
-                "CREATE TABLE IF NOT EXISTS databaseversion (\n  version TEXT PRIMARY KEY\n);\n".to_string()
-            }
-        }
-    }
-
-    pub fn upgrade_log_ddl(database_type: &GeneratorType) -> String {
-        match database_type {
-            GeneratorType::Postgres => {
-                "CREATE TABLE IF NOT EXISTS databaseupgradelog (\n  id SERIAL PRIMARY KEY,\n  start_datetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  end_datetime TIMESTAMP,\n  changelog_name VARCHAR(200),\n  error TEXT\n);\n".to_string()
-            }
-            GeneratorType::SqlServer => {
-                "IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='databaseupgradelog')\n  CREATE TABLE dbo.databaseupgradelog (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    start_datetime DATETIME NOT NULL DEFAULT GETDATE(),\n    end_datetime DATETIME,\n    changelog_name NVARCHAR(200),\n    error NVARCHAR(MAX)\n  );\n".to_string()
-            }
-            GeneratorType::Sqlite => {
-                "CREATE TABLE IF NOT EXISTS databaseupgradelog (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  start_datetime DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  end_datetime DATETIME,\n  changelog_name TEXT,\n  error TEXT\n);\n".to_string()
+                r#"CREATE TABLE IF NOT EXISTS schema_migration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL,
+    script_path TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    execution_time_ms INTEGER NOT NULL,
+    installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL,
+    tool_version TEXT NOT NULL
+);"#
+                    .to_string()
             }
         }
     }
@@ -37,23 +56,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_postgres_ddl() {
-        let ddl = TrackingTableDdl::database_version_ddl(&GeneratorType::Postgres);
-        assert!(ddl.contains("CREATE TABLE IF NOT EXISTS databaseversion"));
-        assert!(ddl.contains("VARCHAR(10)"));
+    fn test_postgres_schema_migration_ddl() {
+        let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::Postgres);
+        assert!(ddl.contains("CREATE TABLE IF NOT EXISTS schema_migration"));
+        assert!(ddl.contains("BIGSERIAL PRIMARY KEY"));
     }
 
     #[test]
-    fn test_sqlserver_ddl() {
-        let ddl = TrackingTableDdl::database_version_ddl(&GeneratorType::SqlServer);
-        assert!(ddl.contains("dbo.databaseversion"));
-        assert!(ddl.contains("NVARCHAR(10)"));
+    fn test_sqlserver_schema_migration_ddl() {
+        let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::SqlServer);
+        assert!(ddl.contains("dbo.schema_migration"));
+        assert!(ddl.contains("BIGINT IDENTITY(1,1)"));
     }
 
     #[test]
-    fn test_sqlite_ddl() {
-        let ddl = TrackingTableDdl::database_version_ddl(&GeneratorType::Sqlite);
-        assert!(ddl.contains("CREATE TABLE IF NOT EXISTS databaseversion"));
-        assert!(ddl.contains("TEXT PRIMARY KEY"));
+    fn test_sqlite_schema_migration_ddl() {
+        let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::Sqlite);
+        assert!(ddl.contains("CREATE TABLE IF NOT EXISTS schema_migration"));
+        assert!(ddl.contains("INTEGER PRIMARY KEY AUTOINCREMENT"));
     }
 }

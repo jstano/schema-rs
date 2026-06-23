@@ -6,7 +6,7 @@ use crate::error::SchemaInstallerError;
 pub struct SchemaInstallerConfig {
     pub database_type: GeneratorType,
     pub connection_string: String,
-    pub schema_file: PathBuf,
+    pub schema_file: Option<PathBuf>,
     pub boolean_mode: BooleanMode,
     pub foreign_key_mode: ForeignKeyMode,
 }
@@ -60,17 +60,17 @@ impl SchemaInstallerConfigBuilder {
             .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("database_type required".to_string()))?;
         let connection_string = self.connection_string
             .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("connection_string required".to_string()))?;
-        let schema_file = self.schema_file
-            .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("schema_file required".to_string()))?;
 
-        if !schema_file.exists() {
-            return Err(SchemaInstallerError::SchemaFileNotFound(schema_file.display().to_string()));
+        if let Some(ref schema_file) = self.schema_file {
+            if !schema_file.exists() {
+                return Err(SchemaInstallerError::SchemaFileNotFound(schema_file.display().to_string()));
+            }
         }
 
         Ok(SchemaInstallerConfig {
             database_type,
             connection_string,
-            schema_file,
+            schema_file: self.schema_file,
             boolean_mode: self.boolean_mode,
             foreign_key_mode: self.foreign_key_mode,
         })

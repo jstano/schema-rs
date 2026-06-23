@@ -9,7 +9,6 @@ use schema_sql_generator::common::output_mode::OutputMode;
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::tracking::TrackingTableDdl;
 
 pub struct SchemaInstaller;
 
@@ -28,7 +27,9 @@ impl SchemaInstaller {
         }
 
         // Parse schema
-        let schema_file_str = config.schema_file.to_str()
+        let schema_file = config.schema_file.as_ref()
+            .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("schema_file required for install command".to_string()))?;
+        let schema_file_str = schema_file.to_str()
             .ok_or_else(|| SchemaInstallerError::SchemaFileNotFound("Invalid path".to_string()))?;
         let schema_content = fs::read_to_string(schema_file_str)
             .map_err(|e| SchemaInstallerError::Io(e))?;
@@ -63,25 +64,29 @@ impl SchemaInstaller {
 
         let _ = std::fs::remove_file(&temp_file);
 
-        // Log upgrade start
-        let changelog_name = format!("V1__install_schema_{}.sql", version);
-        pool.log_upgrade_start(&changelog_name).await?;
+        // Record migration
+        let script_name = format!("V{}__install_schema.sql", version);
+        let checksum = crate::migration::compute_checksum(&sql);
+        let tool_version = env!("CARGO_PKG_VERSION");
+
+        let migration_id = pool
+            .insert_migration(&version, &script_name, &checksum, 0, "pending", tool_version)
+            .await?;
 
         // Execute SQL statements
+        let start = std::time::Instant::now();
         match Self::execute_sql_script(&pool, &config.database_type, &sql).await {
             Ok(_) => {
-                // Update version
-                pool.insert_version(&version).await?;
-
-                // Log upgrade success
-                pool.log_upgrade_success(&changelog_name).await?;
-
+                let elapsed_ms = start.elapsed().as_millis() as i64;
+                pool.update_migration_status(migration_id, "success", elapsed_ms)
+                    .await?;
                 println!("Schema installed successfully. Version: {}", version);
                 Ok(())
             }
             Err(e) => {
-                // Log error
-                let _ = pool.log_upgrade_error(&changelog_name, &e.to_string()).await;
+                let elapsed_ms = start.elapsed().as_millis() as i64;
+                pool.update_migration_status(migration_id, "failed", elapsed_ms)
+                    .await?;
                 Err(e)
             }
         }
@@ -94,13 +99,30 @@ impl SchemaInstaller {
 
     pub async fn get_installed_version(config: &SchemaInstallerConfig) -> Result<Option<String>, SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
-        pool.query_version().await
+        match pool.get_applied_migrations().await {
+            Ok(migrations) => {
+                let latest = migrations
+                    .iter()
+                    .filter(|m| m.status == "success")
+                    .max_by(|a, b| {
+                        crate::migration::compare_versions(&a.version, &b.version)
+                    });
+                Ok(latest.map(|m| m.version.clone()))
+            }
+            Err(e) => {
+                // Table might not exist yet, which is fine
+                if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     async fn check_if_installed(pool: &AnyPool) -> Result<bool, SchemaInstallerError> {
-        match pool.query_version().await {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => Ok(false),
+        match pool.get_applied_migrations().await {
+            Ok(migrations) => Ok(!migrations.is_empty()),
             Err(e) => {
                 // Table might not exist yet, which is fine
                 if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
@@ -113,12 +135,7 @@ impl SchemaInstaller {
     }
 
     async fn ensure_tracking_tables(pool: &AnyPool, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {
-        let version_ddl = TrackingTableDdl::database_version_ddl(database_type);
-        let upgrade_log_ddl = TrackingTableDdl::upgrade_log_ddl(database_type);
-
-        pool.execute_sql(&version_ddl).await?;
-        pool.execute_sql(&upgrade_log_ddl).await?;
-
+        pool.ensure_migration_table(database_type).await?;
         Ok(())
     }
 
