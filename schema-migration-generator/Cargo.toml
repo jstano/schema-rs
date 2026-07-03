@@ -5,6 +5,6 @@ edition.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-schema-model = { path = "../schema-model" }
-schema-diff = { path = "../schema-diff" }
+schema-model.workspace = true
+schema-diff.workspace = true
 thiserror = "2"

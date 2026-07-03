@@ -5,9 +5,9 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-schema-model = { path = "../schema-model" }
-schema-parser = { path = "../schema-parser" }
-schema-sql-generator = { path = "../schema-sql-generator" }
+schema-model.workspace = true
+schema-parser.workspace = true
+schema-sql-generator.workspace = true
 
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "any"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
