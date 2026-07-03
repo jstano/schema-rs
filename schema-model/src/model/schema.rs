@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn add_and_get_table_and_sort() {
         let mut schema = make_schema();
-        let mut table1 = Table::new(
+        let table1 = Table::new(
             Some("schema"),
             "Table1",
             Option::<&str>::None,
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn validate_setnull_error_when_required() {
         let mut s = make_schema();
-        let mut parent = Table::new(
+        let parent = Table::new(
             Some("s"),
             "parent",
             Option::<&str>::None,
@@ -285,7 +285,7 @@ mod tests {
         );
         s.add_table(parent);
 
-        let mut child = Table::new(
+        let child = Table::new(
             Some("s"),
             "child",
             Option::<&str>::None,

@@ -16,8 +16,8 @@ edition = "2024"
 authors = ["Jeff Stano <jeff@stano.com>"]
 description = "A set of tools to manage relational database schemas"
 license = "MIT OR Apache-2.0"
-license-file = "LICENSE"
-repository = "https://github.com/jstano/rust-schema"
+repository = "https://github.com/jstano/schema-rs"
+homepage = "https://github.com/jstano/schema-rs"
 readme = "README.md"
 keywords = ["schema"]
 

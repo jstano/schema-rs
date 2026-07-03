@@ -1,5 +1,9 @@
 [package]
 name = "schema-parser"
+description.workspace = true
+documentation = "https://docs.rs/schema-parser"
+homepage.workspace = true
+repository.workspace = true
 license = "MIT OR Apache-2.0"
 edition.workspace = true
 version.workspace = true
