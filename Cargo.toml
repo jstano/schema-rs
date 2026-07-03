@@ -2,7 +2,9 @@
 resolver = "3"
 members = [
     "schema-diagram-generator",
+    "schema-diff",
     "schema-installer",
+    "schema-migration-generator",
     "schema-model",
     "schema-parser",
     "schema-sql-generator",

@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
+use schema_installer::{DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder};
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_sql_generator::common::generator_type::GeneratorType;
-use schema_installer::{SchemaInstallerConfigBuilder, SchemaInstaller, Migrator, DirectoryMigrationSource};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -50,6 +50,11 @@ enum Commands {
     Install {
         #[arg(long, help = "Path to XML schema file")]
         schema_file: PathBuf,
+    },
+    /// Check if there are pending migrations (exits 0 = none, 1 = pending)
+    PendingCheck {
+        #[arg(long, help = "Path to migrations directory")]
+        migrations_dir: PathBuf,
     },
 }
 
@@ -111,6 +116,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
             Migrator::repair(&config, source).await?;
         }
+        Commands::PendingCheck { migrations_dir } => {
+            let config = SchemaInstallerConfigBuilder::new()
+                .database_type(database_type)
+                .connection_string(connection_string.clone())
+                .boolean_mode(boolean_mode)
+                .foreign_key_mode(foreign_key_mode)
+                .build()?;
+
+            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let pending = Migrator::has_pending_migrations(&config, source).await?;
+            if pending {
+                println!("Pending migrations exist");
+                std::process::exit(1);
+            } else {
+                println!("No pending migrations");
+            }
+        }
         Commands::Install { schema_file } => {
             let config = SchemaInstallerConfigBuilder::new()
                 .database_type(database_type)
@@ -129,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn parse_database_type(db_type: &str) -> Result<GeneratorType, Box<dyn std::error::Error>> {
     match db_type.to_lowercase().as_str() {
-        "postgres" | "postgresql" => Ok(GeneratorType::Postgres),
+        "postgres" | "postgresql" => Ok(GeneratorType::Postgresql),
         "sqlite" => Ok(GeneratorType::Sqlite),
         "sqlserver" | "mssql" => Ok(GeneratorType::SqlServer),
         _ => {

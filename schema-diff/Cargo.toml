@@ -1,0 +1,9 @@
+[package]
+name = "schema-diff"
+version.workspace = true
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+schema-model = { path = "../schema-model", version = "0.2.0" }
+thiserror = "2"

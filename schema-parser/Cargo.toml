@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 schema-model = { path = "../schema-model" }
+schema-xsd = "1.0.0"
 rust-embed = "^8.7.2"
 quick-xml = { version = "^0.38.3", features = ["serialize"] }
 roxmltree = "^0.20"

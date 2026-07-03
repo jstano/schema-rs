@@ -232,7 +232,7 @@ fn sub_schema(schema_xml: &SchemaXml) -> Option<Schema> {
 
 pub(crate) fn str_to_database_type(s: Option<&str>) -> Option<DatabaseType> {
     s.and_then(|v| match v.to_ascii_lowercase().as_str() {
-        "postgresql" | "postgres" | "pgsql" => Some(DatabaseType::Postgres),
+        "postgresql" | "postgres" | "pgsql" => Some(DatabaseType::Postgresql),
         "sqlite" => Some(DatabaseType::Sqlite),
         "sqlserver" | "mssql" => Some(DatabaseType::SqlServer),
         _ => None,

@@ -61,11 +61,11 @@ mod tests {
 
     #[test]
     fn constructor_and_getters_and_display() {
-        let v = View::new(Some("s"), "v1", "select *", Some(DatabaseType::Postgres));
+        let v = View::new(Some("s"), "v1", "select *", Some(DatabaseType::Postgresql));
         assert_eq!(v.schema_name().unwrap(), "s");
         assert_eq!(v.name(), "v1");
         assert_eq!(v.sql(), "select *");
-        assert_eq!(v.database_type().unwrap(), DatabaseType::Postgres);
+        assert_eq!(v.database_type().unwrap(), DatabaseType::Postgresql);
         assert_eq!(format!("{}", v), "s.v1");
     }
 }

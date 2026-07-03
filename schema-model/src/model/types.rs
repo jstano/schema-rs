@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DatabaseType {
-    Postgres,
+    Postgresql,
     Sqlite,
     SqlServer,
 }
@@ -8,7 +8,7 @@ pub enum DatabaseType {
 impl DatabaseType {
     pub fn statement_separator(&self) -> &'static str {
         match self {
-            DatabaseType::Postgres => ";",
+            DatabaseType::Postgresql => ";",
             DatabaseType::Sqlite => ";",
             DatabaseType::SqlServer => "\nGO",
         }
@@ -16,7 +16,7 @@ impl DatabaseType {
 
     pub fn max_key_name_length(&self) -> usize {
         match self {
-            DatabaseType::Postgres => 63,
+            DatabaseType::Postgresql => 63,
             DatabaseType::Sqlite => 128,
             DatabaseType::SqlServer => 128,
         }
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn enums_equality_and_copy() {
-        let db: DatabaseType = DatabaseType::Postgres;
+        let db: DatabaseType = DatabaseType::Postgresql;
         let db2 = db;
         assert_eq!(db, db2);
 

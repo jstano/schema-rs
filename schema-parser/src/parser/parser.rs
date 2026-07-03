@@ -1,7 +1,7 @@
-use schema_model::model::database_model::DatabaseModel;
 use crate::parse_database_roxml;
 use crate::parser::convert::convert_database;
 use crate::parser::nodes::DatabaseXml;
+use schema_model::model::database_model::DatabaseModel;
 
 /// parse a string containing XML into a DatabaseModel.
 pub fn parse_database_xml(xml: &str) -> Result<DatabaseModel, String> {
@@ -19,7 +19,7 @@ mod tests {
 
     #[test]
     fn parse_test_resource_schema() {
-        let xml = fs::read_to_string("resources/schema-parser-test-schema.xml")
+        let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml")
             .expect("resource present");
         let database = parse_database_xml(xml.as_str()).expect("parse ok");
         let version = database.version().unwrap();

@@ -34,9 +34,9 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let c = Constraint::new("ck", "check (x>0)", DatabaseType::Postgres);
+        let c = Constraint::new("ck", "check (x>0)", DatabaseType::Postgresql);
         assert_eq!(c.name(), "ck");
         assert_eq!(c.sql(), "check (x>0)");
-        assert_eq!(c.database_type(), DatabaseType::Postgres);
+        assert_eq!(c.database_type(), DatabaseType::Postgresql);
     }
 }

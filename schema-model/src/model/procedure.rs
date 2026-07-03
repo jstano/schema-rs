@@ -47,10 +47,10 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let procedure = Procedure::new(Some("public"), "p1", DatabaseType::Postgres, "begin end");
+        let procedure = Procedure::new(Some("public"), "p1", DatabaseType::Postgresql, "begin end");
         assert_eq!(procedure.schema_name().unwrap(), "public");
         assert_eq!(procedure.name(), "p1");
-        assert_eq!(procedure.database_type(), DatabaseType::Postgres);
+        assert_eq!(procedure.database_type(), DatabaseType::Postgresql);
         assert_eq!(procedure.sql(), "begin end");
     }
 }

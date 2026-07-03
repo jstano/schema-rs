@@ -58,7 +58,7 @@ cargo doc --workspace --open
 # Run SQL generator (requires schema file)
 cargo run -p schema-sql-generator -- \
   --database-type postgres \
-  --schema-file schema-parser/resources/schema-parser-test-schema.xml \
+  --schema-file schema-parser/tests/resources/schema-parser-test-schema.xml \
   --foreign-key-mode relations \
   --boolean-mode native
 
@@ -246,9 +246,9 @@ The `schema-installer` crate provides a Flyway-style migration system.
 **Integration tests:**
 - Parser tests: `schema-parser/tests/parser_integration_tests.rs`
 - Installer tests: `schema-installer/tests/integration_tests.rs`
-- Test resources: `schema-parser/resources/`
+- Test resources: `schema-parser/tests/resources/`
 - Reference XML schemas: `schema-parser-test-schema.xml`, `schema-parser-example-schema.xml`
-- The `.sql` files in `schema-parser/resources/` are generated SQL output checked in as reference; there are no automated SQL output comparison tests.
+- The `.sql` files in `schema-parser/tests/resources/` are generated SQL output checked in as reference; there are no automated SQL output comparison tests.
 
 ## Adding a New Database
 
@@ -274,7 +274,7 @@ The `schema-installer` crate provides a Flyway-style migration system.
 1. Add structs to `schema-model/src/model/`
 2. Update parent container (`DatabaseModel`, `Schema`, or `Table`)
 3. Add parser logic in `schema-parser/src/parser/convert.rs` or create new parser module
-4. Update XML schema definition (`schema.xsd` in resources)
+4. Update XML schema definition in the `schema-xsd` crate (published separately at crates.io/crates/schema-xsd; re-exported as `schema_parser::SCHEMA_XSD`)
 5. Implement a generator trait in `common/` folder
 6. Override in database-specific folders as needed
 

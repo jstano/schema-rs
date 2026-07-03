@@ -10,7 +10,7 @@ use schema_model::model::types::DatabaseType;
 use std::str::FromStr;
 
 pub enum GeneratorType {
-    Postgres,
+    Postgresql,
     Sqlite,
     SqlServer,
 }
@@ -19,7 +19,7 @@ impl GeneratorType {
     pub fn new_generator(&self, options: GenerateOptions) -> Box<dyn SqlGenerator> {
         let context = self.build_context(&options);
         match self {
-            GeneratorType::Postgres => Box::new(PostgresGenerator::new(context)),
+            GeneratorType::Postgresql => Box::new(PostgresGenerator::new(context)),
             GeneratorType::Sqlite => Box::new(SqliteGenerator::new(context)),
             GeneratorType::SqlServer => Box::new(SqlServerGenerator::new(context)),
         }
@@ -31,7 +31,7 @@ impl GeneratorType {
 
     fn build_context(&self, options: &GenerateOptions) -> GeneratorContext {
         let db_type = match self {
-            GeneratorType::Postgres => DatabaseType::Postgres,
+            GeneratorType::Postgresql => DatabaseType::Postgresql,
             GeneratorType::Sqlite => DatabaseType::Sqlite,
             GeneratorType::SqlServer => DatabaseType::SqlServer,
         };
@@ -47,7 +47,7 @@ impl FromStr for GeneratorType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "postgres" => Ok(GeneratorType::Postgres),
+            "postgres" | "postgresql" => Ok(GeneratorType::Postgresql),
             "sqlite" => Ok(GeneratorType::Sqlite),
             "sqlserver" => Ok(GeneratorType::SqlServer),
             _ => Err(format!("Unknown generator type: {}", s)),

@@ -5,7 +5,7 @@ pub struct SchemaMigrationDdl;
 impl SchemaMigrationDdl {
     pub fn schema_migration_ddl(database_type: &GeneratorType) -> String {
         match database_type {
-            GeneratorType::Postgres => {
+            GeneratorType::Postgresql => {
                 r#"CREATE TABLE IF NOT EXISTS schema_migration (
     id BIGSERIAL PRIMARY KEY,
     version TEXT NOT NULL,
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_postgres_schema_migration_ddl() {
-        let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::Postgres);
+        let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::Postgresql);
         assert!(ddl.contains("CREATE TABLE IF NOT EXISTS schema_migration"));
         assert!(ddl.contains("BIGSERIAL PRIMARY KEY"));
     }

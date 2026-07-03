@@ -1,12 +1,15 @@
 use schema_installer::SchemaInstallerConfigBuilder;
-use schema_sql_generator::common::generator_type::GeneratorType;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
-use std::path::PathBuf;
-use std::fs;
+use schema_sql_generator::common::generator_type::GeneratorType;
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 
 const SIMPLE_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<database xmlns="http://stano.com/database" version="1.0">
+<database xmlns="http://stano.com/database"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd"
+          version="1.0">
     <table name="users">
         <columns>
             <column name="id" type="Sequence" required="true"/>

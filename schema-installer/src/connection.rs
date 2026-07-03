@@ -5,7 +5,7 @@ use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::{postgres::PgPoolOptions, sqlite::SqlitePoolOptions, AnyPool as SqlxAnyPool, Pool, Postgres, Row, Sqlite};
 
 pub enum AnyPool {
-    Postgres(Pool<Postgres>),
+    Postgresql(Pool<Postgres>),
     Sqlite(Pool<Sqlite>),
     Any(SqlxAnyPool),
 }
@@ -13,13 +13,13 @@ pub enum AnyPool {
 impl AnyPool {
     pub async fn connect(database_type: &GeneratorType, connection_string: &str) -> Result<Self, SchemaInstallerError> {
         match database_type {
-            GeneratorType::Postgres => {
+            GeneratorType::Postgresql => {
                 let pool = PgPoolOptions::new()
                     .max_connections(5)
                     .connect(connection_string)
                     .await
                     .map_err(|e| SchemaInstallerError::Connection(e.to_string()))?;
-                Ok(AnyPool::Postgres(pool))
+                Ok(AnyPool::Postgresql(pool))
             }
             GeneratorType::Sqlite => {
                 let pool = SqlitePoolOptions::new()
@@ -42,7 +42,7 @@ impl AnyPool {
 
     pub async fn execute_sql(&self, sql: &str) -> Result<(), SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 sqlx::query(sql)
                     .execute(pool)
                     .await
@@ -73,7 +73,7 @@ impl AnyPool {
 
     pub async fn get_applied_migrations(&self) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 let rows: Vec<(i64, String, String, String, i32, String, String, String)> =
                     sqlx::query_as(
                         "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
@@ -175,7 +175,7 @@ impl AnyPool {
         tool_version: &str,
     ) -> Result<i64, SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 let row: (i64,) = sqlx::query_as(
                     "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
                 )
@@ -242,7 +242,7 @@ impl AnyPool {
         execution_time_ms: i64,
     ) -> Result<(), SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 sqlx::query("UPDATE schema_migration SET status = $1, execution_time_ms = $2 WHERE id = $3")
                     .bind(status)
                     .bind(execution_time_ms)
@@ -277,7 +277,7 @@ impl AnyPool {
 
     pub async fn delete_failed_migrations(&self) -> Result<(), SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 sqlx::query("DELETE FROM schema_migration WHERE status = $1")
                     .bind("failed")
                     .execute(pool)
@@ -310,7 +310,7 @@ impl AnyPool {
         checksum: &str,
     ) -> Result<(), SchemaInstallerError> {
         match self {
-            AnyPool::Postgres(pool) => {
+            AnyPool::Postgresql(pool) => {
                 sqlx::query("UPDATE schema_migration SET checksum = $1 WHERE id = $2")
                     .bind(checksum)
                     .bind(id)

@@ -9,6 +9,8 @@
       <sourceFolder url="file://$MODULE_DIR$/schema-parser/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/schema-diagram-generator/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/schema-installer/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/schema-diff/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/schema-migration-generator/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/schema-installer/target" />
       <excludeFolder url="file://$MODULE_DIR$/schema-model/target" />
       <excludeFolder url="file://$MODULE_DIR$/schema-parser/target" />

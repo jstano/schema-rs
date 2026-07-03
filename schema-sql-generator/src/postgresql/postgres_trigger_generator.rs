@@ -2,7 +2,7 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::trigger_generator::TriggerGenerator;
 use crate::sql_println;
 use schema_model::model::table::Table;
-use schema_model::model::types::{ForeignKeyMode, RelationType, TriggerType, DatabaseType};
+use schema_model::model::types::{DatabaseType, ForeignKeyMode, RelationType, TriggerType};
 
 pub struct PostgresTriggerGenerator {
     context: GeneratorContext,
@@ -152,7 +152,7 @@ impl PostgresTriggerGenerator {
 
             for custom_trigger in table.triggers() {
                 if custom_trigger.trigger_type() == TriggerType::Delete
-                    && custom_trigger.database_type() == DatabaseType::Postgres
+                    && custom_trigger.database_type() == DatabaseType::Postgresql
                 {
                     sql_println!(writer, "{}", custom_trigger.trigger_text());
                 }
@@ -231,7 +231,7 @@ impl PostgresTriggerGenerator {
 
             for custom_trigger in table.triggers() {
                 if custom_trigger.trigger_type() == TriggerType::Update
-                    && custom_trigger.database_type() == DatabaseType::Postgres
+                    && custom_trigger.database_type() == DatabaseType::Postgresql
                 {
                     sql_println!(writer, "{}", custom_trigger.trigger_text());
                 }

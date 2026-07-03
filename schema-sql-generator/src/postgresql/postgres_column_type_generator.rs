@@ -130,7 +130,7 @@ mod tests {
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
         );
-        let settings = SqlGeneratorSettings::new(DatabaseType::Postgres, &options);
+        let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
         let writer = SqlWriter::new(options.writer.clone());
         let ctx = GeneratorContext::new(settings, writer);
         (ctx, table)

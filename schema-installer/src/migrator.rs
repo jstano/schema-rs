@@ -204,6 +204,31 @@ impl Migrator {
         Ok(())
     }
 
+    pub async fn has_pending_migrations(
+        config: &SchemaInstallerConfig,
+        source: Box<dyn MigrationSource>,
+    ) -> Result<bool, SchemaInstallerError> {
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+
+        if pool.ensure_migration_table(&config.database_type).await.is_err() {
+            return Ok(true);
+        }
+
+        let applied = pool.get_applied_migrations().await.unwrap_or_default();
+        let applied_versions: HashSet<String> = applied
+            .iter()
+            .filter(|m| m.status == "success")
+            .map(|m| m.version.clone())
+            .collect();
+
+        let source_migrations = source.migrations()?;
+        let pending = source_migrations
+            .iter()
+            .any(|m| !applied_versions.contains(&m.version));
+
+        Ok(pending)
+    }
+
     pub async fn repair(
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,

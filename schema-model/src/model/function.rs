@@ -41,16 +41,16 @@ impl Function {
 }
 
 #[cfg(test)]
-mod tests {                     
+mod tests {
     use super::*;
     use crate::model::types::DatabaseType;
 
     #[test]
     fn constructor_and_getters() {
-        let f = Function::new(Some("public"), "f1", DatabaseType::Postgres, "select 1");
+        let f = Function::new(Some("public"), "f1", DatabaseType::Postgresql, "select 1");
         assert_eq!(f.schema_name().unwrap(), "public");
         assert_eq!(f.name(), "f1");
-        assert_eq!(f.database_type(), DatabaseType::Postgres);
+        assert_eq!(f.database_type(), DatabaseType::Postgresql);
         assert_eq!(f.sql(), "select 1");
     }
 }

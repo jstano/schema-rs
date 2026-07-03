@@ -82,6 +82,10 @@ impl Schema {
         self.table_map.get(&name_lower).map(|&idx| &self.tables[idx])
     }
 
+    pub fn all_views(&self) -> &[View] {
+        &self.views
+    }
+
     pub fn views(&self, database_type: DatabaseType) -> Vec<View> {
         self.views
             .iter()
@@ -253,9 +257,9 @@ mod tests {
     #[test]
     fn views_filtered_by_database_type() {
         let mut s = make_schema();
-        s.add_view(View::new(Some("s"), "v1", "sql1", Some(DatabaseType::Postgres)));
+        s.add_view(View::new(Some("s"), "v1", "sql1", Some(DatabaseType::Postgresql)));
         s.add_view(View::new(Some("s"), "v2", "sql2", Some(DatabaseType::SqlServer)));
-        let pg = s.views(DatabaseType::Postgres);
+        let pg = s.views(DatabaseType::Postgresql);
         assert_eq!(pg.len(), 1);
         assert_eq!(pg[0].name(), "v1");
     }

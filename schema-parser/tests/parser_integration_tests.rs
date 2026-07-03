@@ -4,7 +4,7 @@ use std::fs;
 #[test]
 fn test_parser() {
     let xml =
-        fs::read_to_string("resources/schema-parser-test-schema.xml").expect("resource present");
+        fs::read_to_string("tests/resources/schema-parser-test-schema.xml").expect("resource present");
     let database = parse_database_xml(xml.as_str()).expect("parse ok");
     let schemas = database.schemas();
 

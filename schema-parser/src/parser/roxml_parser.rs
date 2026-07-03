@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn parse_with_roxmltree_sample() {
-        let xml = fs::read_to_string("resources/schema-parser-test-schema.xml").expect("resource present");
+        let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml").expect("resource present");
         let db = parse_database_roxml(&xml).expect("parsed");
         assert!(db.version.is_some());
         assert!(!db.tables.is_empty());
