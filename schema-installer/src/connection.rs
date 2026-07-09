@@ -74,7 +74,7 @@ impl AnyPool {
     pub async fn get_applied_migrations(&self) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                let rows: Vec<(i64, String, String, String, i32, String, String, String)> =
+                let rows: Vec<(i64, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String)> =
                     sqlx::query_as(
                         "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
                     )
@@ -92,7 +92,7 @@ impl AnyPool {
                                 script_path,
                                 checksum,
                                 execution_time_ms: execution_time_ms as i64,
-                                installed_at,
+                                installed_at: installed_at.to_rfc3339(),
                                 status,
                                 tool_version,
                             }

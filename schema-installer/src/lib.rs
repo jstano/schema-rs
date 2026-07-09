@@ -5,6 +5,7 @@ pub mod installer;
 pub mod tracking;
 pub mod migration;
 pub mod migrator;
+pub(crate) mod sql_split;
 
 pub use config::{SchemaInstallerConfig, SchemaInstallerConfigBuilder};
 pub use error::SchemaInstallerError;

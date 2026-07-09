@@ -56,3 +56,35 @@ impl SqlGeneratorSettings {
         self.target_postgres_version
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::print_writer::PrintWriter;
+    use schema_model::builder::SchemaBuilder;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, ForeignKeyMode};
+    use std::cell::RefCell;
+
+    #[test]
+    fn statement_separator_is_semicolon_for_every_database_type_including_sqlserver() {
+        // BUG (or at least a doc/behavior mismatch): AGENTS.md and
+        // DatabaseType::statement_separator() both say SQL Server should use "GO" as its
+        // batch separator instead of ";". But SqlGeneratorSettings::new() hardcodes ";"
+        // for every DatabaseType and DatabaseType::statement_separator() is never actually
+        // called anywhere in this crate - so generated SQL Server scripts use ";" today,
+        // matching the checked-in schema-parser-test-schema-sqlserver.sql reference output.
+        // This test documents current behavior; if this is ever fixed, update this test.
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let options = GenerateOptions::new(
+            std::rc::Rc::new(model),
+            std::rc::Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
+        );
+
+        let settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
+
+        assert_eq!(settings.statement_separator(), ";");
+        assert_ne!(settings.statement_separator(), DatabaseType::SqlServer.statement_separator());
+    }
+}

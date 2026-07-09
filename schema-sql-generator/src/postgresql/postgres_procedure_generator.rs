@@ -24,3 +24,31 @@ impl ProcedureGenerator for PostgresProcedureGenerator {
         self.procedure_generator.output_procedure(writer, statement_separator, procedure);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::SchemaBuilder;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn output_procedures_renders_matching_database_type_only() {
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_procedures(vec![
+                Procedure::new(None::<&str>, "pg_only", DatabaseType::Postgresql, "create procedure pg_only() as $$ begin end $$ language plpgsql"),
+                Procedure::new(None::<&str>, "sqlserver_only", DatabaseType::SqlServer, "create procedure sqlserver_only"),
+            ])
+            .build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = PostgresProcedureGenerator::new(ctx);
+        generator.output_procedures();
+
+        let output = buffer.contents();
+        assert!(output.contains("create procedure pg_only()"));
+        assert!(!output.contains("sqlserver_only"));
+    }
+}

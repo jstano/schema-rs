@@ -13,7 +13,7 @@ schema-model.workspace = true
 schema-parser.workspace = true
 schema-sql-generator.workspace = true
 
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "any"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "any", "chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"

@@ -52,3 +52,79 @@ macro_rules! sql_newline {
         $writer.newline();
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::SharedBuffer;
+
+    fn make_writer() -> (SqlWriter, SharedBuffer) {
+        let buffer = SharedBuffer::new();
+        let print_writer = PrintWriter::new_auto_flush(Box::new(buffer.clone()));
+        (SqlWriter::new(Rc::new(RefCell::new(print_writer))), buffer)
+    }
+
+    // `print`/`printf` don't auto-flush (only println/newline do; see PrintWriter), so an
+    // explicit flush is needed to observe their output through the underlying buffered writer.
+    fn flush(writer: &SqlWriter) {
+        writer.print_writer.borrow_mut().flush();
+    }
+
+    #[test]
+    fn print_writes_without_trailing_newline() {
+        let (mut writer, buffer) = make_writer();
+        writer.print("hello");
+        flush(&writer);
+        assert_eq!(buffer.contents(), "hello");
+    }
+
+    #[test]
+    fn println_appends_a_newline() {
+        let (mut writer, buffer) = make_writer();
+        writer.println("hello");
+        assert_eq!(buffer.contents(), "hello\n");
+    }
+
+    #[test]
+    fn newline_writes_a_bare_newline() {
+        let (mut writer, buffer) = make_writer();
+        writer.print("a");
+        writer.newline();
+        writer.print("b");
+        flush(&writer);
+        assert_eq!(buffer.contents(), "a\nb");
+    }
+
+    #[test]
+    fn printf_formats_arguments() {
+        let (mut writer, buffer) = make_writer();
+        writer.printf(format_args!("count = {}", 42));
+        flush(&writer);
+        assert_eq!(buffer.contents(), "count = 42");
+    }
+
+    #[test]
+    fn sql_print_macro_writes_without_newline() {
+        let (mut writer, buffer) = make_writer();
+        sql_print!(writer, "value {}", 1);
+        flush(&writer);
+        assert_eq!(buffer.contents(), "value 1");
+    }
+
+    #[test]
+    fn sql_println_macro_appends_newline() {
+        let (mut writer, buffer) = make_writer();
+        sql_println!(writer, "value {}", 1);
+        assert_eq!(buffer.contents(), "value 1\n");
+    }
+
+    #[test]
+    fn sql_newline_macro_writes_bare_newline() {
+        let (mut writer, buffer) = make_writer();
+        sql_print!(writer, "a");
+        sql_newline!(writer);
+        sql_print!(writer, "b");
+        flush(&writer);
+        assert_eq!(buffer.contents(), "a\nb");
+    }
+}

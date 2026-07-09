@@ -55,3 +55,35 @@ impl TableGenerator for SqliteTableGenerator {
         self.table_generator.output_initial_data(table);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::column_type::ColumnType;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn output_table_renders_header_and_columns() {
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar).length(50).required(true).build())
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
+
+        let generator = SqliteTableGenerator::new(ctx);
+        generator.output_table_header(&table);
+        generator.output_table_definition(&table);
+        generator.output_table_footer(&table);
+
+        let output = buffer.contents();
+        assert!(output.contains("create table users"));
+        assert!(output.contains("id integer auto_increment"));
+        assert!(output.contains("name varchar(50)"));
+        assert!(output.contains(");"));
+    }
+}

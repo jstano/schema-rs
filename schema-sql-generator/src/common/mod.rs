@@ -19,3 +19,4 @@ pub mod column_type_generator;
 pub mod sql_generator_settings;
 pub mod generate_options;
 pub mod generator_context;
+pub mod test_support;

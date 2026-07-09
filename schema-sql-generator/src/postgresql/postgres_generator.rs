@@ -180,3 +180,92 @@ impl SqlGenerator for PostgresGenerator {
         self.sql_generator.output_other_sql_bottom();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::generate_options::GenerateOptions;
+    use crate::common::print_writer::PrintWriter;
+    use crate::common::sql_generator_settings::SqlGeneratorSettings;
+    use crate::common::sql_writer::SqlWriter;
+    use crate::common::test_support::SharedBuffer;
+    use schema_model::builder::SchemaBuilder;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::enum_type::{EnumType, EnumValue};
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn make_context_with_version(model: DatabaseModel, target_postgres_version: u32) -> (GeneratorContext, SharedBuffer) {
+        let buffer = SharedBuffer::new();
+        let mut options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        );
+        options.target_postgres_version = target_postgres_version;
+        let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        (GeneratorContext::new(settings, writer), buffer)
+    }
+
+    #[test]
+    fn output_header_includes_uuid_function_before_postgres_18() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 17);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create or replace function generate_uuid()"));
+        assert!(output.contains("create extension if not exists \"uuid-ossp\""));
+    }
+
+    #[test]
+    fn output_header_omits_uuid_function_on_postgres_18_and_later() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("create or replace function generate_uuid()"));
+        assert!(output.contains("create extension if not exists \"uuid-ossp\""));
+    }
+
+    #[test]
+    fn output_header_renders_enum_types_when_present() {
+        let enum_type = EnumType::new(
+            "status_type",
+            vec![
+                EnumValue::new("ACTIVE", Some("A".to_string())),
+                EnumValue::new("INACTIVE", Some("I".to_string())),
+            ],
+        );
+        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create type status_type as enum ('A', 'I')"));
+    }
+
+    #[test]
+    fn output_header_omits_enum_ddl_when_no_enums_defined() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("create type"));
+    }
+}

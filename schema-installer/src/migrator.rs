@@ -271,25 +271,9 @@ async fn execute_migration(
     database_type: &GeneratorType,
     sql: &str,
 ) -> Result<(), SchemaInstallerError> {
-    let statements = split_sql_statements(sql, database_type);
-
-    for statement in statements {
-        let trimmed = statement.trim();
-        if !trimmed.is_empty() {
-            pool.execute_sql(trimmed).await?;
-        }
+    for statement in crate::sql_split::split_sql_statements(sql, database_type) {
+        pool.execute_sql(&statement).await?;
     }
 
     Ok(())
-}
-
-fn split_sql_statements(sql: &str, database_type: &GeneratorType) -> Vec<String> {
-    let separator = match database_type {
-        GeneratorType::SqlServer => "GO",
-        _ => ";",
-    };
-
-    sql.split(separator)
-        .map(|s| s.to_string())
-        .collect()
 }

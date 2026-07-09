@@ -33,3 +33,45 @@ impl IndexGenerator for SqlServerIndexGenerator {
         self.index_generator.index_options(key)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{SchemaBuilder, TableBuilder};
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::key::KeyColumn;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType};
+
+    #[test]
+    fn output_indexes_for_table_renders_unique_index() {
+        let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("email")], false, false, true, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(output.contains("create unique index ix_users1 on users (email)"));
+    }
+
+    #[test]
+    fn output_indexes_for_table_skips_when_no_indexes() {
+        let table = TableBuilder::new(None::<&str>, "solo").build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        assert_eq!(buffer.contents(), "");
+    }
+}

@@ -8,7 +8,7 @@ script = '''
 echo "*** Generating coverage: $pwd"
 export CARGO_INCREMENTAL=0
 export RUSTFLAGS="-Cinstrument-coverage -Copt-level=0 -Clink-dead-code"
-export LLVM_PROFILE_FILE="target/coverage/profraw/project-%p-%m.profraw"
+export LLVM_PROFILE_FILE="$PWD/target/coverage/profraw/project-%p-%m.profraw"
 rm -rf target/coverage/profraw
 cargo test --all --workspace
 grcov target/coverage/profraw -s . --binary-path target/debug/ -t html --branch --ignore-not-existing -o target/coverage/

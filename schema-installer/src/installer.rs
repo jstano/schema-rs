@@ -68,13 +68,15 @@ impl SchemaInstaller {
 
         let _ = std::fs::remove_file(&temp_file);
 
-        // Record migration
-        let script_name = format!("V{}__install_schema.sql", version);
+        // Record migration under a fixed, reserved version so it can never collide
+        // with real migration versions (which start at V1+).
+        let install_version = "0";
+        let script_name = "V0__install_schema.sql";
         let checksum = crate::migration::compute_checksum(&sql);
         let tool_version = env!("CARGO_PKG_VERSION");
 
         let migration_id = pool
-            .insert_migration(&version, &script_name, &checksum, 0, "pending", tool_version)
+            .insert_migration(install_version, script_name, &checksum, 0, "pending", tool_version)
             .await?;
 
         // Execute SQL statements
@@ -148,43 +150,10 @@ impl SchemaInstaller {
         database_type: &GeneratorType,
         sql: &str,
     ) -> Result<(), SchemaInstallerError> {
-        // Split SQL statements based on database type
-        let delimiter = match database_type {
-            GeneratorType::SqlServer => "GO",
-            _ => ";",
-        };
-
-        let statements: Vec<&str> = sql.split(delimiter)
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        for statement in statements {
-            pool.execute_sql(statement).await?;
+        for statement in crate::sql_split::split_sql_statements(sql, database_type) {
+            pool.execute_sql(&statement).await?;
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_sql_script_splitting() {
-        // Test PostgreSQL delimiter
-        let sql_pg = "CREATE TABLE t1 (id INT); CREATE TABLE t2 (id INT);";
-        let statements: Vec<&str> = sql_pg.split(";")
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect();
-        assert_eq!(statements.len(), 2);
-
-        // Test SQL Server delimiter
-        let sql_mssql = "CREATE TABLE t1 (id INT)\nGO\nCREATE TABLE t2 (id INT)\nGO";
-        let statements: Vec<&str> = sql_mssql.split("GO")
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect();
-        assert_eq!(statements.len(), 2);
     }
 }

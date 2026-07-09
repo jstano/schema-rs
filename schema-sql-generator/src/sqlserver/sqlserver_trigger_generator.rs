@@ -242,3 +242,58 @@ impl SqlServerTriggerGenerator {
         self.context.settings().database_model()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context_with_fk_mode;
+    use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::column_type::ColumnType;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::relation::Relation;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, RelationType};
+
+    fn build_model_with_relation() -> DatabaseModel {
+        // Schema-qualify both the tables and the relation's to_table_name: find_table() here
+        // does relation.to_table_name().split('.').next() to get a schema name, which only
+        // works for qualified references (mirrors the same quirk in PostgresTriggerGenerator).
+        let parent = TableBuilder::new(Some("app"), "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .build();
+        let child = TableBuilder::new(Some("app"), "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
+            .add_relation(Relation::new("app.parent", "id", "child", "parent_id", RelationType::Enforce, false))
+            .build();
+        let schema = SchemaBuilder::new(Some("app"))
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+    }
+
+    #[test]
+    fn output_triggers_renders_update_validation_trigger_for_relations_mode_triggers() {
+        let model = build_model_with_relation();
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains("create trigger child_update on app.child for insert, update as"));
+        assert!(output.contains("was not found in the app.parent table"));
+        assert!(output.contains("raiserror"));
+        assert!(output.contains("rollback transaction"));
+    }
+
+    #[test]
+    fn output_triggers_does_nothing_when_relations_mode_is_not_triggers() {
+        let model = build_model_with_relation();
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        assert_eq!(buffer.contents(), "");
+    }
+}

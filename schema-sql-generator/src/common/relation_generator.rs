@@ -53,7 +53,7 @@ impl DefaultRelationGenerator {
                        table: &Table,
                        relation: &Relation) {
         let operation = self.relation_operation_type(relation.relation_type());
-        let to_table = self.find_table(relation.to_table_name(), database_model);
+        let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
 
         writer.print(format!("alter table {}", table.fully_qualified_table_name()).as_str());
         writer.print(" add constraint ");
@@ -78,16 +78,6 @@ impl DefaultRelationGenerator {
         }
     }
 
-    fn find_table<'a>(&self, to_table_name: &str, database_model: &'a DatabaseModel) -> &'a Table {
-        let parts: Vec<&str> = to_table_name.split('.').collect();
-        let (schema, table_name) = if parts.len() == 2 {
-            (Some(parts[0]), parts[1])
-        } else {
-            (None, to_table_name)
-        };
-
-        database_model.find_table(schema, table_name)
-    }
 }
 
 impl RelationGenerator for DefaultRelationGenerator {
@@ -108,5 +98,44 @@ impl RelationGenerator for DefaultRelationGenerator {
                 writer.newline();
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::column_type::ColumnType;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn output_relations_truncates_generated_constraint_name_for_long_table_names() {
+        // Postgres caps key names at 63 chars; a long table name plus the "fk_" prefix and
+        // trailing index would overflow that, so the generator must truncate the table name
+        // portion rather than emit an invalid identifier.
+        let long_table_name = "a".repeat(70);
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, long_table_name.as_str())
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_relation(Relation::new("parent", "id", long_table_name.as_str(), "parent_id", RelationType::Cascade, false))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultRelationGenerator::new(ctx);
+        generator.output_relations();
+
+        let output = buffer.contents();
+        assert!(output.contains("add constraint "));
+        let constraint_start = output.find("add constraint ").unwrap() + "add constraint ".len();
+        let constraint_name = &output[constraint_start..].split_whitespace().next().unwrap();
+        assert!(constraint_name.len() <= 63, "constraint name '{}' exceeds postgres's 63 char limit", constraint_name);
     }
 }

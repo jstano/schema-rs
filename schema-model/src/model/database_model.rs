@@ -95,6 +95,17 @@ impl DatabaseModel {
         schema.get_table(table_name)
     }
 
+    pub fn find_table_by_qualified_name(&self, qualified_name: &str) -> &Table {
+        let parts: Vec<&str> = qualified_name.split('.').collect();
+        let (schema_name, table_name) = if parts.len() == 2 {
+            (Some(parts[0]), parts[1])
+        } else {
+            (None, qualified_name)
+        };
+
+        self.find_table(schema_name, table_name)
+    }
+
     pub fn find_table_mut(&mut self, schema_name: Option<&str>, table_name: &str) -> &mut Table {
         let schema = self.find_schema_mut(schema_name);
         schema.get_table_mut(table_name)

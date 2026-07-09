@@ -19,3 +19,40 @@ impl TableConstraintGenerator for SqlServerTableConstraintGenerator {
         self.table_constraint_generator.table_check_constraints(table)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{SchemaBuilder, TableBuilder};
+    use schema_model::model::constraint::Constraint;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn table_check_constraints_renders_each_constraint() {
+        let table = TableBuilder::new(None::<&str>, "orders")
+            .add_constraint(Constraint::new("ck_total_positive", "check (total > 0)", DatabaseType::SqlServer))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerTableConstraintGenerator::new(ctx);
+        let constraints = generator.table_check_constraints(&table);
+
+        assert_eq!(constraints.len(), 1);
+        assert!(constraints[0].contains("constraint ck_total_positive check (total > 0)"));
+    }
+
+    #[test]
+    fn no_constraints_when_table_has_none() {
+        let table = TableBuilder::new(None::<&str>, "orders").build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerTableConstraintGenerator::new(ctx);
+        assert!(generator.table_check_constraints(&table).is_empty());
+    }
+}
