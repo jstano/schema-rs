@@ -67,17 +67,16 @@ impl PostgresGenerator {
         let separator = self.context.settings().statement_separator().to_string();
 
         self.context.with_writer(|writer| {
-            sql_println!(writer, "do $createextensions$");
+            sql_println!(writer, "do $$");
             sql_println!(writer, "begin");
             sql_println!(writer, "   if (select usesuper from pg_user where usename = CURRENT_USER) then");
-            sql_println!(writer, "      create extension if not exists \"uuid-ossp\";");
             sql_println!(writer, "      create extension if not exists \"citext\";");
             sql_println!(writer, "      create extension if not exists \"btree_gist\";");
             sql_println!(writer, "   else");
-            sql_println!(writer, "      raise notice 'User % is not a superuser, could not create uuid-ossp or citext extensions.', current_user;");
+            sql_println!(writer, "      raise notice 'Could not create extensions, user % does not have permission.', current_user;");
             sql_println!(writer, "   end if;");
             sql_println!(writer, "end;");
-            sql_println!(writer, "$createextensions${}", separator);
+            sql_println!(writer, "$${}", separator);
             sql_println!(writer, "");
         });
     }
@@ -219,7 +218,6 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("create or replace function generate_uuid()"));
-        assert!(output.contains("create extension if not exists \"uuid-ossp\""));
     }
 
     #[test]
@@ -233,7 +231,6 @@ mod tests {
 
         let output = buffer.contents();
         assert!(!output.contains("create or replace function generate_uuid()"));
-        assert!(output.contains("create extension if not exists \"uuid-ossp\""));
     }
 
     #[test]

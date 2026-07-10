@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_parser::parse_database_xml;
@@ -7,31 +7,34 @@ use schema_sql_generator::common::generator_type::GeneratorType;
 use schema_sql_generator::common::output_mode::OutputMode;
 use schema_sql_generator::common::print_writer::PrintWriter;
 use std::cell::RefCell;
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::Path;
 use std::rc::Rc;
-use std::{env, fs};
+
+const EMPTY_SCHEMA_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<database xmlns="http://stano.com/database"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd">
+</database>
+"#;
 
 pub fn main() {
-    let args: Vec<String> = env::args().collect();
-    println!("Program arguments: {:?}", args);
-
-    let arguments = Command::new("schema")
+    let mut cmd = Command::new("schema")
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
         .about("Manages database schemas")
         .arg(Arg::new("database-type")
             .long("database-type")
             .value_name("TYPE")
-            .value_parser(["postgres", "sqlite", "sqlserver"])
-            .required(true)
+            .value_parser(["postgresql", "sqlite", "sqlserver"])
+            .required(false)
             .num_args(1)
             .ignore_case(true)
             .help("Sets the database type"))
         .arg(Arg::new("schema-file")
             .long("schema-file")
             .value_name("FILE")
-            .required(true)
+            .required(false)
             .help("Sets the schema file location"))
         .arg(Arg::new("foreign-key-mode")
             .long("foreign-key-mode")
@@ -48,20 +51,56 @@ pub fn main() {
             .value_name("MODE")
             .value_parser(["all", "indexes-only", "triggers-only"])
             .help("Sets the output mode"))
-        .arg(Arg::new("pg-version")
-            .long("pg-version")
+        .arg(Arg::new("postgresql-version")
+            .long("postgresql-version")
             .value_name("VERSION")
             .help("Target PostgreSQL major version (e.g. 17, 18); affects UUID default function"))
-        .get_matches();
+        .arg(Arg::new("new-schema")
+            .long("new-schema")
+            .action(ArgAction::SetTrue)
+            .help("Generate a new empty schema.xml file (requires --schema-file or defaults to ./schema.xml)"));
+
+    let arguments = cmd.clone().get_matches();
+
+    if arguments.get_flag("new-schema") {
+        let schema_file = arguments
+            .get_one::<String>("schema-file")
+            .map(|s| s.as_str())
+            .unwrap_or("schema.xml");
+
+        if Path::new(schema_file).exists() {
+            eprintln!("Error: file '{}' already exists. Use a different path or delete the existing file.", schema_file);
+            std::process::exit(1);
+        }
+
+        fs::write(schema_file, EMPTY_SCHEMA_TEMPLATE)
+            .expect("Failed to write schema file");
+        println!("Created empty schema file: {}", schema_file);
+        return;
+    }
 
     let empty = String::new();
-    let database_type = arguments.get_one::<String>("database-type").expect("required argument --database-type missing");
-    let schema_file = arguments.get_one::<String>("schema-file").expect("required argument --schema-file missing");
+    let database_type = match arguments.get_one::<String>("database-type") {
+        Some(db) => db,
+        None => {
+            eprintln!("Error: --database-type is required unless --new-schema is set");
+            cmd.print_help().ok();
+            std::process::exit(1);
+        }
+    };
+    let schema_file = match arguments.get_one::<String>("schema-file") {
+        Some(file) => file,
+        None => {
+            eprintln!("Error: --schema-file is required unless --new-schema is set");
+            cmd.print_help().ok();
+            std::process::exit(1);
+        }
+    };
     let foreign_key_mode = arguments.get_one::<String>("foreign-key-mode").unwrap_or(&empty);
     let boolean_mode = arguments.get_one::<String>("boolean-mode").unwrap_or(&empty);
     let output_mode = arguments.get_one::<String>("output-mode").unwrap_or(&empty);
     let target_postgres_version: u32 = arguments
-        .get_one::<String>("pg-version")
+        .get_one::<String>("postgresql-version")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let schema_path = Path::new(schema_file);

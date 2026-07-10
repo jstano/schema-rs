@@ -13,13 +13,21 @@ schema-model.workspace = true
 schema-parser.workspace = true
 schema-sql-generator.workspace = true
 
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "any", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 clap = { version = "4.5", features = ["derive"] }
 sha2 = "0.10"
 hex = "0.4"
+tiberius = { version = "0.11", features = ["chrono"] }
+
+[dev-dependencies]
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres", "mssql_server"] }
+tempfile = "3"
+uuid = { version = "1.0", features = ["v4"] }
 
 [[bin]]
 name = "schema-installer"

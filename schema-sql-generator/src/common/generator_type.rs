@@ -47,7 +47,7 @@ impl FromStr for GeneratorType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "postgres" | "postgresql" => Ok(GeneratorType::Postgresql),
+            "postgresql" => Ok(GeneratorType::Postgresql),
             "sqlite" => Ok(GeneratorType::Sqlite),
             "sqlserver" => Ok(GeneratorType::SqlServer),
             _ => Err(format!("Unknown generator type: {}", s)),

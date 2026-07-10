@@ -23,7 +23,7 @@ schema-rs is a Rust workspace for managing relational database schemas. It provi
 - Multi-database SQL generator (schema-sql-generator)
 - Schema installer utilities (schema-installer) with Flyway-style migrations
 
-Supported databases: PostgreSQL, MySQL, SQL Server, SQLite, H2
+Supported databases: PostgreSQL, SQL Server, SQLite
 
 ## Build & Test Commands
 
@@ -154,9 +154,9 @@ The generator uses **Strategy Pattern** with trait-based abstraction:
 - `OtherSqlGenerator` - Custom SQL passthrough
 
 **Database-Specific Implementations** (in `{database}/`):
-- Each database has a folder: `mysql/`, `postgresql/`, `sqlite/`, `sqlserver/`, `h2/`
+- Each database has a folder: `postgresql/`, `sqlite/`, `sqlserver/`
 - Each overrides only the trait methods that differ from the common defaults
-- Example: `postgresql/postgres_table_generator.rs`, `mysql/mysql_function_generator.rs`
+- Example: `postgresql/postgres_table_generator.rs`
 
 **Shared Context:**
 - `GeneratorContext` wraps `Rc<SqlGeneratorSettings>` and `Rc<RefCell<SqlWriter>>`
@@ -218,12 +218,6 @@ The `schema-installer` crate provides a Flyway-style migration system.
 - Array support: `type[]` syntax
 - Migration params: `$1/$2` syntax
 
-**MySQL:**
-- Sequence: `INTEGER AUTO_INCREMENT`
-- UUID: `CHAR(36)`, uses `UUID()` function
-- Text: `MEDIUMTEXT`, Binary: `MEDIUMBLOB`
-- No array support (panics)
-
 **SQL Server:**
 - Sequence: `INT IDENTITY(1,1)`
 - Always generates `NVARCHAR` for string types
@@ -235,9 +229,6 @@ The `schema-installer` crate provides a Flyway-style migration system.
 - Limited type support (pragmatic mapping)
 - Migration params: `?` syntax
 - Note: Use `SELECT id FROM table WHERE version = ? ORDER BY id DESC LIMIT 1` to get inserted id
-
-**H2:**
-- Hybrid approach mimicking multiple databases
 
 ## Testing
 

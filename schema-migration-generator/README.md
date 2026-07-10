@@ -37,8 +37,6 @@ Supported databases with implementations:
 | PostgreSQL | ✅ Full |
 | SQLite     | ✅ Full |
 | SQL Server | ✅ Full |
-| MySQL      | ❌ Not implemented |
-| H2         | ❌ Not implemented |
 
 ## Generated SQL Examples
 

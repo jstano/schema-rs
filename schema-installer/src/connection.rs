@@ -2,12 +2,16 @@ use crate::error::SchemaInstallerError;
 use crate::migration::AppliedMigration;
 use crate::tracking::SchemaMigrationDdl;
 use schema_sql_generator::common::generator_type::GeneratorType;
-use sqlx::{postgres::PgPoolOptions, sqlite::SqlitePoolOptions, AnyPool as SqlxAnyPool, Pool, Postgres, Row, Sqlite};
+use sqlx::{postgres::PgPoolOptions, sqlite::{SqliteConnectOptions, SqlitePoolOptions}, Pool, Postgres, Sqlite};
+use std::str::FromStr;
+use tiberius::Client;
+use tokio::net::TcpStream;
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 pub enum AnyPool {
     Postgresql(Pool<Postgres>),
     Sqlite(Pool<Sqlite>),
-    Any(SqlxAnyPool),
+    SqlServer(tokio::sync::Mutex<Client<Compat<TcpStream>>>),
 }
 
 impl AnyPool {
@@ -22,20 +26,35 @@ impl AnyPool {
                 Ok(AnyPool::Postgresql(pool))
             }
             GeneratorType::Sqlite => {
+                let options = SqliteConnectOptions::from_str(connection_string)
+                    .map_err(|e| SchemaInstallerError::Connection(e.to_string()))?
+                    .create_if_missing(true);
+
                 let pool = SqlitePoolOptions::new()
                     .max_connections(5)
-                    .connect(connection_string)
+                    .connect_with(options)
                     .await
                     .map_err(|e| SchemaInstallerError::Connection(e.to_string()))?;
                 Ok(AnyPool::Sqlite(pool))
             }
             GeneratorType::SqlServer => {
-                let pool = sqlx::any::AnyPoolOptions::new()
-                    .max_connections(5)
-                    .connect(connection_string)
+                let mut config = tiberius::Config::from_ado_string(connection_string)
+                    .map_err(|e| SchemaInstallerError::Connection(format!("Invalid SQL Server connection string: {}", e)))?;
+
+                config.encryption(tiberius::EncryptionLevel::Required);
+
+                let tcp = TcpStream::connect(config.get_addr())
                     .await
-                    .map_err(|e| SchemaInstallerError::Connection(e.to_string()))?;
-                Ok(AnyPool::Any(pool))
+                    .map_err(|e| SchemaInstallerError::Connection(format!("Failed to connect to SQL Server: {}", e)))?;
+
+                tcp.set_nodelay(true)
+                    .map_err(|e| SchemaInstallerError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
+                let client = Client::connect(config, tcp.compat())
+                    .await
+                    .map_err(|e| SchemaInstallerError::Connection(format!("Failed to authenticate with SQL Server: {}", e)))?;
+
+                Ok(AnyPool::SqlServer(tokio::sync::Mutex::new(client)))
             }
         }
     }
@@ -56,9 +75,10 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 Ok(())
             }
-            AnyPool::Any(pool) => {
-                sqlx::query(sql)
-                    .execute(pool)
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(sql, &[])
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 Ok(())
@@ -127,38 +147,39 @@ impl AnyPool {
                     )
                     .collect())
             }
-            AnyPool::Any(pool) => {
-                let rows = sqlx::query(
-                    "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
-                )
-                .fetch_all(pool)
-                .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                let results = client
+                    .query(
+                        "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at",
+                        &[],
+                    )
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
 
-                let migrations = rows
-                    .into_iter()
-                    .map(|row| {
-                        let id: i64 = row.try_get(0).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let version: String = row.try_get(1).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let script_path: String = row.try_get(2).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let checksum: String = row.try_get(3).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let execution_time_ms: i64 = row.try_get(4).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let installed_at: String = row.try_get(5).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let status: String = row.try_get(6).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                        let tool_version: String = row.try_get(7).map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                let mut migrations = Vec::new();
+                for row in results.into_first_result().await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))? {
+                    let id: i64 = row.get(0).ok_or_else(|| SchemaInstallerError::Database("Missing id".to_string()))?;
+                    let version: &str = row.get(1).ok_or_else(|| SchemaInstallerError::Database("Missing version".to_string()))?;
+                    let script_path: &str = row.get(2).ok_or_else(|| SchemaInstallerError::Database("Missing script_path".to_string()))?;
+                    let checksum: &str = row.get(3).ok_or_else(|| SchemaInstallerError::Database("Missing checksum".to_string()))?;
+                    let execution_time_ms: i32 = row.get(4).ok_or_else(|| SchemaInstallerError::Database("Missing execution_time_ms".to_string()))?;
+                    let installed_at: chrono::DateTime<chrono::Utc> = row.get(5).ok_or_else(|| SchemaInstallerError::Database("Missing installed_at".to_string()))?;
+                    let status: &str = row.get(6).ok_or_else(|| SchemaInstallerError::Database("Missing status".to_string()))?;
+                    let tool_version: &str = row.get(7).ok_or_else(|| SchemaInstallerError::Database("Missing tool_version".to_string()))?;
 
-                        Ok(AppliedMigration {
-                            id,
-                            version,
-                            script_path,
-                            checksum,
-                            execution_time_ms,
-                            installed_at,
-                            status,
-                            tool_version,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, SchemaInstallerError>>()?;
+                    migrations.push(AppliedMigration {
+                        id,
+                        version: version.to_string(),
+                        script_path: script_path.to_string(),
+                        checksum: checksum.to_string(),
+                        execution_time_ms: execution_time_ms as i64,
+                        installed_at: installed_at.to_rfc3339(),
+                        status: status.to_string(),
+                        tool_version: tool_version.to_string(),
+                    });
+                }
 
                 Ok(migrations)
             }
@@ -211,26 +232,30 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(id.0)
             }
-            AnyPool::Any(pool) => {
-                sqlx::query(
-                    "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES (?, ?, ?, ?, ?, ?)"
-                )
-                .bind(version)
-                .bind(script_path)
-                .bind(checksum)
-                .bind(execution_time_ms)
-                .bind(status)
-                .bind(tool_version)
-                .execute(pool)
-                .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-
-                let id: (i64,) = sqlx::query_as("SELECT id FROM schema_migration WHERE version = ? ORDER BY id DESC LIMIT 1")
-                    .bind(version)
-                    .fetch_one(pool)
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES (@P1, @P2, @P3, @P4, @P5, @P6)",
+                        &[&version, &script_path, &checksum, &(execution_time_ms as i32), &status, &tool_version],
+                    )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(id.0)
+
+                let result = client
+                    .query("SELECT id FROM schema_migration WHERE version = @P1 ORDER BY id DESC", &[&version])
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+
+                let rows = result.into_first_result().await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+
+                let id: i64 = rows.into_iter().next()
+                    .ok_or_else(|| SchemaInstallerError::Database("No inserted row found".to_string()))?
+                    .get(0)
+                    .ok_or_else(|| SchemaInstallerError::Database("Invalid id in inserted row".to_string()))?;
+
+                Ok(id)
             }
         }
     }
@@ -262,12 +287,13 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
             }
-            AnyPool::Any(pool) => {
-                sqlx::query("UPDATE schema_migration SET status = ?, execution_time_ms = ? WHERE id = ?")
-                    .bind(status)
-                    .bind(execution_time_ms)
-                    .bind(id)
-                    .execute(pool)
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "UPDATE schema_migration SET status = @P1, execution_time_ms = @P2 WHERE id = @P3",
+                        &[&status, &(execution_time_ms as i32), &id],
+                    )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
@@ -293,10 +319,10 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
             }
-            AnyPool::Any(pool) => {
-                sqlx::query("DELETE FROM schema_migration WHERE status = ?")
-                    .bind("failed")
-                    .execute(pool)
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute("DELETE FROM schema_migration WHERE status = @P1", &[&"failed"])
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
@@ -328,11 +354,13 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
             }
-            AnyPool::Any(pool) => {
-                sqlx::query("UPDATE schema_migration SET checksum = ? WHERE id = ?")
-                    .bind(checksum)
-                    .bind(id)
-                    .execute(pool)
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "UPDATE schema_migration SET checksum = @P1 WHERE id = @P2",
+                        &[&checksum, &id],
+                    )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())

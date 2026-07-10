@@ -134,7 +134,6 @@ CREATE TABLE schema_migration (
 | PostgreSQL | ✅ | Full support, uses `$1/$2` parameter placeholders |
 | SQLite     | ✅ | Full support, uses `?` parameter placeholders |
 | SQL Server | ✅ | Full support, uses `GO` statement separator |
-| MySQL      | ⚠️  | WIP (schema-sql-generator works, installer tested only on SQLite/Postgres) |
 
 ## Part of schema-rs
 

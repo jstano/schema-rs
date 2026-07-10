@@ -37,7 +37,7 @@ File naming format: `V{version}__{description}.sql`
 2. **Run migrations:**
 ```bash
 cargo run -p schema-installer -- \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   migrate --migrations-dir ./migrations
 ```
@@ -45,7 +45,7 @@ cargo run -p schema-installer -- \
 3. **Check migration status:**
 ```bash
 cargo run -p schema-installer -- \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   info --migrations-dir ./migrations
 ```
@@ -57,7 +57,7 @@ Applies all migrations not yet recorded in the database. Includes checksum verif
 
 ```bash
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   migrate --migrations-dir ./migrations
 ```
@@ -74,7 +74,7 @@ Shows all migrations (applied and pending) with execution times and checksums.
 
 ```bash
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   info --migrations-dir ./migrations
 ```
@@ -93,7 +93,7 @@ Checks that all applied migrations haven't been modified (by comparing stored SH
 
 ```bash
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   validate --migrations-dir ./migrations
 ```
@@ -104,7 +104,7 @@ schema-installer \
 
 ```bash
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   repair --migrations-dir ./migrations
 ```
@@ -114,7 +114,7 @@ Applies a schema from an XML definition file (for backward compatibility). Recor
 
 ```bash
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://user:pass@localhost/mydb" \
   install --schema-file schema.xml
 ```
@@ -123,7 +123,7 @@ schema-installer \
 
 Available for all commands:
 
-- `--database-type` (required): `postgres`, `sqlite`, or `sqlserver`
+- `--database-type` (required): `postgresql`, `sqlite`, or `sqlserver`
 - `--connection-string` (required): Database connection URL
 - `--boolean-mode`: How to represent booleans (`native`, `yesno`, `yn`) — default: `native`
 - `--foreign-key-mode`: How to handle relations (`none`, `relations`, `triggers`) — default: `relations`
@@ -168,13 +168,13 @@ EOF
 
 # 2. Apply it
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://localhost/mydb" \
   migrate --migrations-dir ./migrations
 
 # 3. Check status
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://localhost/mydb" \
   info --migrations-dir ./migrations
 
@@ -186,13 +186,13 @@ EOF
 
 # 5. Apply it
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://localhost/mydb" \
   migrate --migrations-dir ./migrations
 
 # 6. Validate all migrations (no one modified them)
 schema-installer \
-  --database-type postgres \
+  --database-type postgresql \
   --connection-string "postgres://localhost/mydb" \
   validate --migrations-dir ./migrations
 ```
@@ -204,7 +204,6 @@ schema-installer \
 | PostgreSQL | ✅ | Full support, uses `$1/$2` placeholders |
 | SQLite     | ✅ | Full support, uses `?` placeholders |
 | SQL Server | ✅ | Full support, uses `GO` statement separator |
-| MySQL      | ⚠️  | WIP (schema-sql-generator works, schema-installer tested only on SQLite/Postgres) |
 
 ## Workspace crates
 

@@ -11,7 +11,7 @@ struct Args {
     #[command(subcommand)]
     command: Commands,
 
-    #[arg(long, global = true, help = "Database type (postgres, sqlite, sqlserver)")]
+    #[arg(long, global = true, help = "Database type (postgresql, sqlite, sqlserver)")]
     database_type: Option<String>,
 
     #[arg(long, global = true, help = "Database connection string")]
@@ -151,11 +151,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn parse_database_type(db_type: &str) -> Result<GeneratorType, Box<dyn std::error::Error>> {
     match db_type.to_lowercase().as_str() {
-        "postgres" | "postgresql" => Ok(GeneratorType::Postgresql),
+        "postgresql" => Ok(GeneratorType::Postgresql),
         "sqlite" => Ok(GeneratorType::Sqlite),
         "sqlserver" | "mssql" => Ok(GeneratorType::SqlServer),
         _ => {
-            eprintln!("Error: Unknown database type '{}'. Supported: postgres, sqlite, sqlserver", db_type);
+            eprintln!("Error: Unknown database type '{}'. Supported: postgresql, sqlite, sqlserver", db_type);
             std::process::exit(1);
         }
     }

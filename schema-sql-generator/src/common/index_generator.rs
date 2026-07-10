@@ -63,7 +63,7 @@ impl IndexGenerator for DefaultIndexGenerator {
                 .filter(|key| key.is_index())
                 .enumerate()
             {
-                let mut key_name = format!("{}{}{}", IX_PREFIX, table.name(), key_index + 1);
+                let mut key_name = format!("{}{}{}", IX_PREFIX, table.name(), key_index + 1).to_lowercase();
 
                 if key_name.len() > max_key_name_length {
                     let max_name_len = max_key_name_length.saturating_sub(4); // match Java logic
@@ -72,7 +72,7 @@ impl IndexGenerator for DefaultIndexGenerator {
                         .chars()
                         .take(max_name_len.min(table.name().len()))
                         .collect::<String>();
-                    key_name = format!("{}{}{}", IX_PREFIX, truncated, key_index + 1);
+                    key_name = format!("{}{}{}", IX_PREFIX, truncated, key_index + 1).to_lowercase();
                 }
 
                 self.output_index(

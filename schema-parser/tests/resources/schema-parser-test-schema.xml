@@ -31,13 +31,13 @@
     <initialData>
       <sql>insert into ParentTable (Name,Extra,Gender) values ('AAA','Extra AAA','M')</sql>
       <sql>insert into ParentTable (Name,Extra,Gender) values ('BBB','Extra BBB','F')</sql>
-      <sql databaseType="postgres">insert into ParentTable (Name,Extra,Gender) values ('PGSQL','Extra PGSQL','M')</sql>
+      <sql databaseType="postgresql">insert into ParentTable (Name,Extra,Gender) values ('PGSQL','Extra PGSQL','M')</sql>
       <sql databaseType="sqlserver">insert into ParentTable (Name,Extra,Gender) values ('MSSQL','Extra MSSQL','F')</sql>
     </initialData>
     <triggers>
-      <delete databaseType="postgres">delete from pgsql</delete>
+      <delete databaseType="postgresql">delete from pgsql</delete>
       <delete databaseType="sqlserver">delete from mssql</delete>
-      <update databaseType="postgres">update pgsql</update>
+      <update databaseType="postgresql">update pgsql</update>
       <update databaseType="sqlserver">update mssql</update>
     </triggers>
     <aggregations>
@@ -212,13 +212,13 @@
   </table>
 
   <function name="TestFunction1">
-    <sql databaseType="postgres">sql-function-1</sql>
+    <sql databaseType="postgresql">sql-function-1</sql>
   </function>
   <function name="TestFunction2">
-    <sql databaseType="postgres">sql-function-2</sql>
+    <sql databaseType="postgresql">sql-function-2</sql>
   </function>
   <function name="customFunction1">
-    <sql databaseType="postgres">
+    <sql databaseType="postgresql">
       custom function sql for pgsql 1
     </sql>
     <sql databaseType="sqlserver">
@@ -226,7 +226,7 @@
     </sql>
   </function>
   <function name="customFunction2">
-    <sql databaseType="postgres">
+    <sql databaseType="postgresql">
       custom function sql for pgsql 2
     </sql>
     <sql databaseType="sqlserver">
@@ -235,13 +235,13 @@
   </function>
 
   <procedure name="TestProcedure1">
-    <sql databaseType="postgres">sql-procedure-1</sql>
+    <sql databaseType="postgresql">sql-procedure-1</sql>
   </procedure>
   <procedure name="TestProcedure2">
-    <sql databaseType="postgres">sql-procedure-2</sql>
+    <sql databaseType="postgresql">sql-procedure-2</sql>
   </procedure>
   <procedure name="customProcedure1">
-    <sql databaseType="postgres">
+    <sql databaseType="postgresql">
       custom procedure sql for pgsql 1
     </sql>
     <sql databaseType="sqlserver">
@@ -249,10 +249,10 @@
     </sql>
   </procedure>
   <procedure name="customProcedure2">
-    <sql databaseType="postgres">
+    <sql databaseType="postgresql">
       custom procedure sql for pgsql 2
     </sql>
-    <sql databaseType="postgres">
+    <sql databaseType="postgresql">
       custom procedure sql for mssql 2
     </sql>
   </procedure>
@@ -300,7 +300,7 @@
     select * from ParentTable
   </view>
 
-  <view name="TestView2" databaseType="postgres">
+  <view name="TestView2" databaseType="postgresql">
     select * from pgsql
   </view>
 
@@ -318,19 +318,19 @@
     <value name="TWO" code="2"/>
   </enum>
 
-  <otherSql databaseType="postgres" order="top">
+  <otherSql databaseType="postgresql" order="top">
     other top sql for pgsql 1
   </otherSql>
 
-  <otherSql databaseType="postgres" order="top">
+  <otherSql databaseType="postgresql" order="top">
     other top sql for pgsql 2
   </otherSql>
 
-  <otherSql databaseType="postgres" order="bottom">
+  <otherSql databaseType="postgresql" order="bottom">
     other bottom sql for pgsql 1
   </otherSql>
 
-  <otherSql databaseType="postgres" order="bottom">
+  <otherSql databaseType="postgresql" order="bottom">
     other bottom sql for pgsql 2
   </otherSql>
 
