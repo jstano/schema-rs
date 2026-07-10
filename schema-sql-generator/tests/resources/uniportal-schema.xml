@@ -1,0 +1,1636 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<database xmlns="http://stano.com/database"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd"
+          foreignKeyMode="relations"
+          booleanMode="yn">
+   <table name="Audit" noExport="true">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="ChangedBy" type="varchar" length="254" required="true"/>
+         <column name="ChangedOn" type="datetime" required="true"/>
+         <column name="RecordID" type="varchar" length="255"/>
+         <column name="RecordName" type="varchar" length="500" required="true"/>
+         <column name="Category" type="varchar" length="100" required="true"/>
+         <column name="Item" type="varchar" length="100" required="true"/>
+         <column name="Change" type="enum" enumType="AuditChangeType" required="true"/>
+         <column name="OldValue" type="text"/>
+         <column name="NewValue" type="text"/>
+         <column name="PortalClientID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <index>
+            <column name="ChangedOn"/>
+            <column name="PortalClientID"/>
+         </index>
+      </keys>
+   </table>
+
+   <table name="Certificate">
+      <columns>
+         <column name="Alias" type="text" required="true"/>
+         <column name="Certificate" type="text"/>
+         <column name="PrivateKey" type="text"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="Alias"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="ClientPreference">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="PortalClientID" type="int" required="true"/>
+         <column name="PrefKey" type="varchar" length="200" required="true"/>
+         <column name="PrefValue" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="PrefKey"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="ClientProduct">
+      <columns>
+         <column name="ClientID" type="int" required="true"/>
+         <column name="ProductID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ClientID"/>
+            <column name="ProductID"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="ClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="ProductID" table="Product" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="CredentialsHistory" noExport="true">
+      <columns>
+         <column name="Credentials" type="varchar" length="500" required="true"/>
+         <column name="CredentialsDateTime" type="datetime" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="Credentials"/>
+         </primary>
+         <index>
+            <column name="CredentialsDateTime"/>
+         </index>
+      </keys>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="UserRegistration">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="LoginID" type="varchar" length="254" required="true"/>
+         <column name="EMail" type="varchar" length="254"/>
+         <column name="ClientID" type="int" required="true"/>
+         <column name="LoginClientID" type="int"/>
+         <column name="DatabaseID" type="int" required="true"/>
+         <column name="PropertyID" type="int" required="true"/>
+         <column name="EmployeeID" type="int" required="true"/>
+         <column name="EmpID" type="varchar" length="25" required="true"/>
+         <column name="FirstName" type="varchar" length="50" required="true"/>
+         <column name="MiddleName" type="varchar" length="50" required="true"/>
+         <column name="LastName" type="varchar" length="50" required="true"/>
+         <column name="ExpiresOn" type="datetime" required="true"/>
+         <column name="RegisteredOn" type="datetime"/>
+         <column name="OptOut" type="boolean" required="true"/>
+         <column name="NumberVerifyFailures" type="int" default="0" required="true"/>
+         <column name="NumberOfAttempts" type="int" default="0" required="true"/>
+         <column name="Locale" type="varchar" length="10"/>
+         <column name="VerificationCode" type="int"/>
+         <column name="CreatedByPortalUserID" type="int"/>
+         <column name="UpdatedByPortalUserID" type="int"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="LoginID"/>
+            <column name="ClientID"/>
+            <column name="DatabaseID"/>
+            <column name="PropertyID"/>
+            <column name="EmployeeID"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="CreatedByPortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="UpdatedByPortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="PortalUserRegistration">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="PortalUserID" type="int" required="true"/>
+         <column name="ExpiresOn" type="datetime" required="true"/>
+         <column name="RegisteredOn" type="datetime"/>
+         <column name="InvitedOn" type="datetime" required="true"/>
+         <column name="InvitedByPortalUserID" type="int" required="true"/>
+         <column name="NumberVerifyFailures" type="int" default="0" required="true"/>
+         <column name="VerificationCode" type="int"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalUserID"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="InvitedByPortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="NewUserRegistration">
+      <columns>
+         <column name="ID" type="uuid" required="true"/>
+         <column name="Type" type="enum" enumType="RegistrationType" required="true"/>
+         <column name="PartnerCode" type="text" required="true"/>
+         <column name="LoginID" type="text" required="true"/>
+         <column name="VerificationCode" type="text" required="true"/>
+         <column name="ClientID" type="int" required="true"/>
+         <column name="LoginClientID" type="int" required="true"/>
+         <column name="CreatedOn" type="datetime" required="true"/>
+         <column name="CreatedByPortalUserID" type="int" required="true"/>
+         <column name="UpdatedByPortalUserID" type="int"/>
+         <column name="ExpiresOn" type="datetime" required="true"/>
+         <column name="NumberVerifyFailures" type="int" required="true"/>
+         <column name="NumberOfAttempts" type="int"/>
+         <column name="StartedOn" type="datetime"/>
+         <column name="CompletedOn" type="datetime"/>
+         <column name="PortalUserID" type="int"/> <!-- only set for user registrations, not employees -->
+         <column name="DatabaseID" type="int"/> <!-- only set for employee registrations -->
+         <column name="PropertyID" type="int"/> <!-- only set for employee registrations -->
+         <column name="EmployeeID" type="int"/> <!-- only set for employee registrations -->
+         <column name="Email" type="text"/>
+         <column name="MobilePhone" type="text"/>
+         <column name="FirstName" type="text"/>
+         <column name="MiddleName" type="text"/>
+         <column name="LastName" type="text"/>
+         <column name="Locale" type="text"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PartnerCode"/>
+            <column name="LoginID"/>
+            <column name="VerificationCode"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="ClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="LoginClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="CreatedByPortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="UpdatedByPortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="DatabaseID" table="WatsonDatabase" column="ID" type="cascade"/>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="ExpiredCredentials" noExport="true">
+      <columns>
+         <column name="Credentials" type="varchar" length="500" required="true"/>
+         <column name="ExpiredOnDateTime" type="datetime" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="Credentials"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="GlobalData">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Tag" type="varchar" length="50" required="true"/>
+         <column name="TagValue" type="text"/>
+         <column name="TagData" type="binary"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Tag"/>
+         </unique>
+      </keys>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="LDAPConfig">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="URL" type="varchar" length="200" required="true"/>
+         <column name="BaseDN" type="varchar" length="200" required="true"/>
+         <column name="SearchFilter" type="varchar" length="200" required="true"/>
+         <column name="Domain" type="varchar" length="200"/>
+         <column name="UserNamePattern" type="varchar" length="200"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="LoginHistory" noExport="true">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="PortalUserID" type="int"/>
+         <column name="LoginDateTime" type="datetime" required="true"/>
+         <column name="LoginStatus" type="varchar" length="50" required="true"/>
+         <column name="DatabaseID" type="int"/>
+         <column name="PropertyID" type="int"/>
+         <column name="PropertyName" type="varchar" length="50"/>
+         <column name="LoginID" type="varchar" length="254"/>
+         <column name="FailureReason" type="text"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="PortalUserID"/>
+            <column name="LoginDateTime"/>
+            <column name="LoginStatus"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="DatabaseID" table="WatsonDatabase" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="ImpersonateHistory" noExport="true">
+      <columns>
+         <column name="PortalUserIDToImpersonate" type="int" required="true"/>
+         <column name="PortalUserIDOfImpersonator" type="int" required="true"/>
+         <column name="LoginDateTime" type="datetime" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="PortalUserIDToImpersonate"/>
+            <column name="PortalUserIDOfImpersonator"/>
+            <column name="LoginDateTime"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="PortalUserIDToImpersonate" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="PortalUserIDOfImpersonator" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="PasswordBlacklist">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="PasswordPattern" type="varchar" length="255" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PasswordPattern"/>
+         </unique>
+      </keys>
+   </table>
+
+   <table name="PasswordQuestion">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Locale" type="varchar" length="10" required="true"/>
+         <column name="Question" type="varchar" length="255" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Locale"/>
+            <column name="Question"/>
+         </unique>
+      </keys>
+   </table>
+
+   <table name="PasswordRules">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Pattern" type="varchar" length="100" required="true"/>
+         <column name="Description" type="varchar" length="200" required="true"/>
+         <column name="Duration" type="short" minValue="1"/>
+         <column name="ExpirationWarning" type="short" minValue="1"/>
+         <column name="NumberPrior" type="short" minValue="0"/>
+         <column name="MaxAttempts" type="short"/>
+         <column name="ResetsPerDay" type="int" minValue="1" maxValue="3" default="3" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="AccessURL">
+      <columns>
+         <column name="AccessURL" type="varchar" length="200" required="true"/>
+         <column name="PortalClientID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="AccessURL"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="PortalClientID" table="PortalClient" column="ID" type="enforce"/>
+      </relations>
+   </table>
+
+   <table name="ProtectedApiAccessKey">
+      <columns>
+         <column name="AccessKey" type="varchar" length="2000" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="AccessKey"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="ApiAuthorization">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="PortalUserID" type="int"/>
+         <column name="ApiSecret" type="varchar" length="200"/>
+         <column name="RefreshToken" type="text"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ApiSecret"/>
+         </primary>
+         <index>
+            <column name="PortalUserID"/>
+         </index>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="AutomationAuthorization" noExport="true">
+      <columns>
+         <column name="AutomationSecret" type="uuid" required="true"/>
+         <column name="RefreshToken" type="text" required="true"/>
+         <column name="ExpirationDateTime" type="datetime" required="true"/>
+         <column name="CreatedOnDateTime" type="datetime" required="true"/>
+         <column name="LastUsedDateTime" type="datetime"/>
+         <column name="PortalUserID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="AutomationSecret"/>
+         </primary>
+         <index>
+            <column name="PortalUserID"/>
+         </index>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="PortalClient">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="GlobalID" type="uuid" required="true" default="generate_uuid()"/>
+         <column name="Name" type="varchar" length="50" required="true"/>
+         <column name="Code" type="varchar" length="25" required="true"/>
+         <column name="Active" type="boolean" required="true" default="true"/>
+         <column name="ParentClientID" type="int"/>
+         <column name="DatabaseID" type="int"/>
+         <column name="KioskURL" type="varchar" length="255"/>
+         <column name="License" type="binary"/>
+         <column name="ValidPattern" type="varchar" length="100"/><!-- deprecated, remove in future upgrade -->
+         <column name="ValidDescription" type="varchar" length="200"/><!-- deprecated, remove in future upgrade -->
+         <column name="Duration" type="short"/><!-- deprecated, remove in future upgrade -->
+         <column name="NumberPrior" type="short"/><!-- deprecated, remove in future upgrade -->
+         <column name="MaxAttempts" type="short"/><!-- deprecated, remove in future upgrade -->
+         <column name="AccessURL" type="varchar" length="200"/><!-- deprecated, remove in future upgrade -->
+         <column name="RedirectURL" type="varchar" length="200"/><!-- deprecated, remove in future upgrade -->
+         <column name="LDAPID" type="int"/>
+         <column name="SAMLID" type="int"/>
+         <column name="PasswordRulesID" type="int"/>
+         <column name="ImpersonationEnabled" type="boolean" required="true"/>
+         <column name="Type" type="enum" enumType="DomainType" required="true" default="'UNIPORTAL'"/>
+         <column name="ExpirationWarning" type="short" minValue="1"/>
+         <column name="InviteLoginClientID" type="int"/>
+         <column name="ManagerInviteLoginClientID" type="int"/>
+         <column name="AutomationApiSecret" type="text"/>
+<!--         <column name="TapsEnabled" type="boolean" required="true" default="'N'"/>-->
+<!--         <column name="OpsEnabled" type="boolean" required="true" default="'N'"/>-->
+<!--         <column name="SurveyEnabled" type="boolean" required="true" default="'N'"/>-->
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="GlobalID"/>
+         </unique>
+         <unique>
+            <column name="Name"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="ParentClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="DatabaseID" table="WatsonDatabase" column="ID" type="setnull"/>
+         <relation src="PasswordRulesID" table="PasswordRules" column="ID" type="setnull"/>
+         <relation src="LDAPID" table="LDAPConfig" column="ID" type="setnull"/>
+         <relation src="SAMLID" table="SAMLConfig" column="ID" type="setnull"/>
+         <relation src="InviteLoginClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="ManagerInviteLoginClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="PortalProperty">
+      <columns>
+         <column name="ID" type="uuid" required="true"/>
+         <column name="PortalClientID" type="int" required="true"/>
+         <column name="Name" type="text" required="true"/>
+         <column name="Code" type="text" required="true"/>
+         <column name="Active" type="boolean" required="true" default="true"/>
+         <column name="License" type="text" required="true"/> <!-- encrypted json object -->
+         <column name="TimeZoneID" type="text" required="true"/> <!-- America/New_York -->
+         <column name="DefaultLocale" type="text" required="true" default="'en-US'"/>
+         <column name="TapsDatabaseID" type="int"/>
+<!--         <column name="OpsDatabaseID" type="int"/>-->
+<!--         <column name="SurveyDatabaseID" type="int"/>-->
+<!--         <column name="AltCode" type="text" required="true"/>-->
+         <column name="PropertyType" type="enum" enumType="PropertyType"/>
+         <column name="MarketType" type="enum" enumType="MarketType"/>
+         <column name="BrandID" type="int"/>
+         <column name="NumberRooms" type="int"/>
+         <column name="AddressLine1" type="text" required="true"/>
+         <column name="AddressLine2" type="text"/>
+         <column name="Locality" type="text" required="true"/>  <!-- City -->
+         <column name="AdministrativeArea" type="text" required="true"/> <!-- State -->
+         <column name="PostalCode" type="text" required="true"/>
+         <column name="Country" type="text" required="true"/> <!-- ISO 3166-1 alpha-2 (two-letter) codes. -->
+         <column name="ClientRegionID" type="int"/> <!-- This is not the same as AdministrativeArea! This is custom to client. -->
+         <column name="Unionized" type="boolean"/>
+         <column name="OpsDateFormat" type="text" length="20" required="true" default="'MM/dd/yyyy'"/>
+         <column name="LogoReference" type="text" />
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="Name"/>
+         </unique>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="Code"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalClientID" table="PortalClient" column="ID" type="cascade"/>
+         <relation src="TapsDatabaseID" table="WatsonDatabase" column="ID" type="setnull"/>
+         <relation src="BrandID" table="Brand" column="ID" type="setnull"/>
+         <relation src="ClientRegionID" table="ClientRegion" column="ID" type="setnull"/>
+      </relations>
+   </table>
+
+   <table name="PortalPropertyAdditionalLocale">
+      <columns>
+         <column name="ID" type="uuid" required="true"/>
+         <column name="PortalPropertyID" type="uuid" required="true"/>
+         <column name="Locale" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalPropertyID"/>
+            <column name="Locale"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalPropertyID" table="PortalProperty" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="Brand">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Name" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Name"/>
+         </unique>
+      </keys>
+      <initialData>
+         <sql databaseType="h2">
+            insert into Brand (Name) values ('Hilton');
+            insert into Brand (Name) values ('Marriott International');
+            insert into Brand (Name) values ('Hyatt Hotels Corporation');
+            insert into Brand (Name) values ('IHG Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Choice Hotels');
+            insert into Brand (Name) values ('Wyndham Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Other Notable Brands &amp; Independent Collections');
+         </sql>
+         <sql databaseType="postgresql">
+            insert into Brand (Name) values ('Hilton');
+            insert into Brand (Name) values ('Marriott International');
+            insert into Brand (Name) values ('Hyatt Hotels Corporation');
+            insert into Brand (Name) values ('IHG Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Choice Hotels');
+            insert into Brand (Name) values ('Wyndham Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Other Notable Brands &amp; Independent Collections');
+         </sql>
+         <sql databaseType="sqlserver">
+            insert into Brand (Name) values ('Hilton');
+            insert into Brand (Name) values ('Marriott International');
+            insert into Brand (Name) values ('Hyatt Hotels Corporation');
+            insert into Brand (Name) values ('IHG Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Choice Hotels');
+            insert into Brand (Name) values ('Wyndham Hotels &amp; Resorts');
+            insert into Brand (Name) values ('Other Notable Brands &amp; Independent Collections');
+         </sql>
+      </initialData>
+   </table>
+
+   <!-- This is not the same as AdministrativeArea! This is custom to client. -->
+   <table name="ClientRegion">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="PortalClientID" type="int" required="true"/>
+         <column name="Name" type="text" required="true"/>
+         <column name="ShortName" type="varchar" length="25" required="true"/>
+         <column name="Code" type="varchar" length="25" required="true"/>
+         <column name="ExcludeFromCorpReports" type="boolean" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="Name"/>
+         </unique>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="Code"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="PortalUserPropertyAccess">
+      <columns>
+         <column name="ID" type="uuid" required="true"/>
+         <column name="PortalUserID" type="int" required="true"/>
+         <column name="PortalPropertyID" type="uuid" required="true"/>
+         <column name="TapsEnabled" type="boolean" required="true" default="false"/>
+         <column name="OpsEnabled" type="boolean" required="true" default="false"/>
+         <column name="SurveyEnabled" type="boolean" required="true" default="false"/>
+         <column name="TapsAdmin" type="boolean" required="true" default="false"/>
+<!--         <column name="OpsEnabled" type="boolean" required="true" default="'N'"/>-->
+<!--         <column name="SurveyEnabled" type="boolean" required="true" default="'N'"/>-->
+         <!--<column name="Module" type="text" required="true"/>--> <!-- TAPS,OPS,SURVEY -->
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalUserID"/>
+            <column name="PortalPropertyID"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="PortalPropertyID" table="PortalProperty" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!--
+   <table name="PortalUserAllPropertiesAdmin">
+      <columns>
+         <column name="PortalUserID" type="int" required="true"/>
+         <column name="Module" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="PortalUserID"/>
+            <column name="Module"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="PortalUserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+   -->
+
+   <table name="PortalUser">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="LoginClientID" type="int"/>
+         <column name="LoginId" type="varchar" length="254" required="true"/>
+         <column name="GlobalID" type="uuid" required="true" default="generate_uuid()"/>
+         <column name="PWord" type="varchar" length="200" required="true"/>
+         <column name="Active" type="boolean"/>
+         <column name="ActiveChangedOn" type="datetime"/>
+         <column name="FirstName" type="varchar" length="50"/>
+         <column name="MiddleName" type="varchar" length="50"/>
+         <column name="LastName" type="varchar" length="50"/>
+         <column name="EMail" type="varchar" length="254"/>
+         <column name="MobilePhone" type="varchar" length="100"/>
+         <column name="QuestionID" type="int"/>
+         <column name="Answer" type="varchar" length="100"/>
+         <column name="LastLogin" type="datetime"/>
+         <column name="PwordChanged" type="datetime"/>
+         <column name="PwordChangedSameDayCount" type="int"/>
+         <column name="Locale" type="varchar" length="10"/>
+         <column name="ClientID" type="int"/>
+         <column name="DefaultDatabaseID" type="int"/>
+         <column name="BypassLdap" type="boolean" required="true"/>
+         <column name="LdapUserName" type="varchar" length="254"/>
+         <column name="Flags" type="int"/><!-- deprecated, remove in future upgrade -->
+         <column name="Photo" type="binary"/>
+         <column name="CreatedOn" type="datetime"/>
+         <column name="CreatedByPortalUserID" type="int"/>
+         <column name="CanAdministerUsers" type="boolean" required="true" default="false"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="LoginClientID"/>
+            <column name="LoginId"/>
+         </unique>
+         <unique>
+            <column name="GlobalID"/>
+         </unique>
+         <index>
+            <column name="EMail"/>
+         </index>
+      </keys>
+      <relations>
+         <relation src="QuestionID" table="PasswordQuestion" column="ID" type="enforce"/>
+         <relation src="LoginClientID" table="PortalClient" column="ID" type="enforce"/>
+         <relation src="ClientID" table="PortalClient" column="ID" type="enforce"/>
+         <relation src="DefaultDatabaseID" table="WatsonDatabase" column="ID" type="setnull"/>
+         <relation src="CreatedByPortalUserID" table="PortalUser" column="ID" type="setnull"/>
+      </relations>
+      <triggers>
+         <update databaseType="sqlserver">
+            <![CDATA[
+               declare @current_statement varchar(MAX);
+
+               declare @TEMP table (EventType nvarchar(30), Parameters int, EventInfo nvarchar(4000));
+               insert into @TEMP EXEC('DBCC INPUTBUFFER(@@SPID) with NO_INFOMSGS');
+               select @current_statement = EventInfo from @TEMP;
+
+               declare @operation char(1) = (case when (select COUNT(*) from deleted) = 0 then 'I' else 'U' end);
+
+               declare @portal_user_id int;  -- TODO: Add support
+
+               if @Operation = 'I'
+                  insert into PortalUserAudit (PortalUserID,
+                                               LoginClientID,
+                                               LoginId,
+                                               PWord,
+                                               Active,
+                                               FirstName,
+                                               MiddleName,
+                                               LastName,
+                                               EMail,
+                                               MobilePhone,
+                                               QuestionID,
+                                               Answer,
+                                               LastLogin,
+                                               PwordChanged,
+                                               Locale,
+                                               ClientID,
+                                               DefaultDatabaseID,
+                                               BypassLDAP,
+                                               LdapUserName,
+                                               Flags,
+                                               ChangedOn,
+                                               Operation,
+                                               Command,
+                                               HostName,
+                                               ChangedBySqlUser,
+                                               ChangedByPortalUserID,
+                                               CanAdministerUsers)
+                      select
+                         i.ID,
+                         i.LoginClientID,
+                         i.LoginId,
+                         i.PWord,
+                         i.Active,
+                         i.FirstName,
+                         i.MiddleName,
+                         i.LastName,
+                         i.EMail,
+                         i.MobilePhone,
+                         i.QuestionID,
+                         i.Answer,
+                         i.LastLogin,
+                         i.PwordChanged,
+                         i.Locale,
+                         i.ClientID,
+                         i.DefaultDatabaseID,
+                         i.BypassLDAP,
+                         i.LdapUserName,
+                         i.Flags,
+                         GETUTCDATE(),
+                         @operation,
+                         @current_statement,
+                         HOST_NAME(),
+                         SYSTEM_USER,
+                         @portal_user_id,
+                         i.CanAdministerUsers
+                      from inserted i
+               else
+                  insert into PortalUserAudit (PortalUserID,
+                                               LoginClientID,
+                                               LoginId,
+                                               PWord,
+                                               Active,
+                                               FirstName,
+                                               MiddleName,
+                                               LastName,
+                                               EMail,
+                                               MobilePhone,
+                                               QuestionID,
+                                               Answer,
+                                               LastLogin,
+                                               PwordChanged,
+                                               Locale,
+                                               ClientID,
+                                               DefaultDatabaseID,
+                                               BypassLDAP,
+                                               LdapUserName,
+                                               Flags,
+                                               ChangedOn,
+                                               Operation,
+                                               Command,
+                                               HostName,
+                                               ChangedBySqlUser,
+                                               ChangedByPortalUserID,
+                                               CanAdministerUsers)
+                      select
+                         i.ID,
+                         i.LoginClientID,
+                         i.LoginId,
+                         i.PWord,
+                         i.Active,
+                         i.FirstName,
+                         i.MiddleName,
+                         i.LastName,
+                         i.EMail,
+                         i.MobilePhone,
+                         i.QuestionID,
+                         i.Answer,
+                         i.LastLogin,
+                         i.PwordChanged,
+                         i.Locale,
+                         i.ClientID,
+                         i.DefaultDatabaseID,
+                         i.BypassLDAP,
+                         i.LdapUserName,
+                         i.Flags,
+                         GETUTCDATE(),
+                         @operation,
+                         @current_statement,
+                         HOST_NAME(),
+                         SYSTEM_USER,
+                         @portal_user_id,
+                         i.CanAdministerUsers
+                      from inserted i
+                           join deleted d on
+                         i.ID = d.ID and
+                         COALESCE(i.LastLogin, '') = COALESCE(d.LastLogin, '') and (
+                           COALESCE(i.PWord, '') <> COALESCE(d.PWord, '') or
+                           COALESCE(i.EMail, '') <> COALESCE(d.EMail, '') or
+                           COALESCE(i.Flags, 0) <> COALESCE(d.Flags, 0) or
+                           COALESCE(i.Active, '') <> COALESCE(d.Active, '') or
+                           COALESCE(i.QuestionID, 0) <> COALESCE(d.QuestionID, 0) or
+                           COALESCE(i.Locale, '') <> COALESCE(d.Locale, '') or
+                           COALESCE(i.ClientID, 0) <> COALESCE(d.ClientID, 0) or
+                           COALESCE(i.DefaultDatabaseID, 0) <> COALESCE(d.DefaultDatabaseID, 0) or
+                           COALESCE(i.BypassLdap, '') <> COALESCE(d.BypassLdap, '') or
+                           COALESCE(i.LoginClientID, 0) <> COALESCE(d.LoginClientID, 0) or
+                           COALESCE(i.MobilePhone, '') <> COALESCE(d.MobilePhone, '') or
+                           COALESCE(i.FirstName, '') <> COALESCE(d.FirstName, '') or
+                           COALESCE(i.MiddleName, '') <> COALESCE(d.MiddleName, '') or
+                           COALESCE(i.LastName, '') <> COALESCE(d.LastName, '') or
+                           COALESCE(i.LdapUserName, '') <> COALESCE(d.LdapUserName, '') or
+                           COALESCE(i.PwordChangedSameDayCount, 0) <> COALESCE(d.PwordChangedSameDayCount, 0) );
+            ]]>
+         </update>
+         <update databaseType="postgresql">
+            <![CDATA[
+               declare
+                  operation char(1) := (case when tg_op = 'INSERT' then 'I' else 'U' end);
+                  current_statement text := ( select query from pg_stat_activity where pid = pg_backend_pid() );
+                  portal_user_id int;  -- TODO: Add support
+               begin
+                  if operation = 'I' then
+                     insert into PortalUserAudit (PortalUserID,
+                                               LoginClientID,
+                                               LoginId,
+                                               PWord,
+                                               Active,
+                                               FirstName,
+                                               MiddleName,
+                                               LastName,
+                                               EMail,
+                                               MobilePhone,
+                                               QuestionID,
+                                               Answer,
+                                               LastLogin,
+                                               PwordChanged,
+                                               Locale,
+                                               ClientID,
+                                               DefaultDatabaseID,
+                                               BypassLDAP,
+                                               LdapUserName,
+                                               Flags,
+                                               ChangedOn,
+                                               Operation,
+                                               Command,
+                                               HostName,
+                                               ChangedBySqlUser,
+                                               ChangedByPortalUserID,
+                                               CanAdministerUsers )
+                            values (
+                               NEW.ID,
+                               NEW.LoginClientID,
+                               NEW.LoginId,
+                               NEW.PWord,
+                               NEW.Active,
+                               NEW.FirstName,
+                               NEW.MiddleName,
+                               NEW.LastName,
+                               NEW.EMail,
+                               NEW.MobilePhone,
+                               NEW.QuestionID,
+                               NEW.Answer,
+                               NEW.LastLogin,
+                               NEW.PwordChanged,
+                               NEW.Locale,
+                               NEW.ClientID,
+                               NEW.DefaultDatabaseID,
+                               NEW.BypassLDAP,
+                               NEW.LdapUserName,
+                               NEW.Flags,
+                               timezone('utc', now()),
+                               operation,
+                               current_statement,
+                               inet_client_addr(),
+                               CURRENT_USER,
+                               portal_user_id,
+                               NEW.CanAdministerUsers );
+                  elseif NEW.ID = OLD.ID and
+                         NEW.LastLogin IS NOT DISTINCT FROM OLD.LastLogin and (
+                           COALESCE(NEW.PWord, '') <> COALESCE(OLD.PWord, '') or
+                           COALESCE(NEW.EMail, '') <> COALESCE(OLD.EMail, '') or
+                           COALESCE(NEW.Flags, 0) <> COALESCE(OLD.Flags, 0) or
+                           COALESCE(NEW.Active, '') <> COALESCE(OLD.Active, '') or
+                           COALESCE(NEW.QuestionID, 0) <> COALESCE(OLD.QuestionID, 0) or
+                           COALESCE(NEW.Locale, '') <> COALESCE(OLD.Locale, '') or
+                           COALESCE(NEW.ClientID, 0) <> COALESCE(OLD.ClientID, 0) or
+                           COALESCE(NEW.DefaultDatabaseID, 0) <> COALESCE(OLD.DefaultDatabaseID, 0) or
+                           COALESCE(NEW.BypassLdap, '') <> COALESCE(OLD.BypassLdap, '') or
+                           COALESCE(NEW.LoginClientID, 0) <> COALESCE(OLD.LoginClientID, 0) or
+                           COALESCE(NEW.MobilePhone, '') <> COALESCE(OLD.MobilePhone, '') or
+                           COALESCE(NEW.FirstName, '') <> COALESCE(OLD.FirstName, '') or
+                           COALESCE(NEW.MiddleName, '') <> COALESCE(OLD.MiddleName, '') or
+                           COALESCE(NEW.LastName, '') <> COALESCE(OLD.LastName, '') or
+                           COALESCE(NEW.LdapUserName, '') <> COALESCE(OLD.LdapUserName, '') or
+                           COALESCE(NEW.PwordChangedSameDayCount, 0) <> COALESCE(OLD.PwordChangedSameDayCount, 0) ) then
+                     insert into PortalUserAudit (PortalUserID,
+                                               LoginClientID,
+                                               LoginId,
+                                               PWord,
+                                               Active,
+                                               FirstName,
+                                               MiddleName,
+                                               LastName,
+                                               EMail,
+                                               MobilePhone,
+                                               QuestionID,
+                                               Answer,
+                                               LastLogin,
+                                               PwordChanged,
+                                               Locale,
+                                               ClientID,
+                                               DefaultDatabaseID,
+                                               BypassLDAP,
+                                               LdapUserName,
+                                               Flags,
+                                               ChangedOn,
+                                               Operation,
+                                               Command,
+                                               HostName,
+                                               ChangedBySqlUser,
+                                               ChangedByPortalUserID,
+                                               CanAdministerUsers)
+                         values (
+                            NEW.ID,
+                            NEW.LoginClientID,
+                            NEW.LoginId,
+                            NEW.PWord,
+                            NEW.Active,
+                            NEW.FirstName,
+                            NEW.MiddleName,
+                            NEW.LastName,
+                            NEW.EMail,
+                            NEW.MobilePhone,
+                            NEW.QuestionID,
+                            NEW.Answer,
+                            NEW.LastLogin,
+                            NEW.PwordChanged,
+                            NEW.Locale,
+                            NEW.ClientID,
+                            NEW.DefaultDatabaseID,
+                            NEW.BypassLDAP,
+                            NEW.LdapUserName,
+                            NEW.Flags,
+                            timezone('utc', now()),
+                            operation,
+                            current_statement,
+                            inet_client_addr(),
+                            CURRENT_USER,
+                            portal_user_id,
+                            NEW.CanAdministerUsers );
+                  end if;
+               end;
+            ]]>
+         </update>
+         <delete databaseType="sqlserver">
+            <![CDATA[
+               declare @current_statement varchar(MAX);
+
+               declare @TEMP table (EventType nvarchar(30), Parameters int, EventInfo nvarchar(4000));
+               insert into @TEMP EXEC('DBCC INPUTBUFFER(@@SPID) with NO_INFOMSGS');
+               select @current_statement = EventInfo from @TEMP;
+
+               declare @portal_user_id int;  -- TODO: Add support
+
+               insert into PortalUserAudit (PortalUserID,
+                                            LoginClientID,
+                                            LoginId,
+                                            PWord,
+                                            Active,
+                                            FirstName,
+                                            MiddleName,
+                                            LastName,
+                                            EMail,
+                                            MobilePhone,
+                                            QuestionID,
+                                            Answer,
+                                            LastLogin,
+                                            PwordChanged,
+                                            Locale,
+                                            ClientID,
+                                            DefaultDatabaseID,
+                                            BypassLDAP,
+                                            LdapUserName,
+                                            Flags,
+                                            ChangedOn,
+                                            Operation,
+                                            Command,
+                                            HostName,
+                                            ChangedBySqlUser,
+                                            ChangedByPortalUserID,
+                                            CanAdministerUsers)
+                      select
+                         d.ID,
+                         d.LoginClientID,
+                         d.LoginId,
+                         d.PWord,
+                         d.Active,
+                         d.FirstName,
+                         d.MiddleName,
+                         d.LastName,
+                         d.EMail,
+                         d.MobilePhone,
+                         d.QuestionID,
+                         d.Answer,
+                         d.LastLogin,
+                         d.PwordChanged,
+                         d.Locale,
+                         d.ClientID,
+                         d.DefaultDatabaseID,
+                         d.BypassLDAP,
+                         d.LdapUserName,
+                         d.Flags,
+                         GETUTCDATE(),
+                         'D',
+                         @current_statement,
+                         HOST_NAME(),
+                         SYSTEM_USER,
+                         @portal_user_id,
+                         d.CanAdministerUsers
+                      from deleted d;
+            ]]>
+         </delete>
+         <delete databaseType="postgresql">
+            <![CDATA[
+               declare
+                  current_statement text := ( select query from pg_stat_activity where pid = pg_backend_pid() );
+                  portal_user_id int;  -- TODO: Add support
+               begin
+                  insert into PortalUserAudit ( PortalUserID,
+                                            LoginClientID,
+                                            LoginId,
+                                            PWord,
+                                            Active,
+                                            FirstName,
+                                            MiddleName,
+                                            LastName,
+                                            EMail,
+                                            MobilePhone,
+                                            QuestionID,
+                                            Answer,
+                                            LastLogin,
+                                            PwordChanged,
+                                            Locale,
+                                            ClientID,
+                                            DefaultDatabaseID,
+                                            BypassLDAP,
+                                            LdapUserName,
+                                            Flags,
+                                            ChangedOn,
+                                            Operation,
+                                            Command,
+                                            HostName,
+                                            ChangedBySqlUser,
+                                            ChangedByPortalUserID,
+                                            CanAdministerUsers )
+                      values (
+                         OLD.ID,
+                         OLD.LoginClientID,
+                         OLD.LoginId,
+                         OLD.PWord,
+                         OLD.Active,
+                         OLD.FirstName,
+                         OLD.MiddleName,
+                         OLD.LastName,
+                         OLD.EMail,
+                         OLD.MobilePhone,
+                         OLD.QuestionID,
+                         OLD.Answer,
+                         OLD.LastLogin,
+                         OLD.PwordChanged,
+                         OLD.Locale,
+                         OLD.ClientID,
+                         OLD.DefaultDatabaseID,
+                         OLD.BypassLDAP,
+                         OLD.LdapUserName,
+                         OLD.Flags,
+                         timezone('utc', now()),
+                         'D',
+                         current_statement,
+                         inet_client_addr(),
+                         CURRENT_USER,
+                         portal_user_id,
+                         OLD.CanAdministerUsers );
+               end;
+            ]]>
+         </delete>
+      </triggers>
+   </table>
+
+   <table name="PortalAdminUserAdditionalClients">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="UserID" type="int" required="true"/>
+         <column name="ClientID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="UserID"/>
+            <column name="ClientID"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="ClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="PortalUserAudit" noExport="true">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="PortalUserID" type="int" required="true"/>
+         <column name="LoginClientID" type="int"/>
+         <column name="LoginId" type="varchar" length="254" required="true"/>
+         <column name="PWord" type="varchar" length="200" required="true"/>
+         <column name="Active" type="boolean"/>
+         <column name="FirstName" type="varchar" length="50"/>
+         <column name="MiddleName" type="varchar" length="50"/>
+         <column name="LastName" type="varchar" length="50"/>
+         <column name="EMail" type="varchar" length="254"/>
+         <column name="MobilePhone" type="varchar" length="100"/>
+         <column name="QuestionID" type="int"/>
+         <column name="Answer" type="varchar" length="100"/>
+         <column name="LastLogin" type="datetime"/>
+         <column name="PwordChanged" type="datetime"/>
+         <column name="Locale" type="varchar" length="10"/>
+         <column name="ClientID" type="int"/>
+         <column name="DefaultDatabaseID" type="int"/>
+         <column name="BypassLdap" type="boolean" required="true"/>
+         <column name="LdapUserName" type="varchar" length="254"/>
+         <column name="Flags" type="int"/><!-- deprecated, remove in future upgrade -->
+         <column name="ChangedOn" type="datetime" required="true"/>
+         <column name="Operation" type="char" length="1" required="true"/>
+         <column name="Command" type="text" required="true"/>
+         <column name="HostName" type="varchar" length="128" required="true"/>
+         <column name="ChangedBySqlUser" type="varchar" length="128" required="true"/>
+         <column name="ChangedByPortalUserID" type="int"/>
+         <column name="CanAdministerUsers" type="boolean"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <index>
+            <column name="LoginId"/>
+            <column name="ChangedOn"/>
+         </index>
+         <index>
+            <column name="ChangedOn"/>
+            <column name="LoginId"/>
+         </index>
+      </keys>
+   </table>
+
+   <table name="Product">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Code" type="varchar" length="25" required="true"/>
+         <column name="Name" type="varchar" length="200" required="true"/>
+         <column name="URL" type="varchar" length="255"/>
+         <column name="RequiredUserType" type="enum" enumType="RequiredUserType"/>
+         <column name="RequiredDeviceTypes" type="varchar" length="200"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Code"/>
+         </unique>
+         <unique>
+            <column name="Name"/>
+         </unique>
+      </keys>
+   </table>
+
+   <!-- what is this for? -->
+   <table name="RemoteServiceProvider" noExport="true">
+      <columns>
+         <column name="Name" type="varchar" length="100" required="true"/>
+         <column name="DatabaseID" type="int"/>
+         <column name="URL" type="varchar" length="255" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="Name"/>
+            <column name="DatabaseID"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="SAMLConfig">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="URL" type="varchar" length="200" required="true"/>
+         <column name="SignatureMethodName" type="varchar" length="50"/>
+         <column name="SignatureMethodUri" type="varchar" length="100"/>
+         <column name="DigestMethod" type="varchar" length="100"/>
+         <column name="ProtocolBinding" type="varchar" length="100"/>
+         <column name="SpNameQualifier" type="varchar" length="100"/>
+         <column name="AuthnContextClassref" type="varchar" length="100"/>
+         <column name="NameidPolicyFormat" type="varchar" length="100"/>
+         <column name="KeystoreAlias" type="varchar" length="50"/>
+         <column name="UsernameVariable" type="varchar" length="50"/>
+         <column name="EmailVariable" type="varchar" length="50"/>
+         <column name="PropertyCodeVariable" type="varchar" length="50"/>
+         <column name="DisplayNameVariable" type="varchar" length="50"/>
+         <column name="EmployeeIdVariable" type="varchar" length="50"/>
+         <column name="EnableAutoRegistration" type="boolean" default="false" required="true"/>
+         <column name="SignRequestKeystoreAlias" type="varchar" length="50"/>
+         <column name="SignResponseKeystoreAlias" type="varchar" length="50"/>
+         <column name="DecryptResponseKeystoreAlias" type="varchar" length="50"/>
+         <column name="UserAutoMigrationType" type="text"/>
+         <column name="AutoLinkEmployeeForManagersType" type="text"/>
+         <column name="UseAltEmpID" type="boolean" default="false" required="true"/>
+         <column name="KeepMeSignedInDeviceTypes" type="text"/>
+         <column name="LogOffUrl" type="text"/>
+         <column name="ForceAuthn" type="boolean"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="SAMLIDPConfig">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="PortalClientID" type="int" required="true"/>
+         <column name="ExternalProductName" type="varchar" length="50"/>
+         <column name="ExternalProductCode" type="varchar" length="2"/>
+         <column name="SAMLVersion" type="varchar" length="10" required="true" default="2.0"/>
+         <column name="PostbackURL" type="text" required="true"/>
+         <column name="UserNameVariable" type="varchar" length="254" required="true" default="'Username'"/>
+         <column name="KeystoreAlias" type="varchar" length="25"/>
+         <column name="SignRequestKeystoreAlias" type="varchar" length="25"/>
+         <column name="SignResponseKeystoreAlias" type="varchar" length="25"/>
+         <column name="DecryptResponseKeystoreAlias" type="varchar" length="25"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="PortalClientID"/>
+            <column name="ExternalProductCode"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="PortalClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="Session" noExport="true">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="SessionID" type="varchar" length="255" required="true"/>
+         <column name="Host" type="varchar" length="255" required="true"/>
+         <column name="SessionTime" type="datetime" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="SessionID"/>
+         </unique>
+         <index>
+            <column name="Host"/>
+         </index>
+      </keys>
+   </table>
+
+   <table name="SessionHistory" noExport="true">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="SessionID" type="varchar" length="255" required="true"/>
+         <column name="Host" type="varchar" length="255" required="true"/>
+         <column name="LoginID" type="varchar" length="254"/>
+         <column name="LoginDT" type="datetime"/>
+         <column name="LogoutDT" type="datetime"/>
+         <column name="TimedOut" type="boolean"/>
+         <column name="DatabaseID" type="int"/>
+         <column name="DatabaseName" type="varchar" length="50"/>
+         <column name="PropertyID" type="int"/>
+         <column name="PropertyName" type="varchar" length="50"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="SessionID"/>
+         </unique>
+         <index>
+            <column name="Host"/>
+         </index>
+         <index>
+            <column name="LoginID"/>
+            <column name="LoginDT"/>
+         </index>
+      </keys>
+   </table>
+
+   <table name="SystemMessage">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="StartTime" type="datetime" required="true"/>
+         <column name="EndTime" type="datetime" required="true"/>
+         <column name="MsgText" type="text"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <index>
+            <column name="StartTime"/>
+            <column name="EndTime"/>
+         </index>
+      </keys>
+   </table>
+
+   <!-- we can probably delete this -->
+   <table name="URLConfig">
+      <columns>
+         <column name="Name" type="varchar" length="255" required="true"/>
+         <column name="URL" type="varchar" length="255" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="Name"/>
+         </primary>
+      </keys>
+   </table>
+
+   <table name="UserData">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="UserID" type="int" required="true"/>
+         <column name="Tag" type="varchar" length="50" required="true"/>
+         <column name="TagValue" type="varchar" length="255"/>
+         <column name="TagData" type="binary"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="UserID"/>
+            <column name="Tag"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <!-- deprecated, remove in future upgrade -->
+   <table name="UserDatabase">
+      <columns>
+         <column name="UserID" type="int" required="true"/>
+         <column name="DatabaseID" type="int" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="UserID"/>
+            <column name="DatabaseID"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+         <relation src="DatabaseID" table="WatsonDatabase" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="UserFailedPassword" noExport="true">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="UserID" type="int" required="true"/>
+         <column name="AttemptedOn" type="datetime" required="true"/>
+         <column name="PWord" type="varchar" length="200" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="UserID"/>
+            <column name="AttemptedOn"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="UserPreference">
+      <columns>
+         <column name="ID" type="longsequence" required="true"/>
+         <column name="UserID" type="int" required="true"/>
+         <column name="PrefKey" type="varchar" length="200" required="true"/>
+         <column name="PrefValue" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="UserID"/>
+            <column name="PrefKey"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="UserPriorPassword">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="UserID" type="int" required="true"/>
+         <column name="EffDate" type="datetime" required="true"/>
+         <column name="PWord" type="varchar" length="200" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="UserID"/>
+            <column name="EffDate"/>
+         </unique>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="UserRefreshToken">
+      <columns>
+         <column name="UserID" type="int" required="true"/>
+         <column name="RefreshToken" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="UserID"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="UserID" table="PortalUser" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="TermsAndConditionsTextOverride">
+      <columns>
+         <column name="ClientID" type="int" required="true"/>
+         <column name="Locale" type="text" required="true"/>
+         <column name="DisplayText" type="text" required="true"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ClientID"/>
+            <column name="Locale"/>
+         </primary>
+      </keys>
+      <relations>
+         <relation src="ClientID" table="PortalClient" column="ID" type="cascade"/>
+      </relations>
+   </table>
+
+   <table name="WatsonDatabase">
+      <columns>
+         <column name="ID" type="sequence" required="true"/>
+         <column name="Name" type="varchar" length="50" required="true"/>
+         <column name="DatabaseURL" type="varchar" length="255" required="true"/>
+         <column name="DatabaseUserName" type="varchar" length="200" required="true"/>
+         <column name="DatabasePassword" type="varchar" length="200" required="true"/>
+         <column name="DatabaseDriver" type="varchar" length="255" required="true"/>
+         <column name="RedirectURL" type="varchar" length="255"/>
+         <column name="MobileRedirectURL" type="varchar" length="255"/>
+         <column name="ApiURL" type="varchar" length="255"/>
+         <column name="LoginURL" type="varchar" length="255"/><!-- deprecated, remove in future upgrade -->
+         <column name="WatsonVersion" type="varchar" length="10"/>
+         <column name="OlapDatabaseURL" type="varchar" length="255"/>
+         <column name="OlapDatabaseUserName" type="varchar" length="200"/>
+         <column name="OlapDatabasePassword" type="varchar" length="200"/>
+      </columns>
+      <keys>
+         <primary>
+            <column name="ID"/>
+         </primary>
+         <unique>
+            <column name="Name"/>
+         </unique>
+      </keys>
+   </table>
+
+   <view name="UserDatabaseQuery">
+      <![CDATA[
+      select u.ID as UserID,u.LoginId as LoginId,u.EMail,u.Flags,d.ID as DatabaseID,d.Name as DatabaseName,d.DatabaseURL,d.DatabaseUserName,d.DatabasePassword,d.DatabaseDriver,d.RedirectURL from PortalUser u,WatsonDatabase d,UserDatabase ud where u.ID = ud.UserID and d.ID = ud.DatabaseID
+      ]]>
+   </view>
+
+   <enum name="DomainType">
+      <value name="LDAP"/>
+      <value name="SAML"/>
+      <value name="UNIPORTAL"/>
+   </enum>
+
+   <enum name="RequiredUserType">
+      <value name="LOYALTY"/>
+      <value name="RMS"/>
+      <value name="OTHER"/>
+   </enum>
+
+   <enum name="AuditChangeType">
+      <value name="ADD" code="A"/>
+      <value name="DELETE" code="D"/>
+      <value name="MODIFY" code="M"/>
+   </enum>
+
+   <enum name="RegistrationType">
+      <value name="EMPLOYEE"/>
+      <value name="USER"/>
+   </enum>
+
+   <!--
+    Full Service Hotel – traditional hotels with food & beverage outlets, banquets, room service.
+    Select Service Hotel – limited F&B offerings, focused on lodging with some amenities.
+    Extended Stay Hotel – geared toward long-term guests with kitchenettes, weekly housekeeping.
+    Resort – destination properties with recreation, multiple outlets, seasonal labor needs.
+    Boutique / Lifestyle Hotel – smaller, design-focused, high-touch service models.
+    Conference / Convention Hotel – large properties with significant meeting/banquet operations.
+    Casino Hotel – integrated gaming and hospitality labor structures.
+    Mixed-Use Property – properties that combine lodging with residential, retail, or office space.
+    Limited Service / Economy Hotel – budget-oriented hotels with minimal amenities.
+    All-Inclusive Hotel/Resort – packages include meals, activities, and services bundled.
+    Timeshare / Vacation Ownership – fractional ownership and rotational usage models.
+    Other - does not fall in any of the above categories
+   -->
+   <enum name="PropertyType">
+      <value name="FULL_SERVICE_HOTEL"/>
+      <value name="SELECT_SERVICE_HOTEL"/>
+      <value name="EXTENDED_STAY_HOTEL"/>
+      <value name="RESORT"/>
+      <value name="BOUTIQUE_HOTEL"/>
+      <value name="CONVENTION_HOTEL"/>
+      <value name="CASINO_HOTEL"/>
+      <value name="MIXED_USE"/>
+      <value name="LIMITED_SERVICE_HOTEL"/>
+      <value name="ALL_INCLUSIVE_RESORT"/>
+      <value name="TIMESHARE"/>
+      <value name="GOLF_COURSE"/>
+      <value name="RESTAURANT"/>
+      <value name="OTHER"/>
+   </enum>
+
+   <!--
+      Urban – located in major cities; demand driven by business, events, and leisure travel.
+      Suburban – outside city centers; steady demand from business parks, regional travel, and leisure.
+      Airport – proximity to airports; mix of layovers, airline crews, and business travelers.
+      Resort – leisure-focused, seasonal peaks, tied to recreation/entertainment.
+      Small Metro / Town – properties in smaller cities or regional hubs; balanced demand.
+      Interstate / Highway – roadside hotels; heavy reliance on transient, drive-by traffic.
+      Convention / Conference – large demand driven by meetings, events, conventions.
+      University / Campus – properties near colleges or hospitals; tied to academic/medical demand.
+      Other - does not fall in any of the above categories
+   -->
+   <enum name="MarketType">
+      <value name="URBAN"/>
+      <value name="SUBURBAN"/>
+      <value name="AIRPORT"/>
+      <value name="RESORT"/>
+      <value name="SMALL_TOWN"/>
+      <value name="HIGHWAY"/>
+      <value name="CONVENTION"/>
+      <value name="CAMPUS"/>
+      <value name="OTHER"/>
+   </enum>
+
+</database>
