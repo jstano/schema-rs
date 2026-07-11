@@ -4,8 +4,17 @@ use std::path::PathBuf;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
+fn docker_tests_enabled() -> bool {
+    std::env::var("RUN_DOCKER_TESTS").is_ok()
+}
+
 #[tokio::test]
 async fn test_postgres_migration_flow() {
+    if !docker_tests_enabled() {
+        eprintln!("skipping test_postgres_migration_flow: set RUN_DOCKER_TESTS=1 to run");
+        return;
+    }
+
     let postgres = Postgres::default().start().await.expect("postgres container should start");
     let port = postgres.get_host_port_ipv4(5432).await.expect("get mapped port");
 
@@ -36,6 +45,11 @@ async fn test_postgres_migration_flow() {
 
 #[tokio::test]
 async fn test_postgres_validate_detects_checksum_mismatch() {
+    if !docker_tests_enabled() {
+        eprintln!("skipping test_postgres_validate_detects_checksum_mismatch: set RUN_DOCKER_TESTS=1 to run");
+        return;
+    }
+
     let postgres = Postgres::default().start().await.expect("postgres container should start");
     let port = postgres.get_host_port_ipv4(5432).await.expect("get mapped port");
 
