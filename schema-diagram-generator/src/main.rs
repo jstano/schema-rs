@@ -1,10 +1,10 @@
-use std::fs;
-use std::path::Path;
 use clap::{Arg, Command};
-use schema_model::model::database_model::DatabaseModel;
-use schema_parser::parse_database_xml;
 use schema_diagram_generator::common::generate_options::DiagramGenerateOptions;
 use schema_diagram_generator::common::generator_format::DiagramFormat;
+use schema_model::model::database_model::DatabaseModel;
+use schema_parser::parse_database_xml;
+use std::fs;
+use std::path::Path;
 use std::rc::Rc;
 
 pub fn main() {
@@ -12,6 +12,7 @@ pub fn main() {
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
         .about("Generates ER diagrams from database schemas")
+        .arg_required_else_help(true)
         .arg(
             Arg::new("format")
                 .long("format")

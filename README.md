@@ -240,6 +240,19 @@ The generated file can be fed straight into `schema-sql-generator` or `schema-in
 - `uuid`, `jsonb`/`json`, arrays, and native Postgres enum types are all mapped to their
   corresponding schema-model column types.
 
+## Downloading Prebuilt Binaries (macOS)
+
+The macOS release binaries aren't code-signed/notarized, so Gatekeeper will quarantine
+them after download and refuse to run them ("cannot be opened because the developer
+cannot be verified"). After unzipping the release archive, clear the quarantine
+attribute before running:
+
+```bash
+xattr -dr com.apple.quarantine ./schema-installer ./schema-diagram-generator ./schema-sql-generator
+```
+
+(or run it on the whole extracted folder: `xattr -dr com.apple.quarantine ./schema-<version>/`)
+
 ## Workspace crates
 
 - schema-model: core data structures (tables, columns, relations, views, functions, procedures, triggers, other SQL, versions, etc.).

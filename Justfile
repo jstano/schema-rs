@@ -10,7 +10,7 @@ remote_dir := env_var_or_default("CROSS_BUILD_DIR", "~/schema-rs-build")
 version := `grep -m1 'version = ' Cargo.toml | sed -E 's/.*version = "([^"]+)".*/\1/'`
 
 # Binaries to package
-binaries := "schema-installer schema-diagram-generator schema-sql-generator"
+binaries := "schema-installer schema-diagram-generator schema-sql-generator schema-reverse-engineer"
 
 # Sync local repo to remote machine
 sync-remote:
@@ -38,9 +38,9 @@ _zip target name ext="":
 	@echo "Packaging {{name}}.zip..."
 	rm -rf release/schema-{{version}}
 	mkdir -p release/schema-{{version}}
-	cp target/{{target}}/release/schema-installer{{ext}} release/schema-{{version}}/
-	cp target/{{target}}/release/schema-diagram-generator{{ext}} release/schema-{{version}}/
-	cp target/{{target}}/release/schema-sql-generator{{ext}} release/schema-{{version}}/
+	for bin in {{binaries}}; do \
+		cp target/{{target}}/release/$bin{{ext}} release/schema-{{version}}/; \
+	done
 	cp README.md release/schema-{{version}}/
 	cp LICENSE release/schema-{{version}}/
 	rm -f release/{{name}}.zip
@@ -95,6 +95,10 @@ build-macos-aarch64:
 	cargo build --release --target aarch64-apple-darwin
 	just _zip aarch64-apple-darwin macos-aarch64
 	@echo "✓ macOS build and packaging complete!"
+
+# Build every release artifact: macOS locally, Linux + Windows on the remote machine
+build-all-releases: build-macos-aarch64 build-all-remote
+	@echo "✓ All release artifacts built (macOS local + remote)!"
 
 # Show current configuration
 @show-config:
