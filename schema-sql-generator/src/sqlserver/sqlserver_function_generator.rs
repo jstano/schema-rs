@@ -22,9 +22,15 @@ impl FunctionGenerator for SqlServerFunctionGenerator {
 
     fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
         let function_name = function.name();
+        let schema_name = match function.schema_name() {
+            Some(s) if s.eq_ignore_ascii_case("public") => "dbo",
+            Some(s) => s,
+            None => "dbo",
+        };
+        let fully_qualified_name = format!("{}.{}", schema_name, function_name);
 
-        writer.println(format!("if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[{}]') and objectproperty(id, N'IsScalarFunction') = 1)", function_name).as_str());
-        writer.print(format!("drop function dbo.{}", function_name).as_str());
+        writer.println(format!("if exists (select * from dbo.sysobjects where id = object_id(N'[{}].[{}]') and objectproperty(id, N'IsScalarFunction') = 1)", schema_name, function_name).as_str());
+        writer.print(format!("drop function {}", fully_qualified_name).as_str());
         writer.println(statement_separator);
         writer.print(function.sql());
         writer.println(statement_separator);
@@ -64,6 +70,27 @@ mod tests {
         assert!(output.contains("if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[mssql_fn]') and objectproperty(id, N'IsScalarFunction') = 1)"));
         assert!(output.contains("drop function dbo.mssql_fn"));
         assert!(output.contains("create function dbo.mssql_fn() returns int as begin return 1 end"));
+    }
+
+    #[test]
+    fn output_function_respects_explicit_non_default_schema() {
+        let schema = SchemaBuilder::new(Some("app")).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+        let function = Function::new(
+            Some("app"),
+            "mssql_fn",
+            DatabaseType::SqlServer,
+            "create function app.mssql_fn() returns int as begin return 1 end",
+        );
+
+        let generator = SqlServerFunctionGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_function(writer, ";", &function);
+        });
+
+        let output = buffer.contents();
+        assert!(output.contains("drop function app.mssql_fn"));
     }
 
     #[test]

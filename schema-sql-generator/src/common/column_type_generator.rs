@@ -103,6 +103,16 @@ pub trait ColumnTypeGenerator {
         }
     }
 
+    /// The literal used for a `BooleanMode::Native` default constraint (e.g. `true`/`false`).
+    /// SQL Server's `bit` type has no boolean keywords, so it overrides this to `1`/`0`.
+    fn native_boolean_literal(&self, value: bool) -> String {
+        if value {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }
+    }
+
     fn date_sql(&self) -> String {
         "date".to_string()
     }

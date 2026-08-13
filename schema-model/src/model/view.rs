@@ -38,11 +38,8 @@ impl View {
         self.database_type
     }
 
-    pub fn fully_qualified_view_name(&self) -> String {
-        match self.schema_name() {
-            Some(schema_name) => format!("{}.{}", schema_name, self.name()),
-            None => self.name().to_string(),
-        }
+    pub fn fully_qualified_view_name(&self, database_type: DatabaseType) -> String {
+        database_type.qualified_name(self.schema_name(), self.name())
     }
 }
 
@@ -67,5 +64,19 @@ mod tests {
         assert_eq!(v.sql(), "select *");
         assert_eq!(v.database_type().unwrap(), DatabaseType::Postgresql);
         assert_eq!(format!("{}", v), "s.v1");
+    }
+
+    #[test]
+    fn fully_qualified_view_name_uses_explicit_schema() {
+        let v = View::new(Some("s"), "v1", "select *", None);
+        assert_eq!(v.fully_qualified_view_name(DatabaseType::Postgresql), "s.v1");
+    }
+
+    #[test]
+    fn fully_qualified_view_name_falls_back_to_default_schema() {
+        let v = View::new(Option::<&str>::None, "v1", "select *", None);
+        assert_eq!(v.fully_qualified_view_name(DatabaseType::Postgresql), "public.v1");
+        assert_eq!(v.fully_qualified_view_name(DatabaseType::SqlServer), "dbo.v1");
+        assert_eq!(v.fully_qualified_view_name(DatabaseType::Sqlite), "v1");
     }
 }

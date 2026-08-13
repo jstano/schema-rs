@@ -1,8 +1,10 @@
 use crate::common::column_type_generator::ColumnTypeGenerator;
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
+use schema_model::model::enum_type::EnumType;
 use schema_model::model::schema::Schema;
 use schema_model::model::types::BooleanMode;
+use std::cmp;
 
 pub struct SqlServerColumnTypeGenerator {
     context: GeneratorContext
@@ -99,6 +101,35 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     fn native_boolean_sql(&self) -> String {
         "bit".to_string()
     }
+
+    fn native_boolean_literal(&self, value: bool) -> String {
+        if value {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        }
+    }
+
+    fn enum_sql(&self, column: &Column) -> String {
+        let database_model = self.context().settings().database_model();
+        let enum_type: &EnumType = database_model.find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
+
+        let mut min_length = usize::MAX;
+        let mut max_length = 0;
+
+        enum_type.values().iter().for_each(|enum_value| {
+            let code = enum_value.code();
+
+            min_length = cmp::min(min_length, code.len());
+            max_length = cmp::max(max_length, code.len());
+        });
+
+        if min_length != max_length {
+            return format!("nvarchar({})", max_length);
+        }
+
+        format!("nchar({})", max_length)
+    }
 }
 
 #[cfg(test)]
@@ -177,5 +208,74 @@ mod tests {
     fn other_types() {
         assert_type(ColumnType::Boolean, "bit");
         assert_type(ColumnType::Binary, "varbinary(max)");
+    }
+
+    #[test]
+    fn native_boolean_literal_uses_bit_values() {
+        let (ctx, _table_builder) = make_context();
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+
+        assert_eq!(generator.native_boolean_literal(true), "1");
+        assert_eq!(generator.native_boolean_literal(false), "0");
+    }
+
+    #[test]
+    fn enum_sql_uses_nvarchar_when_values_have_different_lengths() {
+        use schema_model::model::enum_type::{EnumType, EnumValue};
+
+        let enum_type = EnumType::new(
+            "status_type",
+            vec![
+                EnumValue::new("SHORT", Some("A".to_string())),
+                EnumValue::new("LONGER", Some("ABC".to_string())),
+            ],
+        );
+        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
+        );
+        let settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        let ctx = GeneratorContext::new(settings, writer);
+
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+        let table = TableBuilder::new(None::<&str>, "accounts").build();
+        let col = ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+            .enum_type(Some("status_type".to_string()))
+            .build();
+
+        assert_eq!(generator.column_type_sql(&table, &col), "nvarchar(3)");
+    }
+
+    #[test]
+    fn enum_sql_uses_nchar_when_all_values_share_length() {
+        use schema_model::model::enum_type::{EnumType, EnumValue};
+
+        let enum_type = EnumType::new(
+            "gender_type",
+            vec![
+                EnumValue::new("MALE", Some("M".to_string())),
+                EnumValue::new("FEMALE", Some("F".to_string())),
+            ],
+        );
+        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
+        );
+        let settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        let ctx = GeneratorContext::new(settings, writer);
+
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+        let table = TableBuilder::new(None::<&str>, "accounts").build();
+        let col = ColumnBuilder::new(None::<&str>, "gender", ColumnType::Enum)
+            .enum_type(Some("gender_type".to_string()))
+            .build();
+
+        assert_eq!(generator.column_type_sql(&table, &col), "nchar(1)");
     }
 }

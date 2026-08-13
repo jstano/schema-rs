@@ -1,9 +1,9 @@
+use crate::common::generator_context::GeneratorContext;
+use crate::common::sql_writer::SqlWriter;
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::RelationType;
-use crate::common::generator_context::GeneratorContext;
-use crate::common::sql_writer::SqlWriter;
 
 const FK_PREFIX: &str = "fk_";
 
@@ -53,15 +53,16 @@ impl DefaultRelationGenerator {
                        table: &Table,
                        relation: &Relation) {
         let operation = self.relation_operation_type(relation.relation_type());
+        let database_type = self.context.settings().database_type();
         let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
 
-        writer.print(format!("alter table {}", table.fully_qualified_table_name()).as_str());
+        writer.print(format!("alter table {}", table.fully_qualified_table_name(database_type)).as_str());
         writer.print(" add constraint ");
         writer.print(relation_name);
         writer.print(" foreign key (");
         writer.print(relation.from_column_name());
         writer.print(") references ");
-        writer.print(to_table.fully_qualified_table_name().as_str());
+        writer.print(to_table.fully_qualified_table_name(database_type).as_str());
         writer.print("(");
         writer.print(relation.to_column_name());
         writer.print(") on delete ");

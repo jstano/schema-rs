@@ -2,7 +2,7 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::trigger_generator::TriggerGenerator;
 use crate::sql_println;
 use schema_model::model::table::Table;
-use schema_model::model::types::{ForeignKeyMode, RelationType, TriggerType, DatabaseType};
+use schema_model::model::types::{DatabaseType, ForeignKeyMode, RelationType, TriggerType};
 
 pub struct SqlServerTriggerGenerator {
     context: GeneratorContext,
@@ -76,8 +76,10 @@ impl TriggerGenerator for SqlServerTriggerGenerator {
 
 impl SqlServerTriggerGenerator {
     fn output_delete_trigger(&self, table: &Table, pk_col: &str, separator: &str) {
+        let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
-        let fully_qualified_table = table.fully_qualified_table_name();
+        let fully_qualified_table = table.fully_qualified_table_name(database_type);
+        let fully_qualified_trigger = database_type.qualified_name(table.schema_name(), &format!("{}_delete", table_name));
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {}_delete */", table_name);
@@ -86,7 +88,7 @@ impl SqlServerTriggerGenerator {
                 "if exists (select name from dbo.sysobjects where name = '{}_delete' and type = 'TR')",
                 table_name
             );
-            sql_println!(writer, "   drop trigger {}_delete{}", table_name, separator);
+            sql_println!(writer, "   drop trigger {}{}", fully_qualified_trigger, separator);
             sql_println!(writer, "");
             sql_println!(writer, "create trigger {}_delete on {} for delete as", table_name, fully_qualified_table);
             sql_println!(writer, "if (select count(*) from deleted) > 0");
@@ -107,7 +109,7 @@ impl SqlServerTriggerGenerator {
                         sql_println!(
                             writer,
                             "   if (select count(*) from {} where {} in (select {} from deleted)) > 0",
-                            to_table.fully_qualified_table_name(),
+                            to_table.fully_qualified_table_name(database_type),
                             relation.to_column_name(),
                             pk_col
                         );
@@ -119,8 +121,8 @@ impl SqlServerTriggerGenerator {
                             pk_col,
                             pk_col,
                             relation.to_column_name(),
-                            to_table.fully_qualified_table_name(),
-                            to_table.fully_qualified_table_name()
+                            to_table.fully_qualified_table_name(database_type),
+                            to_table.fully_qualified_table_name(database_type)
                         );
                         sql_println!(writer, "      rollback transaction");
                         sql_println!(writer, "      raiserror (@msg, 16, 1)");
@@ -138,7 +140,7 @@ impl SqlServerTriggerGenerator {
                         sql_println!(
                             writer,
                             "   update {} set {} = null where {} in (select {} from deleted);",
-                            to_table.fully_qualified_table_name(),
+                            to_table.fully_qualified_table_name(database_type),
                             relation.to_column_name(),
                             relation.to_column_name(),
                             pk_col
@@ -155,7 +157,7 @@ impl SqlServerTriggerGenerator {
                         sql_println!(
                             writer,
                             "   delete from {} where {} in (select {} from deleted);",
-                            to_table.fully_qualified_table_name(),
+                            to_table.fully_qualified_table_name(database_type),
                             relation.to_column_name(),
                             pk_col
                         );
@@ -177,8 +179,10 @@ impl SqlServerTriggerGenerator {
     }
 
     fn output_update_trigger(&self, table: &Table, separator: &str) {
+        let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
-        let fully_qualified_table = table.fully_qualified_table_name();
+        let fully_qualified_table = table.fully_qualified_table_name(database_type);
+        let fully_qualified_trigger = database_type.qualified_name(table.schema_name(), &format!("{}_update", table_name));
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {}_update */", table_name);
@@ -187,7 +191,7 @@ impl SqlServerTriggerGenerator {
                 "if exists (select name from dbo.sysobjects where name = '{}_update' and type = 'TR')",
                 table_name
             );
-            sql_println!(writer, "   drop trigger {}_update{}", table_name, separator);
+            sql_println!(writer, "   drop trigger {}{}", fully_qualified_trigger, separator);
             sql_println!(writer, "");
             sql_println!(writer, "create trigger {}_update on {} for insert, update as", table_name, fully_qualified_table);
             sql_println!(writer, "if (select count(*) from inserted) > 0");
@@ -207,14 +211,14 @@ impl SqlServerTriggerGenerator {
                                 relation.from_column_name(),
                                 relation.from_column_name(),
                                 relation.to_column_name(),
-                                to_table.fully_qualified_table_name()
+                                to_table.fully_qualified_table_name(database_type)
                             );
                             sql_println!(writer, "   begin");
                             sql_println!(
                                 writer,
                                 "      raiserror ('The value of {} was not found in the {} table.', 16, 1)",
                                 relation.from_column_name(),
-                                to_table.fully_qualified_table_name()
+                                to_table.fully_qualified_table_name(database_type)
                             );
                             sql_println!(writer, "      rollback transaction");
                             sql_println!(writer, "      return");
@@ -284,6 +288,39 @@ mod tests {
         assert!(output.contains("was not found in the app.parent table"));
         assert!(output.contains("raiserror"));
         assert!(output.contains("rollback transaction"));
+    }
+
+    #[test]
+    fn output_triggers_qualifies_drop_trigger_with_schema() {
+        let model = build_model_with_relation();
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains("drop trigger app.child_update"));
+    }
+
+    #[test]
+    fn output_triggers_qualifies_drop_trigger_with_default_schema_when_none() {
+        let table = TableBuilder::new(None::<&str>, "widget")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_trigger(schema_model::model::trigger::Trigger::new(
+                "-- custom",
+                schema_model::model::types::TriggerType::Update,
+                DatabaseType::SqlServer,
+            ))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains("drop trigger dbo.widget_update"));
     }
 
     #[test]

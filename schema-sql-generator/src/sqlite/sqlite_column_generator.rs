@@ -1,8 +1,8 @@
-use schema_model::model::column::Column;
-use schema_model::model::table::Table;
-use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator};
+use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator, DefaultConstraintNaming};
 use crate::common::generator_context::GeneratorContext;
 use crate::sqlite::sqlite_column_type_generator::SqliteColumnTypeGenerator;
+use schema_model::model::column::Column;
+use schema_model::model::table::Table;
 
 pub struct SqliteColumnGenerator {
     column_generator: DefaultColumnGenerator,
@@ -14,6 +14,7 @@ impl SqliteColumnGenerator {
             column_generator: DefaultColumnGenerator::new(
                 context.clone(),
                 Box::new(SqliteColumnTypeGenerator::new(context.clone())),
+                DefaultConstraintNaming::NamedByColumn,
             ),
         }
     }

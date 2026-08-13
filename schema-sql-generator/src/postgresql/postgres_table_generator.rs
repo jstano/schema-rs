@@ -1,11 +1,11 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::table_generator::{DefaultTableGenerator, TableGenerator};
-use schema_model::model::table::Table;
 use crate::postgresql::postgres_column_constraint_generator::PostgresColumnConstraintGenerator;
 use crate::postgresql::postgres_column_generator::PostgresColumnGenerator;
 use crate::postgresql::postgres_index_generator::PostgresIndexGenerator;
 use crate::postgresql::postgres_key_generator::PostgresKeyGenerator;
 use crate::postgresql::postgres_table_constraint_generator::PostgresTableConstraintGenerator;
+use schema_model::model::table::Table;
 
 pub struct PostgresTableGenerator {
     table_generator: DefaultTableGenerator,
@@ -81,7 +81,7 @@ mod tests {
         generator.output_table_footer(&table);
 
         let output = buffer.contents();
-        assert!(output.contains("create table users"));
+        assert!(output.contains("create table public.users"));
         assert!(output.contains("id serial"));
         assert!(output.contains("name text"));
         assert!(output.contains(");"));

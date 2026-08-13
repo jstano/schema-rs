@@ -1,9 +1,24 @@
-use crate::common::column_type_generator::{ColumnTypeGenerator};
+use crate::common::column_type_generator::ColumnTypeGenerator;
+use crate::common::constraint_naming;
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::table::Table;
 use schema_model::model::types::BooleanMode;
+
+const DF_PREFIX: &str = "df_";
+
+/// Controls how a column's `default` constraint is named in generated DDL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultConstraintNaming {
+    /// `default {value}` - no named constraint (e.g. Postgres).
+    Unnamed,
+    /// `constraint {column} default {value}` - named after the bare column (e.g. SQLite).
+    NamedByColumn,
+    /// `constraint df_{table[0..9]}_{column[0..9]}_{HASH8} default {value}` - matches the
+    /// legacy Java codegen tool's SQL Server naming scheme.
+    NamedWithHash,
+}
 
 pub trait ColumnGenerator {
     fn column_definitions(&self, table: &Table) -> Vec<String>;
@@ -18,28 +33,25 @@ pub trait ColumnGenerator {
 pub struct DefaultColumnGenerator {
     context: GeneratorContext,
     column_type_generator: Box<dyn ColumnTypeGenerator>,
+    default_constraint_naming: DefaultConstraintNaming,
 }
 
 impl DefaultColumnGenerator {
     pub fn new(
         context: GeneratorContext,
         column_type_generator: Box<dyn ColumnTypeGenerator>,
+        default_constraint_naming: DefaultConstraintNaming,
     ) -> Self {
         Self {
             column_type_generator,
             context,
+            default_constraint_naming,
         }
     }
 
     fn convert_boolean_default_constraint(&self, value: bool) -> String {
         match self.context.settings().boolean_mode() {
-            BooleanMode::Native => {
-                if value {
-                    "true".to_string()
-                } else {
-                    "false".to_string()
-                }
-            }
+            BooleanMode::Native => self.column_type_generator.native_boolean_literal(value),
             BooleanMode::YesNo => {
                 if value {
                     "'Yes'".to_string()
@@ -105,8 +117,18 @@ impl DefaultColumnGenerator {
         None
     }
 
-    fn default_constraint(&self, _table: &Table, column: &Column, default_value: &str) -> String {
-        format!("constraint {} default {}", column.name(), default_value)
+    fn default_constraint(&self, table: &Table, column: &Column, default_value: &str) -> String {
+        match self.default_constraint_naming {
+            DefaultConstraintNaming::Unnamed => format!("default {}", default_value),
+            DefaultConstraintNaming::NamedByColumn => {
+                format!("constraint {} default {}", column.name(), default_value)
+            }
+            DefaultConstraintNaming::NamedWithHash => {
+                let constraint_name =
+                    constraint_naming::hashed_constraint_name(DF_PREFIX, table.name(), column.name());
+                format!("constraint {} default {}", constraint_name, default_value)
+            }
+        }
     }
 }
 

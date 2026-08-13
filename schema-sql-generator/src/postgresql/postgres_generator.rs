@@ -85,47 +85,22 @@ impl PostgresGenerator {
         let separator = self.context.settings().statement_separator().to_string();
         let database_model = self.context.settings().database_model();
 
-        let mut has_enums = false;
-        let mut enum_ddl = String::new();
-
         for schema in database_model.schemas() {
             for enum_type in schema.enum_types() {
-                has_enums = true;
-                let schema_prefix = if let Some(schema_name) = schema.schema_name() {
-                    format!("{}.", schema_name.to_lowercase())
-                } else {
-                    String::new()
-                };
-
                 let enum_type_name = to_snake_case(enum_type.name());
                 let values = enum_type
                     .values()
                     .iter()
                     .map(|v| format!("'{}'", v.code()))
                     .collect::<Vec<_>>()
-                    .join(", ");
+                    .join(",");
 
-                enum_ddl.push_str(&format!("drop type if exists {}{} cascade{}",
-                    schema_prefix,
-                    enum_type_name,
-                    separator
-                ));
-                enum_ddl.push('\n');
-                enum_ddl.push_str(&format!("create type {}{} as enum ({}){}",
-                    schema_prefix,
-                    enum_type_name,
-                    values,
-                    separator
-                ));
-                enum_ddl.push('\n');
+                self.context.with_writer(|writer| {
+                    sql_println!(writer, "drop type if exists {} cascade{}", enum_type_name, separator);
+                    sql_println!(writer, "create type {} as enum ({}){}", enum_type_name, values, separator);
+                    sql_println!(writer, "");
+                });
             }
-        }
-
-        if has_enums {
-            self.context.with_writer(|writer| {
-                writer.println(&enum_ddl);
-                sql_println!(writer, "");
-            });
         }
     }
 }
@@ -250,7 +225,7 @@ mod tests {
         generator.output_header();
 
         let output = buffer.contents();
-        assert!(output.contains("create type status_type as enum ('A', 'I')"));
+        assert!(output.contains("create type status_type as enum ('A','I')"));
     }
 
     #[test]

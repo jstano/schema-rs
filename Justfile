@@ -1,7 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # SSH host alias for remote build machine (from ~/.ssh/config)
-remote_host := env_var_or_default("CROSS_BUILD_HOST", "54.89.164.24")
+remote_host := env_var_or_default("CROSS_BUILD_HOST", "cicd-01.stano.com")
 
 # Working directory on remote machine
 remote_dir := env_var_or_default("CROSS_BUILD_DIR", "~/schema-rs-build")

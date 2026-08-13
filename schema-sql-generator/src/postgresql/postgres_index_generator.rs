@@ -57,7 +57,7 @@ mod tests {
         });
 
         let output = buffer.contents();
-        assert!(output.contains("create unique index ix_users1 on users (email);"));
+        assert!(output.contains("create unique index ix_users1 on public.users (email);"));
     }
 
     #[test]

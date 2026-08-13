@@ -1,5 +1,5 @@
-use schema_model::model::table::Table;
 use crate::common::generator_context::GeneratorContext;
+use schema_model::model::table::Table;
 
 const PK_PREFIX: &str = "pk_";
 const AK_PREFIX: &str = "ak_";
@@ -10,13 +10,22 @@ pub trait KeyGenerator {
 
 pub struct DefaultKeyGenerator {
     context: GeneratorContext,
+    nonclustered_primary_key: bool,
 }
 
 impl DefaultKeyGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self {
             context,
+            nonclustered_primary_key: false,
         }
+    }
+
+    /// When set, primary key constraints render `primary key nonclustered (...)` instead of
+    /// `primary key (...)` - matches SQL Server's legacy codegen convention.
+    pub fn with_nonclustered_primary_key(mut self, value: bool) -> Self {
+        self.nonclustered_primary_key = value;
+        self
     }
 
     pub fn context(&self) -> &GeneratorContext {
@@ -61,9 +70,15 @@ impl KeyGenerator for DefaultKeyGenerator {
             match key.key_type() {
                 schema_model::model::types::KeyType::Primary => {
                     let constraint_name = self.constraint_name(PK_PREFIX, table.name(), None);
+                    let primary_key_clause = if self.nonclustered_primary_key {
+                        "primary key nonclustered"
+                    } else {
+                        "primary key"
+                    };
                     constraints.push(format!(
-                        "   constraint {} primary key ({})",
+                        "   constraint {} {} ({})",
                         constraint_name,
+                        primary_key_clause,
                         key.columns_as_string()
                     ));
                 }
@@ -87,12 +102,12 @@ impl KeyGenerator for DefaultKeyGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::test_support::make_context;
     use schema_model::builder::TableBuilder;
+    use schema_model::model::database_model::DatabaseModel;
     use schema_model::model::key::Key;
     use schema_model::model::key::KeyColumn;
     use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType};
-    use schema_model::model::database_model::DatabaseModel;
-    use crate::common::test_support::make_context;
 
     #[test]
     fn empty_keys_returns_empty_vec() {
@@ -293,5 +308,27 @@ mod tests {
                 assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
             }
         }
+    }
+
+    #[test]
+    fn with_nonclustered_primary_key_adds_nonclustered_keyword() {
+        let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
+        let uq = Key::new(KeyType::Unique, vec![KeyColumn::new("email")]);
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_key(pk)
+            .add_key(uq)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0], "   constraint pk_users primary key nonclustered (id)");
+        // Unique keys are unaffected.
+        assert_eq!(constraints[1], "   constraint ak_users1 unique (email)");
     }
 }

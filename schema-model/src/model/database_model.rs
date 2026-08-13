@@ -110,4 +110,10 @@ impl DatabaseModel {
         let schema = self.find_schema_mut(schema_name);
         schema.get_table_mut(table_name)
     }
+
+    pub fn sort_tables_by_name(&mut self) {
+        for schema in self.schemas.iter_mut() {
+            schema.sort_tables_by_name();
+        }
+    }
 }

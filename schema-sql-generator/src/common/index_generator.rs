@@ -97,6 +97,7 @@ impl IndexGenerator for DefaultIndexGenerator {
         key: &Key,
     ) {
         let index_options = self.index_options(key);
+        let fully_qualified_table_name = table.fully_qualified_table_name(self.context().settings().database_type());
         let index_columns = key
             .columns()
             .iter()
@@ -110,7 +111,7 @@ impl IndexGenerator for DefaultIndexGenerator {
                     "create {}index {} on {} ({}) {}{}",
                     if key.is_unique() { "unique " } else { "" },
                     key_name,
-                    table.name(),
+                    fully_qualified_table_name,
                     index_columns,
                     index_options.unwrap(),
                     statement_separator
@@ -123,7 +124,7 @@ impl IndexGenerator for DefaultIndexGenerator {
                     "create {}index {} on {} ({}){}",
                     if key.is_unique() { "unique " } else { "" },
                     key_name,
-                    table.name(),
+                    fully_qualified_table_name,
                     index_columns,
                     statement_separator
                 )

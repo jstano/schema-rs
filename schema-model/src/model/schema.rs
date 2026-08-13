@@ -95,7 +95,9 @@ impl Schema {
     }
 
     pub fn enum_types(&self) -> impl Iterator<Item = &EnumType> {
-        self.enum_types.values()
+        let mut enum_types: Vec<&EnumType> = self.enum_types.values().collect();
+        enum_types.sort_by(|a, b| a.name().cmp(b.name()));
+        enum_types.into_iter()
     }
 
     pub fn get_enum_type(&self, type_name: &str) -> &EnumType {
@@ -175,6 +177,17 @@ impl Schema {
         let idx = self.tables.len();
         self.table_map.insert(table.name().to_lowercase(), idx);
         self.tables.push(table);
+    }
+
+    /// Sorts the schema's tables alphabetically by name, in place. Must be called after all
+    /// tables have been added, since it rebuilds the name -> index lookup used by `get_table`.
+    pub fn sort_tables_by_name(&mut self) {
+        self.tables.sort_by(|a, b| a.name().cmp(b.name()));
+
+        self.table_map.clear();
+        for (idx, table) in self.tables.iter().enumerate() {
+            self.table_map.insert(table.name().to_lowercase(), idx);
+        }
     }
 
     pub(crate) fn add_view(&mut self, view: View) {

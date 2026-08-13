@@ -96,13 +96,8 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
     fn enum_sql(&self, column: &Column) -> String {
         let enum_type_opt = column.enum_type();
         let enum_type_name = enum_type_opt.as_ref().unwrap();
-        let schema_prefix = if let Some(schema_name) = column.schema_name() {
-            format!("{}.", schema_name.to_lowercase())
-        } else {
-            String::new()
-        };
 
-        format!("{}{}", schema_prefix, to_snake_case(enum_type_name))
+        to_snake_case(enum_type_name)
     }
 
     fn native_boolean_sql(&self) -> String {

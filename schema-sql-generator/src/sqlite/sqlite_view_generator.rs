@@ -28,7 +28,7 @@ impl ViewGenerator for SqliteViewGenerator {
         if !views.is_empty() {
             self.context.with_writer(|writer| {
                 for view in views {
-                    let view_name = view.name();
+                    let view_name = view.fully_qualified_view_name(database_type);
                     sql_println!(writer, "/* {} */", view_name);
                     sql_println!(writer, "create view {} as", view_name);
                     sql_println!(writer, "   {}{}", view.sql(), separator);
@@ -45,8 +45,8 @@ mod tests {
     use crate::common::test_support::make_context;
     use schema_model::builder::SchemaBuilder;
     use schema_model::model::database_model::DatabaseModel;
-    use schema_model::model::types::{BooleanMode, ForeignKeyMode};
     use schema_model::model::types::DatabaseType as ModelDatabaseType;
+    use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 
     #[test]
     fn output_views_renders_create_view() {
@@ -61,6 +61,19 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("create view active_users as"));
         assert!(output.contains("select * from users where active = 1;"));
+    }
+
+    #[test]
+    fn output_views_preserves_explicit_schema_name() {
+        let view = View::new(Some("app"), "active_users", "select 1", None);
+        let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, ModelDatabaseType::Sqlite);
+
+        let generator = SqliteViewGenerator::new(ctx);
+        generator.output_views();
+
+        assert!(buffer.contents().contains("create view app.active_users as"));
     }
 
     #[test]

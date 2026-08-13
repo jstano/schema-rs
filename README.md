@@ -1,6 +1,6 @@
 # schema-rs
 
-A small workspace that models database schemas (schema-model), parses/handles inputs (schema-parser), and can generate SQL (schema-sql-generator) or install a schema (schema-installer).
+A small workspace that models database schemas (schema-model), parses/handles inputs (schema-parser), can generate SQL (schema-sql-generator), install a schema (schema-installer), or reverse-engineer a live PostgreSQL database back into a schema definition (schema-reverse-engineer).
 
 ## FAQ
 
@@ -205,12 +205,48 @@ schema-installer \
 | SQLite     | ✅ | Full support, uses `?` placeholders |
 | SQL Server | ✅ | Full support, uses `GO` statement separator |
 
+## Using schema-reverse-engineer
+
+The `schema-reverse-engineer` crate connects to a live PostgreSQL database and generates a
+schema-rs XML schema definition from it — the inverse of `schema-installer`'s `install` command.
+
+### Quick Start
+
+```bash
+cargo run -p schema-reverse-engineer -- \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  --db-schema public \
+  --file schema.xml
+```
+
+This introspects the `public` schema (tables, columns, primary/unique/index keys, foreign keys,
+check/exclusion constraints, native enum types, and views) and writes the result to `schema.xml`.
+The generated file can be fed straight into `schema-sql-generator` or `schema-installer`.
+
+### Options
+
+- `--connection-string` (required): PostgreSQL connection URL, e.g.
+  `postgres://user:pass@host:5432/dbname`
+- `--db-schema`: Postgres schema to introspect — default: `public`
+- `--file` (required): Path to write the generated XML schema file to
+
+### Notes
+
+- PostgreSQL only — SQLite and SQL Server are not currently supported.
+- Foreign keys use `ON DELETE` behavior to determine the relation type (`cascade`, `enforce`,
+  `setnull`, `donothing`).
+- If a table has no primary key but exactly one unique key, that unique key is promoted to the
+  primary key.
+- `uuid`, `jsonb`/`json`, arrays, and native Postgres enum types are all mapped to their
+  corresponding schema-model column types.
+
 ## Workspace crates
 
 - schema-model: core data structures (tables, columns, relations, views, functions, procedures, triggers, other SQL, versions, etc.).
 - schema-parser: parsing/processing helpers (WIP).
 - schema-sql-generator: backend(s) to create SQL from the model (WIP).
 - schema-installer: utilities for applying schemas/migrations (WIP).
+- schema-reverse-engineer: reverse-engineers a live PostgreSQL database into a schema-rs XML schema definition.
 
 ## License
 

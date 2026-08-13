@@ -45,6 +45,7 @@ pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
 
     let mut database_model = DatabaseModel::new(version, boolean_mode, foreign_key_mode, schemas);
 
+    database_model.sort_tables_by_name();
     reverse_relations(&mut database_model);
 
     database_model

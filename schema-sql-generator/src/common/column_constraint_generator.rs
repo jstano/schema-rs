@@ -1,10 +1,9 @@
+use crate::common::constraint_naming;
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::table::Table;
 use schema_model::model::types::BooleanMode;
-use std::hash::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 const CK_PREFIX: &str = "ck_";
 
@@ -40,24 +39,7 @@ impl DefaultColumnConstraintGenerator {
     }
 
     fn constraint_name(&self, table_name: &str, column_name: &str) -> String {
-        let table_name = table_name.to_lowercase();
-        let column_name = column_name.to_lowercase();
-        let hash = self.combined_hash(&table_name, &column_name);
-        let table_name = self.truncate_lower(&table_name, 9);
-        let column_name = self.truncate_lower(&column_name, 9);
-
-        format!("{}{}_{}_{}", CK_PREFIX, table_name, column_name, hash)
-    }
-
-    fn truncate_lower(&self, s: &str, max_len: usize) -> String {
-        s.to_lowercase().chars().take(max_len).collect()
-    }
-
-    fn combined_hash(&self, table_name: &str, column_name: &str) -> String {
-        let combined_name = format!("{}_{}", table_name, column_name);
-        let mut hasher = DefaultHasher::new();
-        combined_name.hash(&mut hasher);
-        format!("{:X}", hasher.finish())
+        constraint_naming::hashed_constraint_name(CK_PREFIX, table_name, column_name)
     }
 
     fn check_constraint_sql(&self, column: &Column) -> Option<String> {
@@ -96,7 +78,7 @@ impl DefaultColumnConstraintGenerator {
             .iter()
             .map(|value| format!("'{}'", value.code()))
             .collect::<Vec<_>>()
-            .join(", ");
+            .join(",");
 
         Some(format!("check({} in ({}))", column.name(), joined_values))
     }

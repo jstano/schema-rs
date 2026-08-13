@@ -6,7 +6,7 @@ use crate::model::initial_data::InitialData;
 use crate::model::key::Key;
 use crate::model::relation::Relation;
 use crate::model::trigger::Trigger;
-use crate::model::types::{BooleanMode, KeyType, LockEscalation, TableOption};
+use crate::model::types::{BooleanMode, DatabaseType, KeyType, LockEscalation, TableOption};
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -186,11 +186,8 @@ impl Table {
             .find(|r| r.from_column_name().eq_ignore_ascii_case(name))
     }
 
-    pub fn fully_qualified_table_name(&self) -> String {
-        match self.schema_name() {
-            Some(schema_name) => format!("{}.{}", schema_name, self.name()),
-            None => self.name().to_string(),
-        }
+    pub fn fully_qualified_table_name(&self, database_type: DatabaseType) -> String {
+        database_type.qualified_name(self.schema_name(), self.name())
     }
 
     pub fn add_reverse_relation(&mut self, relation: Relation) {
@@ -240,5 +237,21 @@ mod tests {
         assert_eq!(t.lock_escalation(), LockEscalation::Auto);
         assert!(!t.is_no_export());
         assert_eq!(format!("{}", t), "schema.table");
+    }
+
+    #[test]
+    fn fully_qualified_table_name_uses_explicit_schema() {
+        let t = sample_table();
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::Postgresql), "schema.table");
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::SqlServer), "schema.table");
+    }
+
+    #[test]
+    fn fully_qualified_table_name_falls_back_to_default_schema() {
+        let mut t = sample_table();
+        t.schema_name = None;
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::Postgresql), "public.table");
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::SqlServer), "dbo.table");
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::Sqlite), "table");
     }
 }

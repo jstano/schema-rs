@@ -1,8 +1,8 @@
-use schema_model::model::column::Column;
-use schema_model::model::table::Table;
-use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator};
+use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator, DefaultConstraintNaming};
 use crate::common::generator_context::GeneratorContext;
 use crate::sqlserver::sqlserver_column_type_generator::SqlServerColumnTypeGenerator;
+use schema_model::model::column::Column;
+use schema_model::model::table::Table;
 
 pub struct SqlServerColumnGenerator {
     column_generator: DefaultColumnGenerator,
@@ -14,6 +14,7 @@ impl SqlServerColumnGenerator {
             column_generator: DefaultColumnGenerator::new(
                 context.clone(),
                 Box::new(SqlServerColumnTypeGenerator::new(context.clone())),
+                DefaultConstraintNaming::NamedWithHash,
             ),
         }
     }

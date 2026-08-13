@@ -6,6 +6,7 @@ use crate::common::key_generator::KeyGenerator;
 use crate::common::table_constraint_generator::TableConstraintGenerator;
 use crate::{sql_newline, sql_print, sql_println};
 use schema_model::model::table::Table;
+use schema_model::model::types::DatabaseType;
 
 pub trait TableGenerator {
     fn output_tables(&self);
@@ -65,11 +66,24 @@ impl TableGenerator for DefaultTableGenerator {
     }
 
     fn output_table_header(&self, table: &Table) {
+        let is_postgres = self.context.settings().database_type() == DatabaseType::Postgresql;
+        let cascade_suffix = if is_postgres { " cascade" } else { "" };
+        let separator = self.context.settings().statement_separator().to_string();
+        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
+
         self.context.with_writer(|writer| {
-            let fully_qualified_table_name = table.fully_qualified_table_name();
-            sql_println!(writer, "/* {} */", fully_qualified_table_name);
-            sql_println!(writer, "create table {}", fully_qualified_table_name);
-            sql_println!(writer, "(");
+            if is_postgres {
+                sql_println!(writer, "/* {} */", fully_qualified_table_name);
+                sql_println!(writer, "drop table if exists {}{}{}", fully_qualified_table_name, cascade_suffix, separator);
+                sql_println!(writer, "");
+                sql_println!(writer, "create table {}", fully_qualified_table_name);
+                sql_println!(writer, "(");
+            } else {
+                sql_println!(writer, "drop table if exists {}{}{}", fully_qualified_table_name, cascade_suffix, separator);
+                sql_println!(writer, "/* {} */", fully_qualified_table_name);
+                sql_println!(writer, "create table {}", fully_qualified_table_name);
+                sql_println!(writer, "(");
+            }
         });
     }
 

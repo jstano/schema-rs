@@ -1,4 +1,4 @@
-use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator};
+use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator, DefaultConstraintNaming};
 use crate::common::generator_context::GeneratorContext;
 use crate::postgresql::postgres_column_type_generator::PostgresColumnTypeGenerator;
 use schema_model::model::column::Column;
@@ -14,6 +14,7 @@ impl PostgresColumnGenerator {
             column_generator: DefaultColumnGenerator::new(
                 context.clone(),
                 Box::new(PostgresColumnTypeGenerator::new(context.clone())),
+                DefaultConstraintNaming::Unnamed,
             ),
         }
     }

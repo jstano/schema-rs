@@ -20,7 +20,7 @@ impl SqlGeneratorSettings {
         Self {
             database_type,
             database_model : options.database_model.clone(),
-            statement_separator: ";".to_string(),
+            statement_separator: database_type.statement_separator().to_string(),
             foreign_key_mode: options.foreign_key_mode,
             boolean_mode: options.boolean_mode,
             output_mode: options.output_mode,
@@ -67,14 +67,8 @@ mod tests {
     use std::cell::RefCell;
 
     #[test]
-    fn statement_separator_is_semicolon_for_every_database_type_including_sqlserver() {
-        // BUG (or at least a doc/behavior mismatch): AGENTS.md and
-        // DatabaseType::statement_separator() both say SQL Server should use "GO" as its
-        // batch separator instead of ";". But SqlGeneratorSettings::new() hardcodes ";"
-        // for every DatabaseType and DatabaseType::statement_separator() is never actually
-        // called anywhere in this crate - so generated SQL Server scripts use ";" today,
-        // matching the checked-in schema-parser-test-schema-sqlserver.sql reference output.
-        // This test documents current behavior; if this is ever fixed, update this test.
+    fn statement_separator_matches_database_type_per_dialect() {
+        // Postgres and SQLite batch statements with ";"; SQL Server uses "GO" batches.
         let schema = SchemaBuilder::new(None::<&str>).build();
         let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
@@ -82,9 +76,13 @@ mod tests {
             std::rc::Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
         );
 
-        let settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
+        let postgres_settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
+        let sqlite_settings = SqlGeneratorSettings::new(DatabaseType::Sqlite, &options);
+        let sqlserver_settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
 
-        assert_eq!(settings.statement_separator(), ";");
-        assert_ne!(settings.statement_separator(), DatabaseType::SqlServer.statement_separator());
+        assert_eq!(postgres_settings.statement_separator(), ";");
+        assert_eq!(sqlite_settings.statement_separator(), ";");
+        assert_eq!(sqlserver_settings.statement_separator(), "\nGO");
+        assert_eq!(sqlserver_settings.statement_separator(), DatabaseType::SqlServer.statement_separator());
     }
 }

@@ -76,12 +76,13 @@ impl TriggerGenerator for PostgresTriggerGenerator {
 
 impl PostgresTriggerGenerator {
     fn output_delete_trigger(&self, table: &Table, pk_col: &str, separator: &str) {
+        let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
         let fn_name = format!("{}_delete", table_name);
-        let fully_qualified_table = table.fully_qualified_table_name();
+        let fully_qualified_table = table.fully_qualified_table_name(database_type);
         let fully_qualified_fn = format!(
             "{}.{}",
-            table.schema_name().unwrap_or("public"),
+            table.schema_name().unwrap_or(DatabaseType::Postgresql.default_schema().unwrap()),
             fn_name
         );
 
@@ -103,7 +104,7 @@ impl PostgresTriggerGenerator {
                             sql_println!(
                                 writer,
                                 "   if (select count(*) from {} where {} = OLD.{}) > 0 then",
-                                to_table.fully_qualified_table_name(),
+                                to_table.fully_qualified_table_name(database_type),
                                 relation.to_column_name(),
                                 pk_col
                             );
@@ -111,7 +112,7 @@ impl PostgresTriggerGenerator {
                                 writer,
                                 "      raise exception 'The row in {} cannot be deleted. It is being used by a row in the {} table.';",
                                 fully_qualified_table,
-                                to_table.fully_qualified_table_name()
+                                to_table.fully_qualified_table_name(database_type)
                             );
                             sql_println!(writer, "   end if;");
                         }
@@ -120,7 +121,7 @@ impl PostgresTriggerGenerator {
                             sql_println!(
                                 writer,
                                 "   update {} set {} = null where {} = OLD.{};",
-                                to_table.fully_qualified_table_name(),
+                                to_table.fully_qualified_table_name(database_type),
                                 relation.to_column_name(),
                                 relation.to_column_name(),
                                 pk_col
@@ -131,7 +132,7 @@ impl PostgresTriggerGenerator {
                             sql_println!(
                                 writer,
                                 "   delete from {} where {} = OLD.{};",
-                                to_table.fully_qualified_table_name(),
+                                to_table.fully_qualified_table_name(database_type),
                                 relation.to_column_name(),
                                 pk_col
                             );
@@ -167,12 +168,13 @@ impl PostgresTriggerGenerator {
     }
 
     fn output_update_trigger(&self, table: &Table, separator: &str) {
+        let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
         let fn_name = format!("{}_update", table_name);
-        let fully_qualified_table = table.fully_qualified_table_name();
+        let fully_qualified_table = table.fully_qualified_table_name(database_type);
         let fully_qualified_fn = format!(
             "{}.{}",
-            table.schema_name().unwrap_or("public"),
+            table.schema_name().unwrap_or(DatabaseType::Postgresql.default_schema().unwrap()),
             fn_name
         );
 
@@ -199,7 +201,7 @@ impl PostgresTriggerGenerator {
                             sql_println!(
                                 writer,
                                 "      if (select count(*) from {} where {} = new.{}) = 0 then",
-                                to_table.fully_qualified_table_name(),
+                                to_table.fully_qualified_table_name(database_type),
                                 relation.to_column_name(),
                                 relation.from_column_name()
                             );
@@ -207,7 +209,7 @@ impl PostgresTriggerGenerator {
                                 writer,
                                 "         raise exception 'The value of {} was not found in the {} table.';",
                                 relation.from_column_name(),
-                                to_table.fully_qualified_table_name()
+                                to_table.fully_qualified_table_name(database_type)
                             );
                             sql_println!(writer, "      end if;");
                             sql_println!(writer, "   end if;");
@@ -310,7 +312,7 @@ mod tests {
         generator.output_triggers();
 
         let output = buffer.contents();
-        assert!(output.contains("was not found in the parent table"));
+        assert!(output.contains("was not found in the public.parent table"));
     }
 
     #[test]

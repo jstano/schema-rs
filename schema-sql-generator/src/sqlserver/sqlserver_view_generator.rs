@@ -12,17 +12,6 @@ impl SqlServerViewGenerator {
         Self { context }
     }
 
-    fn get_schema_name(view: &View) -> String {
-        match view.schema_name() {
-            Some(schema) if schema.eq_ignore_ascii_case("public") => "dbo".to_string(),
-            Some(schema) => schema.to_string(),
-            None => "dbo".to_string(),
-        }
-    }
-
-    fn get_fully_qualified_name(view: &View) -> String {
-        format!("{}.{}", Self::get_schema_name(view), view.name())
-    }
 }
 
 impl ViewGenerator for SqlServerViewGenerator {
@@ -40,7 +29,7 @@ impl ViewGenerator for SqlServerViewGenerator {
         if !views.is_empty() {
             self.context.with_writer(|writer| {
                 for view in views {
-                    let view_name = Self::get_fully_qualified_name(&view);
+                    let view_name = view.fully_qualified_view_name(database_type);
                     sql_println!(writer, "/* {} */", view_name);
                     sql_println!(writer, "if exists (select name from dbo.sysobjects where name = '{}' and type = 'V')", view.name());
                     sql_println!(writer, "   drop view {}{}", view_name, separator);
@@ -89,6 +78,19 @@ mod tests {
         generator.output_views();
 
         assert!(buffer.contents().contains("create view app.active_users as"));
+    }
+
+    #[test]
+    fn output_views_uses_dbo_when_schema_is_none() {
+        let view = View::new(Option::<&str>::None, "active_users", "select 1", None);
+        let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerViewGenerator::new(ctx);
+        generator.output_views();
+
+        assert!(buffer.contents().contains("create view dbo.active_users as"));
     }
 
     #[test]

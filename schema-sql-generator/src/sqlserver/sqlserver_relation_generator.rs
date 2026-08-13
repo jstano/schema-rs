@@ -49,8 +49,8 @@ mod tests {
         generator.output_relations();
 
         let output = buffer.contents();
-        assert!(output.contains("alter table child"));
-        assert!(output.contains("foreign key (parent_id) references parent(id)"));
+        assert!(output.contains("alter table dbo.child"));
+        assert!(output.contains("foreign key (parent_id) references dbo.parent(id)"));
         assert!(output.contains("on delete no action"));
     }
 

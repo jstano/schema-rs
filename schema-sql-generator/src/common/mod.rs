@@ -6,6 +6,7 @@ pub mod table_generator;
 pub mod column_generator;
 pub mod key_generator;
 pub mod column_constraint_generator;
+pub mod constraint_naming;
 pub mod table_constraint_generator;
 pub mod index_generator;
 pub mod relation_generator;
