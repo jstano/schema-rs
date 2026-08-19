@@ -127,7 +127,7 @@ impl TableGenerator for DefaultTableGenerator {
             .filter(|it| { it.database_type().is_none() || it.database_type().unwrap() == self.context.settings().database_type() })
             .collect::<Vec<_>>();
 
-        if initial_data.len() > 0 {
+        if !initial_data.is_empty() {
             self.context.with_writer(|writer| {
                 initial_data.iter().for_each(|it| {
                     sql_println!(writer, "{}{}", it.sql(), self.context.settings().statement_separator());

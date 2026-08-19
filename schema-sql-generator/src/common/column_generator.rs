@@ -70,15 +70,12 @@ impl DefaultColumnGenerator {
     }
 
     fn boolean_default_value(&self, default_constraint: Option<&str>) -> Option<String> {
-        if default_constraint.is_some() {
-            if default_constraint.unwrap().to_ascii_lowercase() == "null" {
+        if let Some(default_constraint) = default_constraint {
+            if default_constraint.eq_ignore_ascii_case("null") {
                 return None;
             }
 
-            let value = matches!(
-                default_constraint.unwrap().to_ascii_lowercase().as_str(),
-                "true"
-            );
+            let value = matches!(default_constraint.to_ascii_lowercase().as_str(), "true");
             return Some(self.convert_boolean_default_constraint(value));
         }
 
@@ -99,18 +96,13 @@ impl DefaultColumnGenerator {
         let primary_key_columns = table.primary_key_columns();
 
         if column.required()
-            && primary_key_columns.is_some()
-            && primary_key_columns
-                .unwrap()
-                .contains(&column.name().to_string())
+            && primary_key_columns.is_some_and(|columns| columns.contains(&column.name().to_string()))
             && table.column_relation(column).is_none()
         {
             return Some(self.column_type_generator.uuid_default_value_sql(schema));
         }
 
-        if default_constraint.is_some()
-            && default_constraint.unwrap().to_ascii_lowercase() == "generate_uuid()"
-        {
+        if default_constraint.is_some_and(|dc| dc.eq_ignore_ascii_case("generate_uuid()")) {
             return Some(self.column_type_generator.uuid_default_value_sql(schema));
         }
 
@@ -165,7 +157,7 @@ impl ColumnGenerator for DefaultColumnGenerator {
 
         if column.required() {
             if column.length() > 0 {
-                options.push_str(" ");
+                options.push(' ');
             }
 
             options.push_str("not null")
@@ -173,12 +165,12 @@ impl ColumnGenerator for DefaultColumnGenerator {
 
         let default_value = self.default_value(table, column);
 
-        if default_value.is_some() {
+        if let Some(default_value) = default_value {
             if !options.is_empty() {
-                options.push_str(" ");
+                options.push(' ');
             }
 
-            options.push_str(self.default_constraint(table, column, default_value.unwrap().as_ref()).as_str());
+            options.push_str(self.default_constraint(table, column, default_value.as_ref()).as_str());
         }
 
         options.trim().to_string()

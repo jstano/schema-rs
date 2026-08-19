@@ -105,7 +105,7 @@ impl IndexGenerator for DefaultIndexGenerator {
             .collect::<Vec<_>>()
             .join(", ");
 
-        if index_options.is_some() {
+        if let Some(index_options) = index_options {
             writer.println(
                 format!(
                     "create {}index {} on {} ({}) {}{}",
@@ -113,7 +113,7 @@ impl IndexGenerator for DefaultIndexGenerator {
                     key_name,
                     fully_qualified_table_name,
                     index_columns,
-                    index_options.unwrap(),
+                    index_options,
                     statement_separator
                 )
                     .as_str(),

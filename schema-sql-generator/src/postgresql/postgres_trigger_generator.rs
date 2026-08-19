@@ -61,11 +61,10 @@ impl TriggerGenerator for PostgresTriggerGenerator {
         let separator = self.context.settings().statement_separator();
 
         for table in database_model.all_tables() {
-            if self.should_output_delete_trigger(table) {
-                if let Some(pk_col) = self.get_primary_key_column(table) {
+            if self.should_output_delete_trigger(table)
+                && let Some(pk_col) = self.get_primary_key_column(table) {
                     self.output_delete_trigger(table, &pk_col, separator);
                 }
-            }
 
             if self.should_output_update_trigger(table) {
                 self.output_update_trigger(table, separator);

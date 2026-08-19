@@ -162,7 +162,7 @@ impl Table {
     }
 
     pub fn has_option(&self, option: TableOption) -> bool {
-        self.options.iter().any(|o| *o == option)
+        self.options.contains(&option)
     }
 
     pub fn has_column_constraints(&self, boolean_mode: BooleanMode) -> bool {

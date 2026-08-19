@@ -52,17 +52,14 @@ pub enum RelationType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum BooleanMode {
+    #[default]
     Native,
     YesNo,
     YN,
 }
 
-impl Default for BooleanMode {
-    fn default() -> Self {
-        BooleanMode::Native
-    }
-}
 
 impl FromStr for BooleanMode {
     type Err = String;
@@ -78,17 +75,14 @@ impl FromStr for BooleanMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum ForeignKeyMode {
     None,
+    #[default]
     Relations,
     Triggers,
 }
 
-impl Default for ForeignKeyMode {
-    fn default() -> Self {
-        ForeignKeyMode::Relations
-    }
-}
 
 impl FromStr for ForeignKeyMode {
     type Err = String;
@@ -130,17 +124,14 @@ pub enum KeyType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum LockEscalation {
+    #[default]
     Auto,
     Disable,
     Table,
 }
 
-impl Default for LockEscalation {
-    fn default() -> Self {
-        LockEscalation::Auto
-    }
-}
 
 impl FromStr for LockEscalation {
     type Err = String;

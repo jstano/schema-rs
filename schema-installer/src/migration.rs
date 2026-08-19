@@ -73,10 +73,10 @@ impl MigrationSource for DirectoryMigrationSource {
         }
 
         let entries = std::fs::read_dir(&self.path)
-            .map_err(|e| SchemaInstallerError::Io(e))?;
+            .map_err(SchemaInstallerError::Io)?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| SchemaInstallerError::Io(e))?;
+            let entry = entry.map_err(SchemaInstallerError::Io)?;
             let path = entry.path();
 
             if !path.is_file() {
@@ -98,7 +98,7 @@ impl MigrationSource for DirectoryMigrationSource {
 
             let (version, description) = parse_migration_filename(filename)?;
             let sql = std::fs::read_to_string(&path)
-                .map_err(|e| SchemaInstallerError::Io(e))?;
+                .map_err(SchemaInstallerError::Io)?;
 
             let script_path = path.to_string_lossy().to_string();
 

@@ -27,11 +27,11 @@ impl DefaultColumnConstraintGenerator {
     pub fn generate_constraint(&self, table: &Table, column: &Column) -> String {
         let constraint_sql = self.check_constraint_sql(column);
 
-        if constraint_sql.is_some() {
+        if let Some(constraint_sql) = constraint_sql {
             return format!(
                 "   constraint {} {}",
                 self.constraint_name(table.name(), column.name()),
-                constraint_sql.unwrap()
+                constraint_sql
             );
         }
 
@@ -88,23 +88,23 @@ impl DefaultColumnConstraintGenerator {
         let max_value = column.max_value();
         let mut sql = String::from("check(");
 
-        if min_value.is_some() {
+        if let Some(min_value) = min_value {
             sql.push_str(column.name());
             sql.push_str(" >= ");
-            sql.push_str(min_value.unwrap().to_string().as_str());
+            sql.push_str(min_value.to_string().as_str());
         }
 
         if min_value.is_some() && max_value.is_some() {
             sql.push_str(" and ");
         }
 
-        if max_value.is_some() {
+        if let Some(max_value) = max_value {
             sql.push_str(column.name());
             sql.push_str(" <= ");
-            sql.push_str(max_value.unwrap().to_string().as_str());
+            sql.push_str(max_value.to_string().as_str());
         }
 
-        sql.push_str(")");
+        sql.push(')');
 
         Some(sql)
     }

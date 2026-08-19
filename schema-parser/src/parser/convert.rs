@@ -264,7 +264,7 @@ fn reverse_relations(database_model: &mut DatabaseModel) {
     for table in database_model.all_tables() {
         for relation in table.relations() {
             let parent_table_name = relation.to_table_name();
-            let parent_table_parts = split_schema_table(&parent_table_name);
+            let parent_table_parts = split_schema_table(parent_table_name);
 
             updates.push((
                 parent_table_parts.0,

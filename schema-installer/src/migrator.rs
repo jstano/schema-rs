@@ -29,8 +29,8 @@ impl Migrator {
         let source_migrations = source.migrations()?;
 
         for applied_migration in &applied {
-            if applied_migration.status == "success" {
-                if let Some(source_migration) = source_migrations
+            if applied_migration.status == "success"
+                && let Some(source_migration) = source_migrations
                     .iter()
                     .find(|m| m.version == applied_migration.version)
                 {
@@ -43,7 +43,6 @@ impl Migrator {
                         });
                     }
                 }
-            }
         }
 
         let mut migrations = source_migrations;
@@ -101,8 +100,7 @@ impl Migrator {
     ) -> Result<(), SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
 
-        if let Err(_) = pool.ensure_migration_table(&config.database_type).await {
-        }
+        let _ = pool.ensure_migration_table(&config.database_type).await;
 
         let applied = pool.get_applied_migrations().await.unwrap_or_default();
         let source_migrations = source.migrations()?;
@@ -132,7 +130,7 @@ impl Migrator {
                 println!(
                     "{:<10} {:<30} {:<10} {:<30} {:<15}",
                     applied_mig.version,
-                    applied_mig.script_path.split('/').last().unwrap_or(""),
+                    applied_mig.script_path.split('/').next_back().unwrap_or(""),
                     applied_mig.status,
                     applied_mig.installed_at,
                     applied_mig.execution_time_ms

@@ -141,38 +141,6 @@ impl Schema {
         errors
     }
 
-    // pub fn build_reverse_relations(&mut self) {
-    //     // We need mutable access to parent tables too, so handle indices carefully.
-    //     // First, collect the relations to add per parent table to avoid multiple mutable borrows.
-    //     let mut to_add: HashMap<usize, Vec<Relation>> = HashMap::new();
-    //     for (child_idx, table) in self.tables.iter().enumerate() {
-    //         if !table.relations().is_empty() {
-    //             for relation in table.relations() {
-    //                 let parent_name = relation.to_table_name();
-    //                 if let Some(&parent_idx) = self.table_map.get(&parent_name.to_lowercase()) {
-    //                     let reverse = Relation::new(
-    //                         relation.to_table_name().to_string(),
-    //                         relation.to_column_name().to_string(),
-    //                         relation.from_table_name().to_string(),
-    //                         relation.from_column_name().to_string(),
-    //                         relation.relation_type(),
-    //                         false,
-    //                     );
-    //                     to_add.entry(parent_idx).or_default().push(reverse);
-    //                 } else {
-    //                     // Parent not found; ignore or log in real implementation
-    //                     let _ = child_idx; // keep variable used
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     for (idx, rels) in to_add {
-    //         if let Some(parent) = self.tables.get_mut(idx) {
-    //             parent.reverse_relations_mut().extend(rels);
-    //         }
-    //     }
-    // }
-
     pub(crate) fn add_table(&mut self, table: Table) {
         let idx = self.tables.len();
         self.table_map.insert(table.name().to_lowercase(), idx);

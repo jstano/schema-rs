@@ -290,24 +290,22 @@ mod tests {
         assert!(pk_constraint.contains("constraint pk_"));
         assert!(pk_constraint.contains("primary key (id)"));
         // Extract the constraint name part (between "constraint " and " primary")
-        if let Some(start) = pk_constraint.find("constraint ") {
-            if let Some(end) = pk_constraint.find(" primary") {
+        if let Some(start) = pk_constraint.find("constraint ")
+            && let Some(end) = pk_constraint.find(" primary") {
                 let constraint_name = &pk_constraint[start + 11..end];
                 assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
             }
-        }
 
         // ak_*1 constraint name should be <= 63 chars
         let ak_constraint = &constraints[1];
         assert!(ak_constraint.contains("constraint ak_"));
         assert!(ak_constraint.contains("unique (code)"));
         // Extract the constraint name part
-        if let Some(start) = ak_constraint.find("constraint ") {
-            if let Some(end) = ak_constraint.find(" unique") {
+        if let Some(start) = ak_constraint.find("constraint ")
+            && let Some(end) = ak_constraint.find(" unique") {
                 let constraint_name = &ak_constraint[start + 11..end];
                 assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
             }
-        }
     }
 
     #[test]

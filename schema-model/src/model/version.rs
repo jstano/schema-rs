@@ -46,14 +46,12 @@ impl Version {
         // Detect "-SNAPSHOT" suffix
         let mut s = version_str.trim();
         let pre = s.contains("-SNAPSHOT");
-        if pre {
-            if let Some(idx) = s.find("-SNAPSHOT") {
+        if pre
+            && let Some(idx) = s.find("-SNAPSHOT") {
                 s = &s[..idx];
             }
-        }
         let parts: Vec<&str> = s.split('.').collect();
-        let major = parts
-            .get(0)
+        let major = parts.first()
             .and_then(|p| p.parse::<i32>().ok())
             .unwrap_or(0);
         let minor = parts

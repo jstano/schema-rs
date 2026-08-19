@@ -32,9 +32,9 @@ impl SchemaInstaller {
         let schema_file_str = schema_file.to_str()
             .ok_or_else(|| SchemaInstallerError::SchemaFileNotFound("Invalid path".to_string()))?;
         let schema_content = fs::read_to_string(schema_file_str)
-            .map_err(|e| SchemaInstallerError::Io(e))?;
+            .map_err(SchemaInstallerError::Io)?;
         let database_model = parse_database_xml(&schema_content)
-            .map_err(|e| SchemaInstallerError::Parse(e))?;
+            .map_err(SchemaInstallerError::Parse)?;
 
         // Get schema version
         let version = database_model.version()
@@ -49,22 +49,22 @@ impl SchemaInstaller {
             .unwrap_or(0);
         let temp_file = std::env::temp_dir().join(format!("schema_install_temp_{}.sql", nanos));
         let file = std::fs::File::create(&temp_file)
-            .map_err(|e| SchemaInstallerError::Io(e))?;
+            .map_err(SchemaInstallerError::Io)?;
 
         let writer_temp = PrintWriter::new(Box::new(file));
         let generate_options = GenerateOptions {
             database_model: Rc::new(database_model),
             writer: Rc::new(RefCell::new(writer_temp)),
-            boolean_mode: config.boolean_mode.clone(),
-            foreign_key_mode: config.foreign_key_mode.clone(),
+            boolean_mode: config.boolean_mode,
+            foreign_key_mode: config.foreign_key_mode,
             output_mode: OutputMode::All,
             target_postgres_version: 17,
         };
 
-        (&config.database_type).generate(generate_options);
+        config.database_type.generate(generate_options);
 
         let sql = std::fs::read_to_string(&temp_file)
-            .map_err(|e| SchemaInstallerError::Io(e))?;
+            .map_err(SchemaInstallerError::Io)?;
 
         let _ = std::fs::remove_file(&temp_file);
 
