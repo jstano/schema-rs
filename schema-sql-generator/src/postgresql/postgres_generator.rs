@@ -40,23 +40,23 @@ impl PostgresGenerator {
         let separator = self.context.settings().statement_separator().to_string();
 
         self.context.with_writer(|writer| {
-            sql_println!(writer, "create or replace function generate_uuid() returns uuid language plpgsql parallel safe as $$");
+            sql_println!(writer, "create or replace function generate_uuid() returns uuid language plpgsql volatile parallel unsafe as $$");
             sql_println!(writer, "declare");
             sql_println!(writer, "   -- The current UNIX timestamp in milliseconds");
-            sql_println!(writer, "   unix_time_ms CONSTANT bytea NOT NULL DEFAULT substring(int8send((extract(epoch FROM clock_timestamp()) * 1000)::bigint) from 3);");
+            sql_println!(writer, "   unix_time_ms CONSTANT bigint NOT NULL DEFAULT (extract(epoch FROM clock_timestamp()) * 1000)::bigint;");
             sql_println!(writer, "");
-            sql_println!(writer, "   -- The buffer used to create the UUID, starting with the UNIX timestamp and followed by random bytes");
-            sql_println!(writer, "   buffer bytea not null default unix_time_ms || gen_random_bytes(10);");
+            sql_println!(writer, "   -- The buffer used to create the UUID: the low 6 bytes (48 bits) of the timestamp, followed by 10 random bytes");
+            sql_println!(writer, "   buffer bytea not null default substring(int8send(unix_time_ms) from 3) || gen_random_bytes(10);");
             sql_println!(writer, "begin");
-            sql_println!(writer, "   -- Set most significant 4 bits of 7th byte to 7 (for UUID v7), keeping the last 4 bits unchanged");
-            sql_println!(writer, "   buffer = set_byte(buffer, 6, (b'0111' || get_byte(buffer, 6)::bit(4))::bit(8)::int);");
+            sql_println!(writer, "   -- Set the version nibble of byte 6 to 0111 (UUID v7), keeping the last 4 bits unchanged");
+            sql_println!(writer, "   buffer = set_byte(buffer, 6, (get_byte(buffer, 6) & 15) | 112);");
             sql_println!(writer, "");
-            sql_println!(writer, "   -- Set most significant 2 bits of 9th byte to 2 (the UUID variant specified in RFC 4122), keeping the last 6 bits unchanged");
+            sql_println!(writer, "   -- Set the top 2 bits of byte 8 to 10 (the UUID variant specified in RFC 4122), keeping the last 6 bits unchanged");
             sql_println!(writer,
-                "   buffer = set_byte(buffer, 8, (b'10' || get_byte(buffer, 8)::bit(6))::bit(8)::int);",
+                "   buffer = set_byte(buffer, 8, (get_byte(buffer, 8) & 63) | 128);",
             );
             sql_println!(writer, "");
-            sql_println!(writer, "   return encode(buffer, 'hex');");
+            sql_println!(writer, "   return encode(buffer, 'hex')::uuid;");
             sql_println!(writer, "end");
             sql_println!(writer, "$${}", separator);
             sql_println!(writer, "");
@@ -65,11 +65,15 @@ impl PostgresGenerator {
 
     fn create_extensions(&self) {
         let separator = self.context.settings().statement_separator().to_string();
+        let check_user = match self.context.settings().extension_check_user() {
+            Some(user) => format!("'{}'", user),
+            None => "CURRENT_USER".to_string(),
+        };
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "do $$");
             sql_println!(writer, "begin");
-            sql_println!(writer, "   if (select usesuper from pg_user where usename = CURRENT_USER) then");
+            sql_println!(writer, "   if (select usesuper from pg_user where usename = {}) then", check_user);
             sql_println!(writer, "      create extension if not exists \"citext\";");
             sql_println!(writer, "      create extension if not exists \"btree_gist\";");
             sql_println!(writer, "   else");
@@ -114,7 +118,9 @@ impl SqlGenerator for PostgresGenerator {
         if self.context.settings().target_postgres_version() < 18 {
             self.create_uuid_generator_function();
         }
-        self.create_extensions();
+        if self.context.settings().emit_postgres_extensions() {
+            self.create_extensions();
+        }
         self.create_enum_types();
     }
 
@@ -171,12 +177,17 @@ mod tests {
     use std::rc::Rc;
 
     fn make_context_with_version(model: DatabaseModel, target_postgres_version: u32) -> (GeneratorContext, SharedBuffer) {
+        make_context(model, target_postgres_version, true)
+    }
+
+    fn make_context(model: DatabaseModel, target_postgres_version: u32, emit_postgres_extensions: bool) -> (GeneratorContext, SharedBuffer) {
         let buffer = SharedBuffer::new();
         let mut options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
         );
         options.target_postgres_version = target_postgres_version;
+        options.emit_postgres_extensions = emit_postgres_extensions;
         let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
         let writer = SqlWriter::new(options.writer.clone());
         (GeneratorContext::new(settings, writer), buffer)
@@ -239,5 +250,68 @@ mod tests {
 
         let output = buffer.contents();
         assert!(!output.contains("create type"));
+    }
+
+    #[test]
+    fn output_header_includes_extensions_block_by_default() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create extension if not exists \"citext\""));
+        assert!(output.contains("create extension if not exists \"btree_gist\""));
+    }
+
+    #[test]
+    fn output_header_omits_extensions_block_when_disabled() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, 18, false);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("create extension"));
+    }
+
+    #[test]
+    fn output_header_checks_current_user_by_default() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("where usename = CURRENT_USER"));
+    }
+
+    #[test]
+    fn output_header_checks_configured_extension_user() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let buffer = SharedBuffer::new();
+        let mut options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        );
+        options.target_postgres_version = 18;
+        options.extension_check_user = Some("schema_admin".to_string());
+        let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        let ctx = GeneratorContext::new(settings, writer);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("where usename = 'schema_admin'"));
+        assert!(!output.contains("CURRENT_USER)"));
     }
 }

@@ -12,6 +12,8 @@ pub struct GenerateOptions {
     pub boolean_mode: BooleanMode,
     pub output_mode: OutputMode,
     pub target_postgres_version: u32,
+    pub emit_postgres_extensions: bool,
+    pub extension_check_user: Option<String>,
 }
 
 impl GenerateOptions {
@@ -23,6 +25,8 @@ impl GenerateOptions {
             boolean_mode: BooleanMode::Native,
             output_mode: OutputMode::All,
             target_postgres_version: 0,
+            emit_postgres_extensions: true,
+            extension_check_user: None,
         }
     }
 }

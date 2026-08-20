@@ -55,6 +55,14 @@ pub fn main() {
             .long("postgresql-version")
             .value_name("VERSION")
             .help("Target PostgreSQL major version (e.g. 17, 18); affects UUID default function"))
+        .arg(Arg::new("no-postgres-extensions")
+            .long("no-postgres-extensions")
+            .action(ArgAction::SetTrue)
+            .help("Skip emitting the PostgreSQL create-extension block (citext, btree_gist)"))
+        .arg(Arg::new("extension-check-user")
+            .long("extension-check-user")
+            .value_name("USER")
+            .help("Postgres role to check for superuser privilege in the create-extension block (default: CURRENT_USER)"))
         .arg(Arg::new("new-schema")
             .long("new-schema")
             .action(ArgAction::SetTrue)
@@ -116,6 +124,8 @@ pub fn main() {
         foreign_key_mode: foreign_key_mode.parse().unwrap_or(ForeignKeyMode::Relations),
         output_mode: output_mode.parse().unwrap_or(OutputMode::All),
         target_postgres_version,
+        emit_postgres_extensions: !arguments.get_flag("no-postgres-extensions"),
+        extension_check_user: arguments.get_one::<String>("extension-check-user").cloned(),
     };
 
     generator_type.generate(options);

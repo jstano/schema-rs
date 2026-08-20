@@ -59,6 +59,8 @@ impl SchemaInstaller {
             foreign_key_mode: config.foreign_key_mode,
             output_mode: OutputMode::All,
             target_postgres_version: 17,
+            emit_postgres_extensions: true,
+            extension_check_user: None,
         };
 
         config.database_type.generate(generate_options);

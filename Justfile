@@ -12,6 +12,9 @@ version := `grep -m1 'version = ' Cargo.toml | sed -E 's/.*version = "([^"]+)".*
 # Binaries to package
 binaries := "schema-installer schema-diagram-generator schema-sql-generator schema-reverse-engineer"
 
+# Docker Hub repository to publish images to
+docker_repo := env_var_or_default("DOCKER_REPO", "jstano/schema-rs")
+
 # Sync local repo to remote machine
 sync-remote:
 	rsync -az --delete \
@@ -100,10 +103,53 @@ build-macos-aarch64:
 build-all-releases: build-macos-aarch64 build-all-remote
 	@echo "✓ All release artifacts built (macOS local + remote)!"
 
+# Stage binaries + docs for one build target into release/docker/{target}/ — used as a
+# minimal Docker build context so we don't send the whole target/ dir to the daemon
+_docker-stage target:
+	rm -rf release/docker/{{target}}
+	mkdir -p release/docker/{{target}}
+	for bin in {{binaries}}; do \
+		cp target/{{target}}/release/$bin release/docker/{{target}}/; \
+	done
+	cp README.md LICENSE release/docker/{{target}}/
+
+# Build & push a single-arch image for one (cross target, docker platform, tag suffix)
+_docker-build-push target platform suffix: (_docker-stage target)
+	docker buildx build \
+		--platform {{platform}} \
+		-f docker/Dockerfile \
+		-t {{docker_repo}}:{{version}}-{{suffix}} \
+		--push \
+		release/docker/{{target}}
+
+# Build & push the linux/amd64 image (builds x86_64 binaries first if needed)
+docker-build-push-amd64: build-linux-x86_64
+	just _docker-build-push x86_64-unknown-linux-gnu linux/amd64 amd64
+
+# Build & push the linux/arm64 image (builds aarch64 binaries first if needed)
+docker-build-push-arm64: build-linux-aarch64
+	just _docker-build-push aarch64-unknown-linux-gnu linux/arm64 arm64
+
+# Build+push both arch images, then stitch them into one multi-arch manifest tagged
+# {{version}} and latest
+docker-publish: docker-build-push-amd64 docker-build-push-arm64
+	docker buildx imagetools create \
+		-t {{docker_repo}}:{{version}} \
+		-t {{docker_repo}}:latest \
+		{{docker_repo}}:{{version}}-amd64 \
+		{{docker_repo}}:{{version}}-arm64
+	@echo "✓ Published {{docker_repo}}:{{version}} (linux/amd64, linux/arm64) and :latest"
+
+# Build every release artifact and publish the Docker images: the full release
+release-all: build-all-releases docker-publish
+	@echo "✓ Full release complete: zips packaged + Docker images published!"
+
 # Show current configuration
 @show-config:
 	echo "Remote SSH host: {{remote_host}}"
 	echo "Remote directory: {{remote_dir}}"
+	echo "Docker repository: {{docker_repo}}"
 	echo ""
 	echo "Override with environment variables:"
 	echo "  CROSS_BUILD_HOST=myhost CROSS_BUILD_DIR=~/builds just build-all-remote"
+	echo "  DOCKER_REPO=myuser/schema-rs just docker-publish"
