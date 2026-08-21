@@ -40,7 +40,7 @@ pub fn main() {
 
     let schema_path = Path::new(schema_file);
     let diagram_format: DiagramFormat = format_str.parse().expect("Invalid diagram format");
-    let output_path = build_output_path(schema_path, diagram_format.format_name());
+    let output_path = build_output_path(schema_path, diagram_format.file_extension());
 
     let database_model = load_schema(schema_path);
     let options = DiagramGenerateOptions {
@@ -57,9 +57,9 @@ fn load_schema(schema_path: &Path) -> DatabaseModel {
     parse_database_xml(contents.as_str()).expect("failed to parse the schema")
 }
 
-fn build_output_path(path: &Path, format_name: &str) -> String {
+fn build_output_path(path: &Path, extension: &str) -> String {
     let parent = path.parent().expect("Path has no parent");
     let stem = path.file_stem().expect("No file stem").to_string_lossy();
-    let new_filename = format!("{}-{}.md", stem, format_name);
+    let new_filename = format!("{}.{}", stem, extension);
     parent.join(new_filename).to_string_lossy().to_string()
 }

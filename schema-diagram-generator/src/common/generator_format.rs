@@ -1,8 +1,8 @@
-use std::str::FromStr;
 use crate::common::diagram_generator::DiagramGenerator;
 use crate::common::generate_options::DiagramGenerateOptions;
 use crate::mermaid::mermaid_generator::MermaidERDiagramGenerator;
 use crate::plantuml::plantuml_generator::PlantUMLERDiagramGenerator;
+use std::str::FromStr;
 
 pub enum DiagramFormat {
     Mermaid,
@@ -36,7 +36,10 @@ impl DiagramFormat {
     }
 
     pub fn file_extension(&self) -> &'static str {
-        "md"
+        match self {
+            DiagramFormat::Mermaid => "mmd",
+            DiagramFormat::PlantUml => "puml",
+        }
     }
 
     pub fn format_name(&self) -> &'static str {
