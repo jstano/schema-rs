@@ -15,6 +15,9 @@ binaries := "schema-installer schema-diagram-generator schema-sql-generator sche
 # Docker Hub repository to publish images to
 docker_repo := env_var_or_default("DOCKER_REPO", "jstano/schema-rs")
 
+# Crates to publish to crates.io, in dependency order
+crates := "schema-model schema-parser schema-diff schema-sql-generator schema-migration-generator schema-reverse-engineer schema-installer schema-diagram-generator"
+
 # Sync local repo to remote machine
 sync-remote:
 	rsync -az --delete \
@@ -154,9 +157,21 @@ github-release: _tag-release
 	gh release create {{version}} release/*.zip --title {{version}} --generate-notes
 	@echo "✓ GitHub release {{version}} published!"
 
-# Build every release artifact, publish Docker images, and publish the GitHub release: the full release
-release-all: build-all-releases docker-publish github-release
-	@echo "✓ Full release complete: zips packaged + Docker images published + GitHub release published!"
+# Publish all workspace crates to crates.io, in dependency order. Pauses briefly between
+# each publish so crates.io has time to index a version before the crate depending on it
+# is published.
+cargo-publish:
+	for crate in {{crates}}; do \
+		echo "Publishing $crate to crates.io..."; \
+		cargo publish -p $crate; \
+		sleep 20; \
+	done
+	@echo "✓ Published all crates to crates.io"
+
+# Build every release artifact, publish Docker images, publish the GitHub release, and
+# publish the crates to crates.io: the full release
+release-all: build-all-releases docker-publish github-release cargo-publish
+	@echo "✓ Full release complete: zips packaged + Docker images published + GitHub release published + crates published to crates.io!"
 
 # Show current configuration
 @show-config:
