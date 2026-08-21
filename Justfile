@@ -140,9 +140,23 @@ docker-publish: docker-build-push-amd64 docker-build-push-arm64
 		{{docker_repo}}:{{version}}-arm64
 	@echo "✓ Published {{docker_repo}}:{{version}} (linux/amd64, linux/arm64) and :latest"
 
-# Build every release artifact and publish the Docker images: the full release
-release-all: build-all-releases docker-publish
-	@echo "✓ Full release complete: zips packaged + Docker images published!"
+# Create the git tag for the current version and push it (skips if it already exists)
+_tag-release:
+	if git rev-parse {{version}} >/dev/null 2>&1; then \
+		echo "Tag {{version}} already exists, skipping"; \
+	else \
+		git tag {{version}}; \
+		git push origin {{version}}; \
+	fi
+
+# Create the GitHub release for the current version, uploading the packaged zip archives
+github-release: _tag-release
+	gh release create {{version}} release/*.zip --title {{version}} --generate-notes
+	@echo "✓ GitHub release {{version}} published!"
+
+# Build every release artifact, publish Docker images, and publish the GitHub release: the full release
+release-all: build-all-releases docker-publish github-release
+	@echo "✓ Full release complete: zips packaged + Docker images published + GitHub release published!"
 
 # Show current configuration
 @show-config:
