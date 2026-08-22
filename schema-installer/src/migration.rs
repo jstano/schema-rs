@@ -2,6 +2,13 @@ use crate::error::SchemaInstallerError;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
+/// The fixed, reserved version of the legacy XML `install` command (see `installer.rs`)
+/// records its single tracking row under, so it can never collide with real migration
+/// versions (which start at V1+). It never corresponds to an actual migration file, so
+/// callers that cross-reference `schema_migration` against a `MigrationSource` (e.g.
+/// `Migrator::validate`) must treat it as exempt rather than "missing."
+pub(crate) const RESERVED_INSTALL_VERSION: &str = "0";
+
 #[derive(Clone)]
 pub struct Migration {
     pub version: String,
@@ -169,14 +176,16 @@ fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaIn
 }
 
 pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
-    let v1_parts: Vec<u64> = v1
-        .split('.')
-        .filter_map(|p| p.parse::<u64>().ok())
-        .collect();
-    let v2_parts: Vec<u64> = v2
-        .split('.')
-        .filter_map(|p| p.parse::<u64>().ok())
-        .collect();
+    // Version strings may use either `.` (e.g. "1.2") or `_` (e.g. "1_2", produced by a
+    // filename like `V1_2__add_email_column.sql`) as the separator, so both must be
+    // split on here, or multipart underscore versions silently compare as equal.
+    let split = |v: &str| -> Vec<u64> {
+        v.split(['.', '_'])
+            .filter_map(|p| p.parse::<u64>().ok())
+            .collect()
+    };
+    let v1_parts = split(v1);
+    let v2_parts = split(v2);
 
     for (p1, p2) in v1_parts.iter().zip(v2_parts.iter()) {
         if p1 != p2 {
@@ -225,6 +234,15 @@ mod tests {
         assert!(compare_versions("1", "1") == std::cmp::Ordering::Equal);
         assert!(compare_versions("1.2", "1.3") == std::cmp::Ordering::Less);
         assert!(compare_versions("1.10", "1.2") == std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_version_comparison_underscore_separated() {
+        // Regression test: version parts produced by `V1_2__desc.sql`-style filenames
+        // must compare correctly, not silently reduce to empty (equal) part vectors.
+        assert!(compare_versions("1_2", "1_3") == std::cmp::Ordering::Less);
+        assert!(compare_versions("1_10", "1_2") == std::cmp::Ordering::Greater);
+        assert!(compare_versions("1_2", "1_2") == std::cmp::Ordering::Equal);
     }
 
     #[test]

@@ -41,7 +41,7 @@ mod tests {
                 Function::new(None::<&str>, "sqlite_only", DatabaseType::Sqlite, "create function sqlite_only"),
             ])
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresFunctionGenerator::new(ctx);

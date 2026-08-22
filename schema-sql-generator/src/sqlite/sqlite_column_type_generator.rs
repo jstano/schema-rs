@@ -107,7 +107,7 @@ mod tests {
 
     fn make_model_default() -> DatabaseModel {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     fn assert_type(column_type: ColumnType, expected: &str) {

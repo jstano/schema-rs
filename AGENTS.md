@@ -98,7 +98,6 @@ The core model in `schema-model/src/model/`:
 
 ```
 DatabaseModel
-├── version: Option<Version>
 ├── foreign_key_mode: ForeignKeyMode
 ├── boolean_mode: BooleanMode
 └── schemas: Vec<Schema>

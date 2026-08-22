@@ -33,7 +33,7 @@ mod tests {
         // intentionally a no-op here (unlike postgres/sqlserver which override it).
         let table = TableBuilder::new(None::<&str>, "users").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Triggers, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Triggers, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteTriggerGenerator::new(ctx);

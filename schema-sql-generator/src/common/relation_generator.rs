@@ -127,7 +127,7 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultRelationGenerator::new(ctx);

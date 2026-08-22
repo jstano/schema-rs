@@ -133,7 +133,7 @@ mod tests {
 
     fn make_model_default() -> DatabaseModel {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     fn assert_type(column_type: ColumnType, expected: &str) {
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn text_type_case_insensitive_schema_returns_citext() {
         let schema = SchemaBuilder::new(None::<&str>).case_sensitive_text(false).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, table_builder) = make_context(model);
         let generator = PostgresColumnTypeGenerator::new(ctx);
         let table = table_builder.build();

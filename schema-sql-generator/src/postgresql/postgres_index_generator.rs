@@ -48,7 +48,7 @@ mod tests {
         let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("email")], false, false, true, None::<String>);
         let table = TableBuilder::new(None::<&str>, "users").add_index(index).build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresIndexGenerator::new(ctx.clone());
@@ -64,7 +64,7 @@ mod tests {
     fn output_indexes_for_table_skips_when_no_indexes() {
         let table = TableBuilder::new(None::<&str>, "solo").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresIndexGenerator::new(ctx.clone());

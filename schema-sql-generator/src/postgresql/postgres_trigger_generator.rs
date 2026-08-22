@@ -270,7 +270,7 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     fn build_model_with_unqualified_relation() -> DatabaseModel {
@@ -285,7 +285,7 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     #[test]

@@ -44,7 +44,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Top, "pragma foreign_keys = on"))
             .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Bottom, "analyze"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresOtherSqlGenerator::new(ctx);
@@ -62,7 +62,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Bottom, "analyze"))
             .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Top, "create extension if not exists citext"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresOtherSqlGenerator::new(ctx);

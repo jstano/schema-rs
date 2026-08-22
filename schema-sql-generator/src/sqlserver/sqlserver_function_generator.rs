@@ -52,7 +52,7 @@ mod tests {
         // pipeline entry point (output_functions) does NOT reach this override: see the
         // dispatch-bug test below.
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let function = Function::new(
             None::<&str>,
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn output_function_respects_explicit_non_default_schema() {
         let schema = SchemaBuilder::new(Some("app")).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let function = Function::new(
             Some("app"),
@@ -108,7 +108,7 @@ mod tests {
                 "create function dbo.mssql_fn() returns int as begin return 1 end",
             )])
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerFunctionGenerator::new(ctx);

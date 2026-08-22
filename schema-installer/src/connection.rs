@@ -2,7 +2,7 @@ use crate::error::SchemaInstallerError;
 use crate::migration::AppliedMigration;
 use crate::tracking::SchemaMigrationDdl;
 use schema_sql_generator::common::generator_type::GeneratorType;
-use sqlx::{postgres::PgPoolOptions, sqlite::{SqliteConnectOptions, SqlitePoolOptions}, Pool, Postgres, Sqlite};
+use sqlx::{Pool, Postgres, Sqlite, postgres::PgPoolOptions, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
 use std::str::FromStr;
 use tiberius::Client;
 use tokio::net::TcpStream;
@@ -26,9 +26,15 @@ impl AnyPool {
                 Ok(AnyPool::Postgresql(pool))
             }
             GeneratorType::Sqlite => {
+                // Without a busy timeout, a second process hitting the same file while
+                // this one holds a write lock (e.g., two instances racing to migrate)
+                // fails immediately with "database is locked" instead of waiting its
+                // turn, so it never gets a chance to observe the winner's committed
+                // migration and back off cleanly.
                 let options = SqliteConnectOptions::from_str(connection_string)
                     .map_err(|e| SchemaInstallerError::Connection(e.to_string()))?
-                    .create_if_missing(true);
+                    .create_if_missing(true)
+                    .busy_timeout(std::time::Duration::from_secs(10));
 
                 let pool = SqlitePoolOptions::new()
                     .max_connections(5)
@@ -89,6 +95,68 @@ impl AnyPool {
     pub async fn ensure_migration_table(&self, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {
         let ddl = SchemaMigrationDdl::schema_migration_ddl(database_type);
         self.execute_sql(&ddl).await
+    }
+
+    /// Executes a sequence of already-split SQL statements as a single database
+    /// transaction: all statements commit together, or none of them do. This prevents a
+    /// migration file that fails partway through from leaving earlier statements in that
+    /// same file permanently applied to the schema.
+    pub async fn execute_transactional(&self, statements: &[String]) -> Result<(), SchemaInstallerError> {
+        match self {
+            AnyPool::Postgresql(pool) => {
+                let mut tx = pool
+                    .begin()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                for statement in statements {
+                    sqlx::query(statement.as_str())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                }
+                tx.commit()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::Sqlite(pool) => {
+                let mut tx = pool
+                    .begin()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                for statement in statements {
+                    sqlx::query(statement.as_str())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                }
+                tx.commit()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute("BEGIN TRANSACTION", &[])
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+
+                for statement in statements {
+                    if let Err(e) = client.execute(statement.as_str(), &[]).await {
+                        // Best-effort rollback; report the original statement error either way.
+                        let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                        return Err(SchemaInstallerError::Execution(e.to_string()));
+                    }
+                }
+
+                client
+                    .execute("COMMIT TRANSACTION", &[])
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                Ok(())
+            }
+        }
     }
 
     pub async fn get_applied_migrations(&self) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {
@@ -208,7 +276,7 @@ impl AnyPool {
                 .bind(tool_version)
                 .fetch_one(pool)
                 .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                .map_err(|e| map_insert_error(e, version))?;
                 Ok(row.0)
             }
             AnyPool::Sqlite(pool) => {
@@ -223,7 +291,7 @@ impl AnyPool {
                 .bind(tool_version)
                 .execute(pool)
                 .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                .map_err(|e| map_insert_error(e, version))?;
 
                 let id: (i64,) = sqlx::query_as("SELECT id FROM schema_migration WHERE version = ? ORDER BY id DESC LIMIT 1")
                     .bind(version)
@@ -240,7 +308,7 @@ impl AnyPool {
                         &[&version, &script_path, &checksum, &(execution_time_ms as i32), &status, &tool_version],
                     )
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                    .map_err(|e| map_tiberius_insert_error(e, version))?;
 
                 let result = client
                     .query("SELECT id FROM schema_migration WHERE version = @P1 ORDER BY id DESC", &[&version])
@@ -367,4 +435,28 @@ impl AnyPool {
             }
         }
     }
+}
+
+/// Maps a unique-constraint violation on `schema_migration.version` (Postgres or SQLite,
+/// via sqlx) to a `ConcurrentMigrationDetected` error so a racing second instance gets a
+/// clear, actionable error instead of a raw driver message. Any other error passes through
+/// as a generic `Database` error.
+fn map_insert_error(e: sqlx::Error, version: &str) -> SchemaInstallerError {
+    if let sqlx::Error::Database(ref db_err) = e
+        && db_err.kind() == sqlx::error::ErrorKind::UniqueViolation
+    {
+        return SchemaInstallerError::ConcurrentMigrationDetected(version.to_string());
+    }
+    SchemaInstallerError::Database(e.to_string())
+}
+
+/// Same mapping as `map_insert_error`, for the SQL Server (tiberius) driver, which reports
+/// unique-constraint/unique-index violations as server error numbers 2627/2601.
+fn map_tiberius_insert_error(e: tiberius::error::Error, version: &str) -> SchemaInstallerError {
+    if let tiberius::error::Error::Server(token_error) = &e
+        && matches!(token_error.code(), 2627 | 2601)
+    {
+        return SchemaInstallerError::ConcurrentMigrationDetected(version.to_string());
+    }
+    SchemaInstallerError::Database(e.to_string())
 }

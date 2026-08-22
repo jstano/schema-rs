@@ -14,7 +14,6 @@ pub fn parse_database_roxml(xml: &str) -> Result<DatabaseXml, String> {
 }
 
 fn parse_database_node(node: Node) -> DatabaseXml {
-    let version = attr_string(node, "version");
     let foreign_key_mode = attr_string(node, "foreignKeyMode");
     let boolean_mode = attr_string(node, "booleanMode");
     let case_sensitive_text = attr_bool(node, "caseSensitiveText");
@@ -41,7 +40,6 @@ fn parse_database_node(node: Node) -> DatabaseXml {
     }
 
     DatabaseXml {
-        version,
         foreign_key_mode,
         boolean_mode,
         case_sensitive_text,
@@ -405,7 +403,6 @@ mod tests {
     fn parse_with_roxmltree_sample() {
         let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml").expect("resource present");
         let db = parse_database_roxml(&xml).expect("parsed");
-        assert!(db.version.is_some());
         assert!(!db.tables.is_empty());
         assert!(db.schemas.is_empty() || !db.schemas[0].tables.is_empty());
     }

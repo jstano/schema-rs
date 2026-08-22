@@ -42,7 +42,7 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerRelationGenerator::new(ctx);
@@ -58,7 +58,7 @@ mod tests {
     fn output_relations_does_nothing_when_no_relations_exist() {
         let table = TableBuilder::new(None::<&str>, "solo").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerRelationGenerator::new(ctx);

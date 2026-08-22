@@ -14,5 +14,4 @@ pub mod schema;
 pub mod table;
 pub mod trigger;
 pub mod types;
-pub mod version;
 pub mod view;

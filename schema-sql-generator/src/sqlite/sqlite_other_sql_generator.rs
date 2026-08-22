@@ -44,7 +44,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Top, "select 1"))
             .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Bottom, "vacuum"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteOtherSqlGenerator::new(ctx);
@@ -62,7 +62,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Bottom, "vacuum"))
             .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Top, "pragma foreign_keys = on"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteOtherSqlGenerator::new(ctx);

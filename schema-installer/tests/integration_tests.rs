@@ -8,8 +8,7 @@ use std::path::PathBuf;
 const SIMPLE_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <database xmlns="http://stano.com/database"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd"
-          version="1.0">
+          xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd">
     <table name="users">
         <columns>
             <column name="id" type="Sequence" required="true"/>

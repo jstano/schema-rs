@@ -1,6 +1,6 @@
-use schema_model::model::table::Table;
 use crate::common::generator_context::GeneratorContext;
 use crate::common::table_constraint_generator::{DefaultTableConstraintGenerator, TableConstraintGenerator};
+use schema_model::model::table::Table;
 
 pub struct PostgresTableConstraintGenerator {
     table_constraint_generator: DefaultTableConstraintGenerator,
@@ -35,7 +35,7 @@ mod tests {
             .add_constraint(Constraint::new("ck_total_positive", "check (total > 0)", DatabaseType::Postgresql))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresTableConstraintGenerator::new(ctx);
@@ -49,7 +49,7 @@ mod tests {
     fn no_constraints_when_table_has_none() {
         let table = TableBuilder::new(None::<&str>, "orders").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresTableConstraintGenerator::new(ctx);

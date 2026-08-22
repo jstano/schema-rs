@@ -271,7 +271,7 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     #[test]
@@ -312,7 +312,7 @@ mod tests {
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
 
         let generator = SqlServerTriggerGenerator::new(ctx);

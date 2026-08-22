@@ -1,31 +1,24 @@
 use crate::model::enum_type::EnumType;
 use crate::model::schema::Schema;
 use crate::model::table::Table;
-use crate::model::types::{BooleanMode, ForeignKeyMode, Version};
+use crate::model::types::{BooleanMode, ForeignKeyMode};
 
 #[derive(Debug, Default)]
 pub struct DatabaseModel {
-    version: Option<Version>,
     foreign_key_mode: ForeignKeyMode,
     boolean_mode: BooleanMode,
     schemas: Vec<Schema>,
 }
 
 impl DatabaseModel {
-    pub fn new(version: Option<Version>,
-               boolean_mode: BooleanMode,
+    pub fn new(boolean_mode: BooleanMode,
                foreign_key_mode: ForeignKeyMode,
                schemas: Vec<Schema>) -> Self {
         Self {
-            version,
             boolean_mode,
             foreign_key_mode,
             schemas,
         }
-    }
-
-    pub fn version(&self) -> Option<&Version> {
-        self.version.as_ref()
     }
 
     pub fn foreign_key_mode(&self) -> ForeignKeyMode {

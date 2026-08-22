@@ -1,11 +1,73 @@
 use schema_sql_generator::common::generator_type::GeneratorType;
 use std::collections::HashSet;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::migration::{compare_versions, compute_checksum, MigrationSource};
+use crate::migration::{Migration, MigrationSource, RESERVED_INSTALL_VERSION, compare_versions, compute_checksum};
+
+/// How often to re-check a colliding migration's status while waiting for whichever
+/// process is currently applying it to finish.
+const LOCK_POLL_INTERVAL: Duration = Duration::from_millis(500);
+/// How long to wait for a colliding migration to resolve before giving up. Mirrors
+/// Flyway's bounded lock-retry behavior rather than waiting forever for a process that
+/// may have crashed while holding the row.
+const LOCK_MAX_WAIT: Duration = Duration::from_secs(60);
+
+
+/// Outcome of claiming the "pending" slot for a migration version.
+enum Slot {
+    /// This process won the race and should execute the migration itself.
+    Owned(i64),
+    /// Another process already applied this version successfully while we were
+    /// waiting; nothing left for this process to do for it.
+    AlreadyApplied,
+}
+
+/// Claims the `"pending"` tracking row for `migration`, the single point of mutual
+/// exclusion between concurrent instances (enforced by the `UNIQUE (version)`
+/// constraint on `schema_migration`). If another process already holds it, this waits
+/// and watches that row rather than failing outright — matching Flyway's behavior of
+/// blocking a racing instance until the winner's run resolves, then either skipping
+/// (if it succeeded) or surfacing the failure (if it didn't).
+async fn wait_for_slot(
+    pool: &AnyPool,
+    migration: &Migration,
+    checksum: &str,
+    tool_version: &str,
+) -> Result<Slot, SchemaInstallerError> {
+    match pool
+        .insert_migration(&migration.version, &migration.script_path, checksum, 0, "pending", tool_version)
+        .await
+    {
+        Ok(id) => Ok(Slot::Owned(id)),
+        Err(SchemaInstallerError::ConcurrentMigrationDetected(version)) => {
+            let deadline = Instant::now() + LOCK_MAX_WAIT;
+            loop {
+                let applied = pool.get_applied_migrations().await?;
+                if let Some(existing) = applied.iter().find(|m| m.version == version) {
+                    match existing.status.as_str() {
+                        "success" => return Ok(Slot::AlreadyApplied),
+                        "failed" => {
+                            return Err(SchemaInstallerError::MigrationFailed {
+                                version: version.clone(),
+                                error: "a concurrent process already attempted this migration and it failed; run `repair` before retrying".to_string(),
+                            });
+                        }
+                        _ => {} // still "pending" elsewhere; keep waiting below
+                    }
+                }
+
+                if Instant::now() >= deadline {
+                    return Err(SchemaInstallerError::LockTimeout(version));
+                }
+                tokio::time::sleep(LOCK_POLL_INTERVAL).await;
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
 
 pub struct Migrator;
 
@@ -29,11 +91,15 @@ impl Migrator {
         let source_migrations = source.migrations()?;
 
         for applied_migration in &applied {
-            if applied_migration.status == "success"
-                && let Some(source_migration) = source_migrations
-                    .iter()
-                    .find(|m| m.version == applied_migration.version)
-                {
+            if applied_migration.status != "success" {
+                continue;
+            }
+
+            match source_migrations
+                .iter()
+                .find(|m| m.version == applied_migration.version)
+            {
+                Some(source_migration) => {
                     let checksum = compute_checksum(&source_migration.sql);
                     if checksum != applied_migration.checksum {
                         return Err(SchemaInstallerError::ChecksumMismatch {
@@ -43,6 +109,20 @@ impl Migrator {
                         });
                     }
                 }
+                // The legacy XML `install` command's reserved tracking row never
+                // corresponds to a real migration file; see RESERVED_INSTALL_VERSION.
+                None if applied_migration.version == RESERVED_INSTALL_VERSION => {}
+                None => {
+                    // Same drift `validate` catches: an applied migration whose file was
+                    // since deleted or renamed. Caught here too so it blocks `migrate`
+                    // automatically, matching Flyway's validateOnMigrate default instead
+                    // of only surfacing when someone thinks to run `validate` by hand.
+                    return Err(SchemaInstallerError::MissingMigrationSource {
+                        version: applied_migration.version.clone(),
+                        script_path: applied_migration.script_path.clone(),
+                    });
+                }
+            }
         }
 
         let mut migrations = source_migrations;
@@ -53,20 +133,37 @@ impl Migrator {
             return Ok(());
         }
 
+        // Refuse to apply a migration older than the highest version already applied,
+        // the same way Flyway errors by default (`outOfOrder=false`) rather than
+        // silently running it against a schema state it was never designed for - e.g. a
+        // branch's migration merged after a later-numbered one already dropped a table
+        // it depends on.
+        if let Some(highest_applied) = applied_versions.iter().max_by(|a, b| compare_versions(a, b))
+            && let Some(out_of_order) = migrations
+                .iter()
+                .find(|m| compare_versions(&m.version, highest_applied) == std::cmp::Ordering::Less)
+        {
+            return Err(SchemaInstallerError::OutOfOrderMigration {
+                version: out_of_order.version.clone(),
+                description: out_of_order.description.clone(),
+                highest_applied: highest_applied.clone(),
+            });
+        }
+
         let tool_version = env!("CARGO_PKG_VERSION");
 
         for migration in migrations {
             let checksum = compute_checksum(&migration.sql);
-            let migration_id = pool
-                .insert_migration(
-                    &migration.version,
-                    &migration.script_path,
-                    &checksum,
-                    0,
-                    "pending",
-                    tool_version,
-                )
-                .await?;
+            let migration_id = match wait_for_slot(&pool, &migration, &checksum, tool_version).await? {
+                Slot::Owned(id) => id,
+                Slot::AlreadyApplied => {
+                    println!(
+                        "Migration {} - {} was already applied by another process; skipping",
+                        migration.version, migration.description
+                    );
+                    continue;
+                }
+            };
 
             let start = Instant::now();
             match execute_migration(&pool, &config.database_type, &migration.sql).await {
@@ -162,40 +259,49 @@ impl Migrator {
         let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;
 
-        let mut mismatches = Vec::new();
+        let mut issue_count = 0usize;
 
-        for applied_migration in applied {
+        for applied_migration in &applied {
             if applied_migration.status != "success" {
                 continue;
             }
 
-            if let Some(source_migration) = source_migrations
+            match source_migrations
                 .iter()
                 .find(|m| m.version == applied_migration.version)
             {
-                let checksum = compute_checksum(&source_migration.sql);
-                if checksum != applied_migration.checksum {
-                    mismatches.push((
-                        applied_migration.version.clone(),
-                        applied_migration.checksum.clone(),
-                        checksum,
-                    ));
+                Some(source_migration) => {
+                    let checksum = compute_checksum(&source_migration.sql);
+                    if checksum != applied_migration.checksum {
+                        issue_count += 1;
+                        eprintln!(
+                            "Checksum mismatch for version {}: expected {}, found {}",
+                            applied_migration.version, applied_migration.checksum, checksum
+                        );
+                    }
+                }
+                // The reserved `install_version` used by the legacy XML `install` command
+                // (see installer.rs) never corresponds to a real migration file, so it's
+                // exempt from the missing-source check below.
+                None if applied_migration.version == RESERVED_INSTALL_VERSION => {}
+                None => {
+                    issue_count += 1;
+                    eprintln!(
+                        "{}",
+                        SchemaInstallerError::MissingMigrationSource {
+                            version: applied_migration.version.clone(),
+                            script_path: applied_migration.script_path.clone(),
+                        }
+                    );
                 }
             }
         }
 
-        if !mismatches.is_empty() {
-            for (version, expected, found) in mismatches {
-                eprintln!(
-                    "Checksum mismatch for version {}: expected {}, found {}",
-                    version, expected, found
-                );
-            }
-            return Err(SchemaInstallerError::ChecksumMismatch {
-                version: "unknown".to_string(),
-                expected: "see above".to_string(),
-                found: "see above".to_string(),
-            });
+        if issue_count > 0 {
+            return Err(SchemaInstallerError::ValidationFailed(format!(
+                "{} validation issue(s) found; see above for details",
+                issue_count
+            )));
         }
 
         println!("All migrations validated successfully");
@@ -269,9 +375,8 @@ async fn execute_migration(
     database_type: &GeneratorType,
     sql: &str,
 ) -> Result<(), SchemaInstallerError> {
-    for statement in crate::sql_split::split_sql_statements(sql, database_type) {
-        pool.execute_sql(&statement).await?;
-    }
-
-    Ok(())
+    let statements = crate::sql_split::split_sql_statements(sql, database_type);
+    // All statements in a migration file commit or roll back together, so a failure
+    // partway through never leaves earlier statements permanently applied.
+    pool.execute_transactional(&statements).await
 }

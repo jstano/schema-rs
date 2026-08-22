@@ -3,9 +3,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename = "database")]
 pub struct DatabaseXml {
-    #[serde(rename = "@version")]
-    pub version: Option<String>,
-
     #[serde(rename = "@foreignKeyMode")]
     pub foreign_key_mode: Option<String>,
 

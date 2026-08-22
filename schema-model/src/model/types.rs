@@ -146,8 +146,6 @@ impl FromStr for LockEscalation {
     }
 }
 
-// Re-export Version so external crates can access it via model::types
-pub use crate::model::version::Version;
 use std::str::FromStr;
 
 #[cfg(test)]

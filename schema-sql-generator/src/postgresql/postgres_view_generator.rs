@@ -52,7 +52,7 @@ mod tests {
     fn output_views_renders_create_or_replace_view() {
         let view = View::new(Some("app"), "active_users", "select * from users where active = true", None);
         let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Postgresql);
 
         let generator = PostgresViewGenerator::new(ctx);
@@ -67,7 +67,7 @@ mod tests {
     fn output_views_uses_public_schema_when_none_specified() {
         let view = View::new(Option::<&str>::None, "active_users", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Postgresql);
 
         let generator = PostgresViewGenerator::new(ctx);
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn output_views_does_nothing_when_no_views() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Postgresql);
 
         let generator = PostgresViewGenerator::new(ctx);

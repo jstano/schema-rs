@@ -204,7 +204,7 @@ mod tests {
             .add_initial_data(InitialData::new("insert into users values (3)", Some(DatabaseType::Postgresql)))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);
@@ -220,7 +220,7 @@ mod tests {
     fn output_initial_data_writes_nothing_when_table_has_no_rows() {
         let table = TableBuilder::new(None::<&str>, "users").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);
@@ -235,7 +235,7 @@ mod tests {
             .add_initial_data(InitialData::new("insert into users values (1)", None))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);

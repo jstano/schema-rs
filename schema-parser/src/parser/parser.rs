@@ -22,9 +22,6 @@ mod tests {
         let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml")
             .expect("resource present");
         let database = parse_database_xml(xml.as_str()).expect("parse ok");
-        let version = database.version().unwrap();
-        assert_eq!(version.major_version(), 1);
-        assert_eq!(version.minor_version(), 2);
         let schemas = database.schemas();
         assert_eq!(schemas.len(), 2);
         let default_schema = &schemas[0];

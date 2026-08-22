@@ -307,7 +307,7 @@ mod tests {
             .add_view(View::new(None::<&str>, "v1", "select 1", Some(DatabaseType::Postgresql)))
             .build();
 
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model);
 
         assert!(xml.contains("<database xmlns=\"http://stano.com/database\""));
@@ -324,7 +324,7 @@ mod tests {
             .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model);
         assert!(!xml.contains("<keys>"));
     }

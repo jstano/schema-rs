@@ -76,7 +76,7 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
 
     let schema = schema_builder.build();
 
-    Ok(DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]))
+    Ok(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]))
 }
 
 fn build_key(key_type: KeyType, columns: Vec<String>) -> schema_model::model::key::Key {

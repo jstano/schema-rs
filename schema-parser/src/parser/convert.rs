@@ -5,7 +5,7 @@ use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
 use schema_model::model::types::{
-    BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder, Version,
+    BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder,
 };
 use schema_model::model::view::View;
 use schema_model::model::{
@@ -29,7 +29,6 @@ pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
         }
     }
 
-    let version = database_xml.version.as_deref().map(Version::parse);
     let boolean_mode = database_xml
         .boolean_mode
         .as_deref()
@@ -43,7 +42,7 @@ pub fn convert_database(database_xml: DatabaseXml) -> DatabaseModel {
         .unwrap_or(Ok(ForeignKeyMode::Relations))
         .unwrap();
 
-    let mut database_model = DatabaseModel::new(version, boolean_mode, foreign_key_mode, schemas);
+    let mut database_model = DatabaseModel::new(boolean_mode, foreign_key_mode, schemas);
 
     database_model.sort_tables_by_name();
     reverse_relations(&mut database_model);

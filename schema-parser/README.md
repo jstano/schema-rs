@@ -35,7 +35,7 @@ A minimal example:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<database xmlns="http://stano.com/database" version="1.0">
+<database xmlns="http://stano.com/database">
   <table name="users">
     <columns>
       <column name="id" type="sequence" required="true"/>

@@ -36,11 +36,6 @@ impl SchemaInstaller {
         let database_model = parse_database_xml(&schema_content)
             .map_err(SchemaInstallerError::Parse)?;
 
-        // Get schema version
-        let version = database_model.version()
-            .map(|v| format!("{}.{}.{}", v.major_version(), v.minor_version(), v.patch_version()))
-            .unwrap_or_else(|| "1.0.0".to_string());
-
         // Generate SQL by writing to temp file
         // (PrintWriter's BufWriter makes it difficult to extract bytes in memory)
         let nanos = std::time::SystemTime::now()
@@ -72,7 +67,7 @@ impl SchemaInstaller {
 
         // Record migration under a fixed, reserved version so it can never collide
         // with real migration versions (which start at V1+).
-        let install_version = "0";
+        let install_version = crate::migration::RESERVED_INSTALL_VERSION;
         let script_name = "V0__install_schema.sql";
         let checksum = crate::migration::compute_checksum(&sql);
         let tool_version = env!("CARGO_PKG_VERSION");
@@ -88,7 +83,7 @@ impl SchemaInstaller {
                 let elapsed_ms = start.elapsed().as_millis() as i64;
                 pool.update_migration_status(migration_id, "success", elapsed_ms)
                     .await?;
-                println!("Schema installed successfully. Version: {}", version);
+                println!("Schema installed successfully.");
                 Ok(())
             }
             Err(e) => {

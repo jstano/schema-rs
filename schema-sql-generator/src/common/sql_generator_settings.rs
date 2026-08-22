@@ -82,7 +82,7 @@ mod tests {
     fn statement_separator_matches_database_type_per_dialect() {
         // Postgres and SQLite batch statements with ";"; SQL Server uses "GO" batches.
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             std::rc::Rc::new(model),
             std::rc::Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),

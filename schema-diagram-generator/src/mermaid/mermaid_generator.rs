@@ -1,8 +1,8 @@
-use std::rc::Rc;
-use schema_model::model::database_model::DatabaseModel;
-use schema_model::model::types::RelationType;
 use crate::common::column_type_label::column_type_label;
 use crate::common::diagram_generator::DiagramGenerator;
+use schema_model::model::database_model::DatabaseModel;
+use schema_model::model::types::RelationType;
+use std::rc::Rc;
 
 pub struct MermaidERDiagramGenerator {
     database_model: Rc<DatabaseModel>,
@@ -71,12 +71,12 @@ impl DiagramGenerator for MermaidERDiagramGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::rc::Rc;
     use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
     use schema_model::model::column_type::ColumnType;
     use schema_model::model::database_model::DatabaseModel;
     use schema_model::model::relation::Relation;
     use schema_model::model::types::{BooleanMode, ForeignKeyMode, KeyType, RelationType};
+    use std::rc::Rc;
 
     fn build_test_model() -> DatabaseModel {
         let customer_table = TableBuilder::new(None::<&str>, "customer")
@@ -124,7 +124,7 @@ mod tests {
             .add_table(order_table)
             .build();
 
-        DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
     }
 
     #[test]

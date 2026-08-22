@@ -178,6 +178,7 @@ mod tests {
     use crate::common::generate_options::GenerateOptions;
     use crate::common::index_generator::IndexGenerator;
     use crate::common::other_sql_generator::OtherSqlGenerator;
+    use crate::common::output_mode::OutputMode;
     use crate::common::print_writer::PrintWriter;
     use crate::common::procedure_generator::ProcedureGenerator;
     use crate::common::relation_generator::RelationGenerator;
@@ -190,7 +191,6 @@ mod tests {
     use schema_model::model::database_model::DatabaseModel;
     use schema_model::model::key::Key;
     use schema_model::model::table::Table;
-    use crate::common::output_mode::OutputMode;
     use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -267,7 +267,7 @@ mod tests {
     ) -> (DefaultSqlGenerator, CallLog) {
         let log = CallLog::default();
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let mut options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),

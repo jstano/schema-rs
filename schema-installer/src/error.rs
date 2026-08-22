@@ -35,4 +35,31 @@ pub enum SchemaInstallerError {
 
     #[error("Migration failed for version {version}: {error}")]
     MigrationFailed { version: String, error: String },
+
+    #[error(
+        "Concurrent migration detected for version {0}: another process has already applied or is currently applying it"
+    )]
+    ConcurrentMigrationDetected(String),
+
+    #[error(
+        "Timed out waiting for a concurrent process to finish applying migration {0}; it may have crashed while holding it"
+    )]
+    LockTimeout(String),
+
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+
+    #[error(
+        "Migration {version} (script {script_path}) was applied but its source file no longer exists in the migrations directory"
+    )]
+    MissingMigrationSource { version: String, script_path: String },
+
+    #[error(
+        "Out-of-order migration detected: {version} - {description} has not been applied, but version {highest_applied} has already been applied; refusing to apply it out of order"
+    )]
+    OutOfOrderMigration {
+        version: String,
+        description: String,
+        highest_applied: String,
+    },
 }

@@ -41,7 +41,7 @@ mod tests {
                 Procedure::new(None::<&str>, "pg_only", DatabaseType::Postgresql, "create procedure pg_only"),
             ])
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerProcedureGenerator::new(ctx);

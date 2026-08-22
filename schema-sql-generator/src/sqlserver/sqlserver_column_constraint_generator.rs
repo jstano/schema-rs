@@ -1,6 +1,6 @@
-use schema_model::model::table::Table;
 use crate::common::column_constraint_generator::{ColumnConstraintGenerator, DefaultColumnConstraintGenerator};
 use crate::common::generator_context::GeneratorContext;
+use schema_model::model::table::Table;
 
 pub struct SqlServerColumnConstraintGenerator {
     column_constraint_generator: DefaultColumnConstraintGenerator,
@@ -41,7 +41,7 @@ mod tests {
             )
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerColumnConstraintGenerator::new(ctx);
@@ -68,7 +68,7 @@ mod tests {
             .add_table(table.clone())
             .add_enum_type(enum_type)
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerColumnConstraintGenerator::new(ctx);

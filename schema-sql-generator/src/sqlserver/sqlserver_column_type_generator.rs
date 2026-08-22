@@ -149,7 +149,7 @@ mod tests {
 
     fn make_context() -> (GeneratorContext, TableBuilder) {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let table = TableBuilder::new(None::<&str>, "test");
         let options = GenerateOptions::new(
             Rc::new(model),
@@ -231,7 +231,7 @@ mod tests {
             ],
         );
         let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
@@ -261,7 +261,7 @@ mod tests {
             ],
         );
         let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),

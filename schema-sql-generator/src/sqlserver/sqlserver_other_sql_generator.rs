@@ -44,7 +44,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Top, "select 1"))
             .add_other_sql(OtherSql::new(DatabaseType::SqlServer, OtherSqlOrder::Bottom, "update statistics"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerOtherSqlGenerator::new(ctx);
@@ -62,7 +62,7 @@ mod tests {
             .add_other_sql(OtherSql::new(DatabaseType::SqlServer, OtherSqlOrder::Bottom, "update statistics"))
             .add_other_sql(OtherSql::new(DatabaseType::SqlServer, OtherSqlOrder::Top, "set nocount on"))
             .build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerOtherSqlGenerator::new(ctx);

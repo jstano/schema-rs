@@ -54,7 +54,7 @@ mod tests {
     fn output_views_maps_public_schema_to_dbo() {
         let view = View::new(Some("public"), "active_users", "select * from users where active = 1", None);
         let schema = SchemaBuilder::new(Some("public")).add_view(view).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
@@ -71,7 +71,7 @@ mod tests {
     fn output_views_preserves_non_public_schema_name() {
         let view = View::new(Some("app"), "active_users", "select 1", None);
         let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
@@ -84,7 +84,7 @@ mod tests {
     fn output_views_uses_dbo_when_schema_is_none() {
         let view = View::new(Option::<&str>::None, "active_users", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn output_views_does_nothing_when_no_views() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(None, BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
