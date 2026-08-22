@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 authors = ["Jeff Stano <jeff@stano.com>"]
 description = "A set of tools to manage relational database schemas"
@@ -23,11 +23,11 @@ readme = "README.md"
 keywords = ["schema"]
 
 [workspace.dependencies]
-schema-diagram-generator = { version = "0.5.1", path = "schema-diagram-generator" }
-schema-diff = { version = "0.5.1", path = "schema-diff" }
-schema-installer = { version = "0.5.1", path = "schema-installer" }
-schema-migration-generator = { version = "0.5.1", path = "schema-migration-generator" }
-schema-model = { version = "0.5.1", path = "schema-model" }
-schema-parser = { version = "0.5.1", path = "schema-parser" }
-schema-reverse-engineer = { version = "0.5.1", path = "schema-reverse-engineer" }
-schema-sql-generator = { version = "0.5.1", path = "schema-sql-generator" }
+schema-diagram-generator = { version = "0.5.2", path = "schema-diagram-generator" }
+schema-diff = { version = "0.5.2", path = "schema-diff" }
+schema-installer = { version = "0.5.2", path = "schema-installer" }
+schema-migration-generator = { version = "0.5.2", path = "schema-migration-generator" }
+schema-model = { version = "0.5.2", path = "schema-model" }
+schema-parser = { version = "0.5.2", path = "schema-parser" }
+schema-reverse-engineer = { version = "0.5.2", path = "schema-reverse-engineer" }
+schema-sql-generator = { version = "0.5.2", path = "schema-sql-generator" }
