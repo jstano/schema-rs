@@ -47,11 +47,14 @@ impl DefaultKeyGenerator {
             return full_name.to_lowercase();
         }
 
-        // Truncate table name to fit within max_key_name_length
+        // Truncate table name to fit within max_key_name_length. Truncate by char, not
+        // byte index - a byte-index slice can land mid-character for any multi-byte
+        // UTF-8 table name (CJK, Cyrillic, emoji, ...) once it's long enough to need
+        // truncating, which panics ("byte index N is not a char boundary").
         let suffix_len = suffix_str.len();
         let prefix_len = prefix.len();
         let available = max_key_name_length.saturating_sub(prefix_len + suffix_len);
-        let truncated_table_name = &table_name[..available.min(table_name.len())];
+        let truncated_table_name: String = table_name.chars().take(available).collect();
 
         format!("{}{}{}", prefix, truncated_table_name, suffix_str).to_lowercase()
     }
@@ -306,6 +309,27 @@ mod tests {
                 let constraint_name = &ak_constraint[start + 11..end];
                 assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
             }
+    }
+
+    #[test]
+    fn constraint_name_truncates_multi_byte_table_name_without_panicking() {
+        // Regression test: byte-index slicing panics ("not a char boundary") on
+        // multi-byte UTF-8 once truncation kicks in; truncating by char must not.
+        let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
+        let long_table_name = "语".repeat(70);
+        let table = TableBuilder::new(None::<&str>, &long_table_name)
+            .add_key(pk)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultKeyGenerator::new(ctx);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(constraints.len(), 1);
+        assert!(constraints[0].contains("constraint pk_"));
     }
 
     #[test]

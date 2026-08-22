@@ -45,6 +45,31 @@ impl DefaultTableGenerator {
             context,
         }
     }
+
+    /// Same as `output_table_definition`, but appends `extra` definition clauses
+    /// (e.g. dialect-specific inline foreign key constraints) to the comma-separated
+    /// list before printing.
+    pub fn output_table_definition_with_extra(&self, table: &Table, extra: Vec<String>) {
+        let table_definitions: Vec<String> = self.column_generator.column_definitions(table)
+            .into_iter()
+            .chain(self.key_generator.key_constraints(table))
+            .chain(self.column_constraint_generator.column_check_constraints(table))
+            .chain(self.table_constraint_generator.table_check_constraints(table))
+            .chain(extra)
+            .collect();
+
+        self.context.with_writer(|writer| {
+            for (i, sql) in table_definitions.iter().enumerate() {
+                sql_print!(writer, "{}", sql);
+
+                if i < table_definitions.len() - 1 {
+                    sql_print!(writer, ",");
+                }
+
+                sql_newline!(writer);
+            }
+        });
+    }
 }
 
 impl TableGenerator for DefaultTableGenerator {
@@ -88,24 +113,7 @@ impl TableGenerator for DefaultTableGenerator {
     }
 
     fn output_table_definition(&self, table: &Table) {
-        let table_definitions: Vec<String> = self.column_generator.column_definitions(table)
-            .into_iter()
-            .chain(self.key_generator.key_constraints(table))
-            .chain(self.column_constraint_generator.column_check_constraints(table))
-            .chain(self.table_constraint_generator.table_check_constraints(table))
-            .collect();
-
-        self.context.with_writer(|writer| {
-            for (i, sql) in table_definitions.iter().enumerate() {
-                sql_print!(writer, "{}", sql);
-
-                if i < table_definitions.len() - 1 {
-                    sql_print!(writer, ",");
-                }
-
-                sql_newline!(writer);
-            }
-        });
+        self.output_table_definition_with_extra(table, Vec::new());
     }
 
     fn output_table_footer(&self, _table: &Table) {

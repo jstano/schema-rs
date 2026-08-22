@@ -1,5 +1,6 @@
 use crate::common::function_generator::{DefaultFunctionGenerator, FunctionGenerator};
 use crate::common::generator_context::GeneratorContext;
+use crate::common::sql_string::escape_sql_literal;
 use crate::common::sql_writer::SqlWriter;
 use schema_model::model::function::Function;
 
@@ -17,7 +18,11 @@ impl SqlServerFunctionGenerator {
 
 impl FunctionGenerator for SqlServerFunctionGenerator {
     fn output_functions(&self) {
-        self.function_generator.output_functions();
+        // Route through `output_functions_via(self)` rather than
+        // `self.function_generator.output_functions()`: the latter dispatches each
+        // function statically on the inner `DefaultFunctionGenerator`, which never sees
+        // this struct's `output_function` override (the drop-if-exists guard below).
+        self.function_generator.output_functions_via(self);
     }
 
     fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
@@ -29,7 +34,11 @@ impl FunctionGenerator for SqlServerFunctionGenerator {
         };
         let fully_qualified_name = format!("{}.{}", schema_name, function_name);
 
-        writer.println(format!("if exists (select * from dbo.sysobjects where id = object_id(N'[{}].[{}]') and objectproperty(id, N'IsScalarFunction') = 1)", schema_name, function_name).as_str());
+        writer.println(format!(
+            "if exists (select * from dbo.sysobjects where id = object_id(N'[{}].[{}]') and objectproperty(id, N'IsScalarFunction') = 1)",
+            escape_sql_literal(schema_name),
+            escape_sql_literal(function_name)
+        ).as_str());
         writer.print(format!("drop function {}", fully_qualified_name).as_str());
         writer.println(statement_separator);
         writer.print(function.sql());
@@ -48,9 +57,6 @@ mod tests {
 
     #[test]
     fn output_function_renders_drop_if_exists_guard() {
-        // Exercises SqlServerFunctionGenerator::output_function directly, since the normal
-        // pipeline entry point (output_functions) does NOT reach this override: see the
-        // dispatch-bug test below.
         let schema = SchemaBuilder::new(None::<&str>).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
@@ -94,12 +100,33 @@ mod tests {
     }
 
     #[test]
-    fn output_functions_does_not_apply_the_drop_if_exists_override_due_to_static_dispatch() {
-        // BUG: DefaultFunctionGenerator::output_functions() calls `self.output_function(...)`
-        // on itself (a concrete DefaultFunctionGenerator), not through the FunctionGenerator
-        // trait object, so SqlServerFunctionGenerator's drop-if-exists override above is never
-        // reached through the real output_functions() pipeline entry point. This test documents
-        // the current (buggy) behavior so a future fix is a visible, intentional test change.
+    fn output_function_escapes_single_quote_in_function_name() {
+        // Regression test: an unescaped embedded quote would break the generated
+        // sysobjects existence-check SQL string literal.
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+        let function = Function::new(
+            None::<&str>,
+            "o'brien",
+            DatabaseType::SqlServer,
+            "create function dbo.[o'brien]() returns int as begin return 1 end",
+        );
+
+        let generator = SqlServerFunctionGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_function(writer, ";", &function);
+        });
+
+        let output = buffer.contents();
+        assert!(output.contains("object_id(N'[dbo].[o''brien]')"));
+    }
+
+    #[test]
+    fn output_functions_applies_the_drop_if_exists_override_through_the_real_pipeline() {
+        // Regression test: output_functions() (the real pipeline entry point) must route
+        // through SqlServerFunctionGenerator's output_function override, not silently fall
+        // back to DefaultFunctionGenerator's plain rendering via static dispatch.
         let schema = SchemaBuilder::new(None::<&str>)
             .add_functions(vec![Function::new(
                 None::<&str>,
@@ -116,6 +143,7 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("create function dbo.mssql_fn() returns int as begin return 1 end"));
-        assert!(!output.contains("drop function"), "if this now fails, the dispatch bug was fixed - update this test");
+        assert!(output.contains("drop function dbo.mssql_fn"));
+        assert!(output.contains("if exists (select * from dbo.sysobjects"));
     }
 }

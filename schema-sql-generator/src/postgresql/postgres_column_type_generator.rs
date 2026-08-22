@@ -68,16 +68,30 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
     }
 
     fn array_sql(&self, column: &Column) -> String {
-        match column.column_type() {
-            ColumnType::Byte => {self.byte_sql() + "[]"}
-            ColumnType::Short => {self.short_sql() + "[]"}
-            ColumnType::Int => {self.int_sql() + "[]"}
-            ColumnType::Long => {self.long_sql() + "[]"}
-            ColumnType::Decimal => {self.decimal_sql(column) + "[]"}
-            ColumnType::Char => {self.char_sql(column) + "[]"}
-            ColumnType::Varchar => {self.varchar_sql(column) + "[]"}
-            ColumnType::Text => {self.text_sql(column) + "[]"}
-            other => panic!("Unsupported array type: {:?}", other)
+        let element_type_name = column.element_type().unwrap_or_else(|| {
+            panic!(
+                "Array column '{}' is missing an elementType.",
+                column.name()
+            )
+        });
+        let element_type = ColumnType::from_type_name(element_type_name).unwrap_or_else(|e| {
+            panic!(
+                "Array column '{}' has an invalid elementType: {}",
+                column.name(),
+                e
+            )
+        });
+
+        match element_type {
+            ColumnType::Byte => self.byte_sql() + "[]",
+            ColumnType::Short => self.short_sql() + "[]",
+            ColumnType::Int => self.int_sql() + "[]",
+            ColumnType::Long => self.long_sql() + "[]",
+            ColumnType::Decimal => self.decimal_sql(column) + "[]",
+            ColumnType::Char => self.char_sql(column) + "[]",
+            ColumnType::Varchar => self.varchar_sql(column) + "[]",
+            ColumnType::Text => self.text_sql(column) + "[]",
+            other => panic!("Unsupported array element type: {:?}", other),
         }
     }
 
@@ -197,5 +211,28 @@ mod tests {
     fn other_types() {
         assert_type(ColumnType::Boolean, "boolean");
         assert_type(ColumnType::Binary, "bytea");
+    }
+
+    #[test]
+    fn array_type_uses_element_type() {
+        let model = make_model_default();
+        let (ctx, table_builder) = make_context(model);
+        let generator = PostgresColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Array)
+            .element_type(Some("int".to_string()))
+            .build();
+        assert_eq!(generator.column_type_sql(&table, &col), "integer[]");
+    }
+
+    #[test]
+    #[should_panic(expected = "missing an elementType")]
+    fn array_type_without_element_type_panics() {
+        let model = make_model_default();
+        let (ctx, table_builder) = make_context(model);
+        let generator = PostgresColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Array).build();
+        generator.column_type_sql(&table, &col);
     }
 }

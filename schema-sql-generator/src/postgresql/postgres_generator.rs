@@ -1,5 +1,6 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::sql_generator::{DefaultSqlGenerator, SqlGenerator};
+use crate::common::sql_string::escape_sql_literal;
 use crate::postgresql::postgres_function_generator::PostgresFunctionGenerator;
 use crate::postgresql::postgres_index_generator::PostgresIndexGenerator;
 use crate::postgresql::postgres_other_sql_generator::PostgresOtherSqlGenerator;
@@ -66,7 +67,7 @@ impl PostgresGenerator {
     fn create_extensions(&self) {
         let separator = self.context.settings().statement_separator().to_string();
         let check_user = match self.context.settings().extension_check_user() {
-            Some(user) => format!("'{}'", user),
+            Some(user) => format!("'{}'", escape_sql_literal(user)),
             None => "CURRENT_USER".to_string(),
         };
 
@@ -95,7 +96,7 @@ impl PostgresGenerator {
                 let values = enum_type
                     .values()
                     .iter()
-                    .map(|v| format!("'{}'", v.code()))
+                    .map(|v| format!("'{}'", escape_sql_literal(v.code())))
                     .collect::<Vec<_>>()
                     .join(",");
 
@@ -313,5 +314,48 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("where usename = 'schema_admin'"));
         assert!(!output.contains("CURRENT_USER)"));
+    }
+
+    #[test]
+    fn output_header_escapes_single_quote_in_configured_extension_user() {
+        // Regression test: an unescaped embedded quote would break the generated SQL
+        // string literal (or worse, let the value's content escape it).
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let buffer = SharedBuffer::new();
+        let mut options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        );
+        options.target_postgres_version = 18;
+        options.extension_check_user = Some("o'brien".to_string());
+        let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        let ctx = GeneratorContext::new(settings, writer);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("where usename = 'o''brien'"));
+    }
+
+    #[test]
+    fn output_header_escapes_single_quote_in_enum_value_code() {
+        // Regression test: an unescaped embedded quote in an enum value's code would
+        // break the generated `create type ... as enum (...)` statement.
+        let enum_type = EnumType::new(
+            "status_type",
+            vec![EnumValue::new("PRIME", Some("O'Brien".to_string()))],
+        );
+        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create type status_type as enum ('O''Brien')"));
     }
 }

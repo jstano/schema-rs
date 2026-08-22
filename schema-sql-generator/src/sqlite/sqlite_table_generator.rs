@@ -4,11 +4,13 @@ use crate::sqlite::sqlite_column_constraint_generator::SqliteColumnConstraintGen
 use crate::sqlite::sqlite_column_generator::SqliteColumnGenerator;
 use crate::sqlite::sqlite_index_generator::SqliteIndexGenerator;
 use crate::sqlite::sqlite_key_generator::SqliteKeyGenerator;
+use crate::sqlite::sqlite_relation_generator::SqliteRelationGenerator;
 use crate::sqlite::sqlite_table_constraint_generator::SqliteTableConstraintGenerator;
 use schema_model::model::table::Table;
 
 pub struct SqliteTableGenerator {
     table_generator: DefaultTableGenerator,
+    relation_generator: SqliteRelationGenerator,
 }
 
 impl SqliteTableGenerator {
@@ -22,6 +24,7 @@ impl SqliteTableGenerator {
                 Box::new(SqliteTableConstraintGenerator::new(context.clone())),
                 Box::new(SqliteIndexGenerator::new(context.clone())),
             ),
+            relation_generator: SqliteRelationGenerator::new(context.clone()),
         }
     }
 }
@@ -40,7 +43,11 @@ impl TableGenerator for SqliteTableGenerator {
     }
 
     fn output_table_definition(&self, table: &Table) {
-        self.table_generator.output_table_definition(table);
+        // SQLite has no `ALTER TABLE ... ADD CONSTRAINT` support, so foreign keys
+        // must be declared inline in the `CREATE TABLE` statement rather than as
+        // separate statements from the relation generator.
+        let inline_foreign_keys = self.relation_generator.inline_foreign_key_constraints(table);
+        self.table_generator.output_table_definition_with_extra(table, inline_foreign_keys);
     }
 
     fn output_table_footer(&self, table: &Table) {

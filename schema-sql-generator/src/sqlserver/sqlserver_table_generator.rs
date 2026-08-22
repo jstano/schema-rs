@@ -1,4 +1,5 @@
 use crate::common::generator_context::GeneratorContext;
+use crate::common::sql_string::escape_sql_literal;
 use crate::common::table_generator::{DefaultTableGenerator, TableGenerator};
 use crate::sql_println;
 use crate::sqlserver::sqlserver_column_constraint_generator::SqlServerColumnConstraintGenerator;
@@ -60,7 +61,7 @@ impl TableGenerator for SqlServerTableGenerator {
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {} */", table_name);
-            sql_println!(writer, "if exists (select name from dbo.sysobjects where name = '{}' and type = 'U')", table_name);
+            sql_println!(writer, "if exists (select name from dbo.sysobjects where name = '{}' and type = 'U')", escape_sql_literal(table_name));
             sql_println!(writer, "drop table {}{}", fully_qualified_table_name, separator);
             sql_println!(writer, "");
             sql_println!(writer, "create table {}", fully_qualified_table_name);
@@ -83,11 +84,12 @@ impl TableGenerator for SqlServerTableGenerator {
             LockEscalation::Table => "table",
         };
         let separator = self.context.settings().statement_separator();
+        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
         self.context.with_writer(|writer| {
             sql_println!(
                 writer,
                 "alter table {} set (lock_escalation = {}){}",
-                table.name(),
+                fully_qualified_table_name,
                 lock_escalation_value,
                 separator
             );
@@ -138,6 +140,22 @@ mod tests {
     }
 
     #[test]
+    fn output_table_header_escapes_single_quote_in_table_name() {
+        // Regression test: an unescaped embedded quote would break the generated
+        // sysobjects existence-check SQL string literal.
+        let table = TableBuilder::new(None::<&str>, "o'brien").build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerTableGenerator::new(ctx);
+        generator.output_table_header(&table);
+
+        let output = buffer.contents();
+        assert!(output.contains("where name = 'o''brien' and type = 'U'"));
+    }
+
+    #[test]
     fn output_table_footer_emits_lock_escalation_when_table() {
         let table = TableBuilder::new(None::<&str>, "users")
             .lock_escalation(LockEscalation::Table)
@@ -149,7 +167,7 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table users set (lock_escalation = table)\nGO"));
+        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = table)\nGO"));
     }
 
     #[test]
@@ -164,7 +182,7 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table users set (lock_escalation = auto)\nGO"));
+        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = auto)\nGO"));
     }
 
     #[test]
@@ -179,6 +197,26 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table users set (lock_escalation = disable)\nGO"));
+        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = disable)\nGO"));
+    }
+
+    #[test]
+    fn output_table_footer_qualifies_lock_escalation_with_non_default_schema() {
+        // Regression test: the lock_escalation ALTER used the bare table name while every
+        // other statement for the table (create/drop/sysobjects check) used the fully
+        // qualified name - for a non-default schema this would alter the wrong object
+        // (SQL Server resolves an unqualified name via the connection's default schema,
+        // not necessarily the table's declared schema).
+        let table = TableBuilder::new(Some("app"), "orders")
+            .lock_escalation(LockEscalation::Table)
+            .build();
+        let schema = SchemaBuilder::new(Some("app")).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerTableGenerator::new(ctx);
+        generator.output_table_footer(&table);
+
+        assert!(buffer.contents().contains("alter table app.orders set (lock_escalation = table)\nGO"));
     }
 }

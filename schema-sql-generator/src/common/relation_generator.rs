@@ -27,23 +27,35 @@ impl DefaultRelationGenerator {
     }
 
     fn output_relation_for_table(&self, writer: &mut SqlWriter, table: &Table) {
-        let database_type = self.context.settings().database_type();
         let database_model = self.context.settings().database_model();
+
+        for (relation_index, relation) in table.relations().iter().enumerate() {
+            let relation_name = self.relation_constraint_name(table, relation_index);
+            self.output_relation(writer, &relation_name, database_model, table, relation);
+        }
+    }
+
+    /// Builds the constraint name for the given relation, truncating the table-name
+    /// portion so the identifier stays within the target database's max key name length.
+    pub fn relation_constraint_name(&self, table: &Table, relation_index: usize) -> String {
+        let database_type = self.context.settings().database_type();
         let max_key_name_length = database_type.max_key_name_length();
         let table_name = table.name();
-        let relations = table.relations();
+        let suffix_str = (relation_index + 1).to_string();
+        let mut relation_name = format!("{}{}{}", FK_PREFIX, table_name, suffix_str);
 
-        for (relation_index, relation) in relations.iter().enumerate() {
-            let mut relation_name = format!("{}{}{}", FK_PREFIX, table_name, relation_index + 1);
-
-            if relation_name.len() > max_key_name_length {
-                let truncated_table_name_len = max_key_name_length - FK_PREFIX.len() - 1; // leave space for the index
-                let truncated_table_name = &table_name[..truncated_table_name_len.min(table_name.len())];
-                relation_name = format!("{}{}{}", FK_PREFIX, truncated_table_name, relation_index + 1);
-            }
-
-            self.output_relation(writer, &relation_name.to_lowercase(), database_model, table, relation);
+        if relation_name.len() > max_key_name_length {
+            // Reserve space for the *actual* suffix length, not a hard-coded single
+            // digit - a table with >=10 relations needs a 2-digit suffix, and reserving
+            // only 1 char for it would produce an identifier over the length limit.
+            // Truncate by char, not byte index, so multi-byte UTF-8 table names don't
+            // panic ("byte index N is not a char boundary").
+            let available = max_key_name_length.saturating_sub(FK_PREFIX.len() + suffix_str.len());
+            let truncated_table_name: String = table_name.chars().take(available).collect();
+            relation_name = format!("{}{}{}", FK_PREFIX, truncated_table_name, suffix_str);
         }
+
+        relation_name.to_lowercase()
     }
 
     fn output_relation(&self,
@@ -70,7 +82,7 @@ impl DefaultRelationGenerator {
         writer.println(self.context().settings().statement_separator());
     }
 
-    fn relation_operation_type(&self, relation_type: RelationType) -> &str {
+    pub fn relation_operation_type(&self, relation_type: RelationType) -> &str {
         match relation_type {
             RelationType::Cascade => {"cascade"}
             RelationType::Enforce => {"no action"}
@@ -138,5 +150,42 @@ mod tests {
         let constraint_start = output.find("add constraint ").unwrap() + "add constraint ".len();
         let constraint_name = &output[constraint_start..].split_whitespace().next().unwrap();
         assert!(constraint_name.len() <= 63, "constraint name '{}' exceeds postgres's 63 char limit", constraint_name);
+    }
+
+    #[test]
+    fn relation_constraint_name_truncates_multi_byte_table_name_without_panicking() {
+        // Regression test: byte-index slicing panics ("not a char boundary") on
+        // multi-byte UTF-8 once truncation kicks in; truncating by char must not.
+        let long_table_name = "语".repeat(70);
+        let table = TableBuilder::new(None::<&str>, long_table_name.as_str()).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultRelationGenerator::new(ctx);
+        let name = generator.relation_constraint_name(&table, 0);
+        assert!(name.starts_with("fk_"));
+        // max_key_name_length is a character budget (SQL Server identifiers are
+        // nvarchar), not a byte budget, so compare char count, not `str::len()` (bytes)
+        // - which would always be inflated for multi-byte UTF-8 like "语".
+        assert!(name.chars().count() <= 32);
+    }
+
+    #[test]
+    fn relation_constraint_name_stays_within_limit_for_double_digit_relation_index() {
+        // Regression test: reserving only 1 char for the suffix (instead of measuring
+        // its actual length) produced a 33-char identifier here, one over SQL Server's
+        // 32-char limit, once the relation index reaches double digits.
+        let long_table_name = "a".repeat(40);
+        let table = TableBuilder::new(None::<&str>, long_table_name.as_str()).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultRelationGenerator::new(ctx);
+        // relation_index 9 -> suffix "10" (double digit)
+        let name = generator.relation_constraint_name(&table, 9);
+        assert!(name.ends_with("10"));
+        assert!(name.len() <= 32, "constraint name '{}' exceeds SQL Server's 32 char limit", name);
     }
 }

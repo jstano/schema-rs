@@ -420,3 +420,236 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
         result
     );
 }
+
+#[tokio::test]
+async fn test_sqlite_migrate_applies_embedded_migrations_in_version_order_not_source_order() {
+    // Regression test: EmbeddedMigrationSource returns migrations in whatever order the
+    // caller supplied (unlike DirectoryMigrationSource, which sorts internally), so
+    // `migrate` itself must sort by version before applying. V2 depends on the table V1
+    // creates; if migrate() applied them in the given (reversed) order, V2 would fail
+    // with "no such table: widgets".
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_unsorted_embedded.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets".to_string(),
+        script_path: "V1__create_widgets.sql".to_string(),
+        sql: "create table widgets (id integer primary key);".to_string(),
+    };
+    let migration_two = Migration {
+        version: "2".to_string(),
+        description: "add widgets column".to_string(),
+        script_path: "V2__add_widgets_column.sql".to_string(),
+        sql: "alter table widgets add column extra text;".to_string(),
+    };
+
+    // Deliberately supplied out of version order.
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_two, migration_one],
+    });
+
+    Migrator::migrate(&config, source)
+        .await
+        .expect("migrate should sort by version and apply V1 before V2");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify schema");
+    let row = sqlx::query("SELECT COUNT(*) as count FROM pragma_table_info('widgets') WHERE name = 'extra'")
+        .fetch_one(&check_pool)
+        .await
+        .expect("query pragma_table_info");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 1, "widgets.extra should exist once both migrations applied in order");
+}
+
+#[tokio::test]
+async fn test_sqlite_repair_removes_stale_pending_migrations() {
+    // Simulates a process that crashed mid-migration: a "pending" row is left behind
+    // with no corresponding process left to ever mark it "success" or "failed". Without
+    // repair cleaning it up, every future migrate() call would wait out the lock-timeout
+    // and fail, forever.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_repair_stale_pending.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    let id = pool
+        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .await
+        .expect("insert pending row");
+
+    // Back-date it well past repair's staleness threshold.
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to backdate row");
+    sqlx::query("UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?")
+        .bind(id)
+        .execute(&check_pool)
+        .await
+        .expect("backdate installed_at");
+
+    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    Migrator::repair(&config, empty_source)
+        .await
+        .expect("repair should succeed");
+
+    let row = sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
+        .fetch_one(&check_pool)
+        .await
+        .expect("query schema_migration");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 0, "repair should have deleted the stale pending row");
+}
+
+#[tokio::test]
+async fn test_sqlite_repair_keeps_recent_pending_migrations() {
+    // A "pending" row inserted moments ago could still belong to a process that's
+    // legitimately mid-migration right now; repair must not delete it out from under
+    // that process just because *some* pending row happened to exist.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_repair_recent_pending.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    pool.insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .await
+        .expect("insert pending row");
+
+    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    Migrator::repair(&config, empty_source)
+        .await
+        .expect("repair should succeed");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify row survives");
+    let row = sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
+        .fetch_one(&check_pool)
+        .await
+        .expect("query schema_migration");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 1, "repair should not delete a recently-inserted pending row");
+}
+
+#[tokio::test]
+async fn test_sqlite_info_reports_no_migrations_on_a_fresh_database() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_info_fresh.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    Migrator::info(&config, empty_source)
+        .await
+        .expect("info should succeed against a fresh database with no migrations");
+}
+
+#[tokio::test]
+async fn test_sqlite_info_lists_applied_and_pending_migrations() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_info_mixed.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets".to_string(),
+        script_path: "V1__create_widgets.sql".to_string(),
+        sql: "create table widgets (id integer primary key);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource { migrations: vec![migration_one.clone()] });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("migration should succeed");
+
+    let migration_two = Migration {
+        version: "2".to_string(),
+        description: "add widgets column".to_string(),
+        script_path: "V2__add_widgets_column.sql".to_string(),
+        sql: "alter table widgets add column extra text;".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one, migration_two],
+    });
+    Migrator::info(&config, source)
+        .await
+        .expect("info should succeed and list both the applied and pending migration");
+}
+
+#[tokio::test]
+async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gone() {
+    // Regression test: if a migration's tracking row disappears out from under a
+    // still-running migration (e.g. a concurrent `repair()` deleted a stale-looking but
+    // actually-still-in-progress "pending" row), recording its completion must surface
+    // as a loud error rather than silently succeeding with the migration's completion
+    // never actually recorded.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_update_status_missing_row.db");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    let id = pool
+        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .await
+        .expect("insert pending row");
+
+    // Simulate the row being removed out from under the in-progress migration.
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to delete row");
+    sqlx::query("DELETE FROM schema_migration WHERE id = ?")
+        .bind(id)
+        .execute(&check_pool)
+        .await
+        .expect("delete tracking row");
+
+    let result = pool.update_migration_status(id, "success", 100).await;
+    assert!(
+        result.is_err(),
+        "update_migration_status should error when its tracking row no longer exists"
+    );
+}

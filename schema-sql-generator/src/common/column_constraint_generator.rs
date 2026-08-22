@@ -1,5 +1,6 @@
 use crate::common::constraint_naming;
 use crate::common::generator_context::GeneratorContext;
+use crate::common::sql_string::escape_sql_literal;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::table::Table;
@@ -76,7 +77,7 @@ impl DefaultColumnConstraintGenerator {
 
         let joined_values = enum_values
             .iter()
-            .map(|value| format!("'{}'", value.code()))
+            .map(|value| format!("'{}'", escape_sql_literal(value.code())))
             .collect::<Vec<_>>()
             .join(",");
 

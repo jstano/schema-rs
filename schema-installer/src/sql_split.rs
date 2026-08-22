@@ -164,20 +164,139 @@ fn try_match_dollar_tag_close(chars: &[char], pos: usize, tag: &str) -> Option<u
     }
 }
 
-/// SQL Server batch splitter: splits on lines that consist solely of the
-/// token `GO` (case-insensitive), ignoring surrounding whitespace.
+enum GoState {
+    Normal,
+    SingleQuote,
+    DoubleQuote,
+    LineComment,
+    BlockComment,
+}
+
+/// SQL Server batch splitter: splits on lines that consist solely of the token `GO`
+/// (case-insensitive), ignoring surrounding whitespace - but, like `split_on_semicolons`,
+/// tracks quote/comment state across the whole script first, so a `GO`-only line that's
+/// actually inside a multi-line string literal or block comment is never mistaken for a
+/// real batch separator.
 fn split_on_go_batches(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let len = chars.len();
+
     let mut batches = Vec::new();
     let mut current = String::new();
+    let mut current_line = String::new();
+    let mut state = GoState::Normal;
+    // Whether the parser was in `Normal` state at the *start* of the line now being
+    // scanned - only a line that starts and ends in `Normal` state can possibly be a
+    // real top-level `GO` separator.
+    let mut line_start_in_normal = true;
 
-    for line in sql.lines() {
-        if is_go_batch_separator(line) {
-            batches.push(std::mem::take(&mut current));
+    let finish_line = |batches: &mut Vec<String>, current: &mut String, current_line: &mut String, line_start_in_normal: bool| {
+        if line_start_in_normal && is_go_batch_separator(current_line) {
+            batches.push(std::mem::take(current));
         } else {
-            current.push_str(line);
+            current.push_str(current_line);
             current.push('\n');
         }
+        current_line.clear();
+    };
+
+    let mut i = 0usize;
+    while i < len {
+        let c = chars[i];
+
+        match state {
+            GoState::Normal => {
+                if c == '\'' {
+                    state = GoState::SingleQuote;
+                    current_line.push(c);
+                    i += 1;
+                } else if c == '"' {
+                    state = GoState::DoubleQuote;
+                    current_line.push(c);
+                    i += 1;
+                } else if c == '-' && i + 1 < len && chars[i + 1] == '-' {
+                    state = GoState::LineComment;
+                    current_line.push_str("--");
+                    i += 2;
+                } else if c == '/' && i + 1 < len && chars[i + 1] == '*' {
+                    state = GoState::BlockComment;
+                    current_line.push_str("/*");
+                    i += 2;
+                } else if c == '\n' {
+                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    line_start_in_normal = true;
+                    i += 1;
+                } else {
+                    current_line.push(c);
+                    i += 1;
+                }
+            }
+            GoState::SingleQuote => {
+                if c == '\'' {
+                    if i + 1 < len && chars[i + 1] == '\'' {
+                        current_line.push_str("''");
+                        i += 2;
+                    } else {
+                        current_line.push(c);
+                        state = GoState::Normal;
+                        i += 1;
+                    }
+                } else if c == '\n' {
+                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    line_start_in_normal = false; // still inside the string on the next line
+                    i += 1;
+                } else {
+                    current_line.push(c);
+                    i += 1;
+                }
+            }
+            GoState::DoubleQuote => {
+                if c == '"' {
+                    if i + 1 < len && chars[i + 1] == '"' {
+                        current_line.push_str("\"\"");
+                        i += 2;
+                    } else {
+                        current_line.push(c);
+                        state = GoState::Normal;
+                        i += 1;
+                    }
+                } else if c == '\n' {
+                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    line_start_in_normal = false;
+                    i += 1;
+                } else {
+                    current_line.push(c);
+                    i += 1;
+                }
+            }
+            GoState::LineComment => {
+                if c == '\n' {
+                    state = GoState::Normal;
+                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    line_start_in_normal = true; // a line comment always ends at the newline
+                    i += 1;
+                } else {
+                    current_line.push(c);
+                    i += 1;
+                }
+            }
+            GoState::BlockComment => {
+                if c == '*' && i + 1 < len && chars[i + 1] == '/' {
+                    current_line.push_str("*/");
+                    state = GoState::Normal;
+                    i += 2;
+                } else if c == '\n' {
+                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    line_start_in_normal = false; // still inside the comment on the next line
+                    i += 1;
+                } else {
+                    current_line.push(c);
+                    i += 1;
+                }
+            }
+        }
     }
+    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
     if !current.is_empty() {
         batches.push(current);
     }
@@ -345,5 +464,45 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
         let sql = "CREATE TABLE t1 (id INT); CREATE TABLE t2 (id INT);";
         let result = split_sql_statements(sql, &GeneratorType::Sqlite);
         assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn sqlserver_go_inside_a_multiline_string_literal_is_not_a_separator() {
+        // Regression test: a GO-only line inside a multi-line string literal must not be
+        // mistaken for a real batch separator.
+        let sql = "INSERT INTO notes (body) VALUES ('line one\nGO\nline three')\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("line one\nGO\nline three"));
+    }
+
+    #[test]
+    fn sqlserver_go_inside_a_block_comment_is_not_a_separator() {
+        // Regression test: a GO-only line inside a multi-line block comment must not be
+        // mistaken for a real batch separator.
+        let sql = "CREATE TABLE t1 (id INT)\n/* a comment\nGO\nstill a comment */\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("still a comment"));
+    }
+
+    #[test]
+    fn sqlserver_go_after_a_multiline_string_still_splits_correctly() {
+        // The batch containing the multi-line string must still end at the real,
+        // top-level GO that follows it, and a second batch must start cleanly after.
+        let sql = "INSERT INTO notes (body) VALUES ('a\nb')\nGO\nCREATE TABLE t2 (id INT)\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        assert_eq!(result.len(), 2);
+        assert!(result[0].contains("'a\nb'"));
+        assert!(result[1].starts_with("CREATE TABLE t2"));
+    }
+
+    #[test]
+    fn sqlserver_go_after_line_comment_on_same_line_still_splits_correctly() {
+        let sql = "CREATE TABLE t1 (id INT) -- trailing comment\nGO\nCREATE TABLE t2 (id INT)\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        assert_eq!(result.len(), 2);
+        assert!(result[0].starts_with("CREATE TABLE t1"));
+        assert!(result[1].starts_with("CREATE TABLE t2"));
     }
 }

@@ -15,6 +15,14 @@ const LOCK_POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// may have crashed while holding the row.
 const LOCK_MAX_WAIT: Duration = Duration::from_secs(60);
 
+/// How old a "pending" tracking row must be before `repair` treats it as abandoned by a
+/// crashed process rather than a migration another instance might still legitimately be
+/// running. Deliberately much larger than `LOCK_MAX_WAIT`: by the time an operator runs
+/// `repair` by hand, any real migration that was ever going to finish already has, so
+/// this mainly guards against `repair` racing a process that is still within its normal
+/// (possibly long-running) execution window.
+const STALE_PENDING_THRESHOLD: Duration = Duration::from_secs(600);
+
 
 /// Outcome of claiming the "pending" slot for a migration version.
 enum Slot {
@@ -88,7 +96,12 @@ impl Migrator {
             .map(|m| m.version.clone())
             .collect();
 
-        let source_migrations = source.migrations()?;
+        // Sort here rather than trusting each `MigrationSource` impl to return migrations
+        // in version order: `DirectoryMigrationSource` happens to sort internally, but
+        // `EmbeddedMigrationSource` (and any other future source) just returns whatever
+        // order it was given, which would otherwise let migrations apply out of order.
+        let mut source_migrations = source.migrations()?;
+        source_migrations.sort_by(|a, b| compare_versions(&a.version, &b.version));
 
         for applied_migration in &applied {
             if applied_migration.status != "success" {
@@ -197,9 +210,9 @@ impl Migrator {
     ) -> Result<(), SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
 
-        let _ = pool.ensure_migration_table(&config.database_type).await;
+        pool.ensure_migration_table(&config.database_type).await?;
 
-        let applied = pool.get_applied_migrations().await.unwrap_or_default();
+        let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;
 
         if applied.is_empty() && source_migrations.is_empty() {
@@ -341,6 +354,13 @@ impl Migrator {
 
         pool.delete_failed_migrations().await?;
         println!("Deleted failed migrations");
+
+        pool.delete_stale_pending_migrations(STALE_PENDING_THRESHOLD.as_secs() as i64)
+            .await?;
+        println!(
+            "Deleted pending migrations stuck for over {} seconds (likely abandoned by a crashed process)",
+            STALE_PENDING_THRESHOLD.as_secs()
+        );
 
         let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;

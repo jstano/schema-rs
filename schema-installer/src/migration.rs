@@ -172,6 +172,29 @@ fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaIn
         ));
     }
 
+    // Reject anything that isn't a plain dot/underscore-separated run of numbers (e.g.
+    // "1", "1.2", "1_2"). Without this, a typo like `Vfinal__x.sql` or `V1a__x.sql`
+    // would parse "successfully" into a version whose non-numeric segments
+    // `compare_versions` then silently drops, sorting it before every real version
+    // instead of failing fast with a clear error.
+    if !version.split(['.', '_']).all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit())) {
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Migration version must be a dot/underscore-separated list of numbers (e.g. 'V1', 'V1.2', 'V1_2'), got '{}': {}",
+            version, filename
+        )));
+    }
+
+    // Version "0" is reserved for the legacy XML `install` command's tracking row (see
+    // RESERVED_INSTALL_VERSION) and never corresponds to a real migration file. A user
+    // migration named `V0__...sql` would collide with it, producing a confusing
+    // checksum-mismatch error instead of a clear "this version is reserved" one.
+    if version == RESERVED_INSTALL_VERSION {
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Migration version '0' is reserved for the legacy install command and cannot be used by a migration file: {}",
+            filename
+        )));
+    }
+
     Ok((version, description))
 }
 
@@ -197,7 +220,12 @@ pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
 }
 
 pub fn compute_checksum(sql: &str) -> String {
-    let normalized = sql.trim().replace("\r\n", "\n");
+    // Normalize all three line-ending styles to `\n`: Windows (`\r\n`), Unix (`\n`,
+    // already a no-op), and old-Mac-style bare `\r` - normalizing only `\r\n` left a
+    // migration file saved with lone `\r` line endings hashing differently from the
+    // same logical content saved with `\n`, causing a spurious `ChecksumMismatch` for a
+    // purely cosmetic line-ending change.
+    let normalized = sql.trim().replace("\r\n", "\n").replace('\r', "\n");
     let mut hasher = Sha256::new();
     hasher.update(normalized.as_bytes());
     let result = hasher.finalize();
@@ -225,6 +253,27 @@ mod tests {
         let (version, description) = parse_migration_filename("v1__create_users.sql").unwrap();
         assert_eq!(version, "1");
         assert_eq!(description, "create users");
+    }
+
+    #[test]
+    fn test_parse_migration_filename_rejects_reserved_install_version() {
+        // Version "0" is reserved for the legacy XML `install` command's tracking row;
+        // a user migration claiming it would collide and produce a confusing
+        // checksum-mismatch error instead of a clear one at parse time.
+        let err = parse_migration_filename("V0__do_something.sql").unwrap_err();
+        assert!(err.to_string().contains("reserved"));
+    }
+
+    #[test]
+    fn test_parse_migration_filename_rejects_non_numeric_version_segments() {
+        // A typo'd version (e.g. "final" instead of a number) used to parse
+        // "successfully" into a version whose non-numeric segments compare_versions
+        // then silently dropped, sorting it before every real version.
+        let err = parse_migration_filename("Vfinal__do_something.sql").unwrap_err();
+        assert!(err.to_string().contains("must be a dot/underscore-separated list of numbers"));
+
+        let err = parse_migration_filename("V1a__do_something.sql").unwrap_err();
+        assert!(err.to_string().contains("must be a dot/underscore-separated list of numbers"));
     }
 
     #[test]
@@ -268,5 +317,22 @@ mod tests {
 
         assert_eq!(checksum1, checksum2);
         assert_ne!(checksum1, checksum3);
+    }
+
+    #[test]
+    fn test_compute_checksum_normalizes_bare_carriage_return_line_endings() {
+        // Regression test: a migration file edited/saved with old-Mac-style bare `\r`
+        // line endings must hash the same as the identical content saved with `\n`
+        // (or `\r\n`), not produce a spurious checksum mismatch for a cosmetic change.
+        let unix = "CREATE TABLE users (\n  id BIGSERIAL PRIMARY KEY\n);";
+        let windows = "CREATE TABLE users (\r\n  id BIGSERIAL PRIMARY KEY\r\n);";
+        let old_mac = "CREATE TABLE users (\r  id BIGSERIAL PRIMARY KEY\r);";
+
+        let checksum_unix = compute_checksum(unix);
+        let checksum_windows = compute_checksum(windows);
+        let checksum_old_mac = compute_checksum(old_mac);
+
+        assert_eq!(checksum_unix, checksum_windows);
+        assert_eq!(checksum_unix, checksum_old_mac);
     }
 }

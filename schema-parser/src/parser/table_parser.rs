@@ -14,22 +14,22 @@ use schema_model::model::table::Table;
 use schema_model::model::trigger::Trigger;
 use schema_model::model::types::{KeyType, LockEscalation, RelationType, TableOption, TriggerType};
 
-pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Table {
-    let columns = parse_columns(table_xml, schema_name);
+pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Table, String> {
+    let columns = parse_columns(table_xml, schema_name)?;
     let keys = parse_keys(table_xml);
     let indexes = parse_indexes(table_xml);
-    let relations = parse_relations(table_xml);
-    let triggers = parse_triggers(table_xml);
-    let constraints = parse_constraints(table_xml);
-    let aggregations = parse_aggregations(table_xml);
-    let initial_data = parse_initial_data(table_xml);
+    let relations = parse_relations(table_xml)?;
+    let triggers = parse_triggers(table_xml)?;
+    let constraints = parse_constraints(table_xml)?;
+    let aggregations = parse_aggregations(table_xml)?;
+    let initial_data = parse_initial_data(table_xml)?;
     let options = parse_table_options(table_xml);
 
-    Table::new(
+    Ok(Table::new(
         schema_name,
         table_xml.name.as_str(),
         table_xml.export_data_column.as_deref(),
-        lock_escalation(table_xml),
+        lock_escalation(table_xml)?,
         table_xml.no_export.unwrap_or(false),
         columns,
         keys,
@@ -40,25 +40,30 @@ pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Ta
         initial_data,
         options,
         aggregations,
-    )
+    ))
 }
 
-fn lock_escalation(table_xml: &TableXml) -> LockEscalation {
+fn lock_escalation(table_xml: &TableXml) -> Result<LockEscalation, String> {
     use std::str::FromStr;
     match table_xml.lock_escalation.as_deref() {
-        Some(s) => LockEscalation::from_str(s).unwrap_or_default(),
-        _ => LockEscalation::Auto,
+        Some(s) => LockEscalation::from_str(s)
+            .map_err(|e| format!("table '{}': {}", table_xml.name, e)),
+        None => Ok(LockEscalation::Auto),
     }
 }
 
 
-fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Vec<Column> {
+fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<Column>, String> {
     let mut columns = Vec::new();
 
     if let Some(columns_xml) = &table_xml.columns {
         for column_xml in columns_xml.column.iter() {
-            let column_type = ColumnType::from_type_name(&column_xml.r#type)
-                .unwrap_or_else(|e| panic!("column '{}' type error: {}", column_xml.name, e));
+            let column_type = ColumnType::from_type_name(&column_xml.r#type).map_err(|e| {
+                format!(
+                    "table '{}', column '{}': {}",
+                    table_xml.name, column_xml.name, e
+                )
+            })?;
             let column = ColumnBuilder::new(schema_name, &column_xml.name, column_type)
                 .length(column_xml.length.unwrap_or(0))
                 .scale(column_xml.scale.unwrap_or(0))
@@ -75,7 +80,7 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Vec<Column>
         }
     }
 
-    columns
+    Ok(columns)
 }
 
 fn parse_keys(table_xml: &TableXml) -> Vec<Key> {
@@ -132,7 +137,7 @@ fn parse_indexes(table_xml: &TableXml) -> Vec<Key> {
     indexes
 }
 
-fn parse_relations(table_xml: &TableXml) -> Vec<Relation> {
+fn parse_relations(table_xml: &TableXml) -> Result<Vec<Relation>, String> {
     let mut relations = Vec::new();
 
     if let Some(relations_xml) = &table_xml.relations {
@@ -142,7 +147,12 @@ fn parse_relations(table_xml: &TableXml) -> Vec<Relation> {
                 "enforce" => RelationType::Enforce,
                 "setnull" => RelationType::SetNull,
                 "donothing" => RelationType::DoNothing,
-                _ => RelationType::Enforce,
+                other => {
+                    return Err(format!(
+                        "table '{}': relation to '{}' has an unrecognized type '{}' (expected cascade, enforce, setnull, or donothing)",
+                        table_xml.name, relation_xml.table, other
+                    ));
+                }
             };
             relations.push(Relation::new(
                 relation_xml.table.clone(),
@@ -155,58 +165,58 @@ fn parse_relations(table_xml: &TableXml) -> Vec<Relation> {
         }
     }
 
-    relations
+    Ok(relations)
 }
 
-fn parse_triggers(table_xml: &TableXml) -> Vec<Trigger> {
+fn parse_triggers(table_xml: &TableXml) -> Result<Vec<Trigger>, String> {
     let mut triggers = Vec::new();
 
     if let Some(triggers_xml) = &table_xml.triggers {
         for trigger_xml in triggers_xml.update.iter() {
-            if let Some(database_type) =
-                crate::parser::convert::str_to_database_type(Some(&trigger_xml.database_type))
-            {
-                triggers.push(Trigger::new(
-                    &trigger_xml.sql,
-                    TriggerType::Update,
-                    database_type,
-                ));
-            }
+            let database_type = crate::parser::convert::required_database_type(
+                Some(&trigger_xml.database_type),
+                &format!("update trigger on table '{}'", table_xml.name),
+            )?;
+            triggers.push(Trigger::new(
+                &trigger_xml.sql,
+                TriggerType::Update,
+                database_type,
+            ));
         }
 
         for trigger_xml in triggers_xml.delete.iter() {
-            if let Some(dt) =
-                crate::parser::convert::str_to_database_type(Some(&trigger_xml.database_type))
-            {
-                triggers.push(Trigger::new(&trigger_xml.sql, TriggerType::Delete, dt));
-            }
+            let database_type = crate::parser::convert::required_database_type(
+                Some(&trigger_xml.database_type),
+                &format!("delete trigger on table '{}'", table_xml.name),
+            )?;
+            triggers.push(Trigger::new(&trigger_xml.sql, TriggerType::Delete, database_type));
         }
     }
 
-    triggers
+    Ok(triggers)
 }
 
-fn parse_constraints(table_xml: &TableXml) -> Vec<Constraint> {
+fn parse_constraints(table_xml: &TableXml) -> Result<Vec<Constraint>, String> {
     let mut constraints = Vec::new();
 
     if let Some(constraints_xml) = &table_xml.constraints {
         for constraint_xml in constraints_xml.constraint.iter() {
-            if let Some(dt) = crate::parser::convert::str_to_database_type(
+            let database_type = crate::parser::convert::required_database_type(
                 constraint_xml.database_type.as_deref(),
-            ) {
-                constraints.push(Constraint::new(
-                    &constraint_xml.name,
-                    &constraint_xml.sql,
-                    dt,
-                ));
-            }
+                &format!("constraint '{}' on table '{}'", constraint_xml.name, table_xml.name),
+            )?;
+            constraints.push(Constraint::new(
+                &constraint_xml.name,
+                &constraint_xml.sql,
+                database_type,
+            ));
         }
     }
 
-    constraints
+    Ok(constraints)
 }
 
-fn parse_aggregations(table_xml: &TableXml) -> Vec<Aggregation> {
+fn parse_aggregations(table_xml: &TableXml) -> Result<Vec<Aggregation>, String> {
     let mut aggregations = Vec::new();
 
     if let Some(aggregations_xml) = &table_xml.aggregations {
@@ -234,7 +244,12 @@ fn parse_aggregations(table_xml: &TableXml) -> Vec<Aggregation> {
                     group_column_xml.source_derived_from.clone(),
                 ));
             }
-            let freq = agg_frequency_from_str(&aggregate_xml.frequency);
+            let freq = agg_frequency_from_str(&aggregate_xml.frequency).map_err(|e| {
+                format!(
+                    "table '{}', aggregation to '{}': {}",
+                    table_xml.name, aggregate_xml.destination_table, e
+                )
+            })?;
             aggregations.push(Aggregation::new(
                 aggregate_xml.destination_table.clone(),
                 aggregate_xml.date_column.clone(),
@@ -247,23 +262,23 @@ fn parse_aggregations(table_xml: &TableXml) -> Vec<Aggregation> {
         }
     }
 
-    aggregations
+    Ok(aggregations)
 }
 
-fn parse_initial_data(table_xml: &TableXml) -> Vec<InitialData> {
+fn parse_initial_data(table_xml: &TableXml) -> Result<Vec<InitialData>, String> {
     let mut initial_data = Vec::new();
 
     if let Some(intial_data_xml) = &table_xml.initial_data {
         for initial_sql_xml in intial_data_xml.sql.iter() {
-            let database_type = initial_sql_xml
-                .database_type
-                .as_ref()
-                .and_then(|v| crate::parser::convert::str_to_database_type(Some(v.as_str())));
+            let database_type = crate::parser::convert::optional_database_type(
+                initial_sql_xml.database_type.as_deref(),
+                &format!("initialData on table '{}'", table_xml.name),
+            )?;
             initial_data.push(InitialData::new(&initial_sql_xml.sql, database_type));
         }
     }
 
-    initial_data
+    Ok(initial_data)
 }
 
 fn parse_table_options(table_xml: &TableXml) -> Vec<TableOption> {

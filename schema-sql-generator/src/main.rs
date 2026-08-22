@@ -133,7 +133,22 @@ pub fn main() {
 
 fn load_schema(schema_path: &Path) -> DatabaseModel {
     let contents = fs::read_to_string(schema_path).expect("failed to read the schema file");
-    parse_database_xml(contents.as_str()).expect("failed to parse the schema")
+    let database_model = parse_database_xml(contents.as_str()).expect("failed to parse the schema");
+
+    // Catches dangling relation targets and enum-type references up front, with a clear
+    // message - several generator code paths (`find_enum_type`, `find_table_by_qualified_name`,
+    // ...) panic on a reference that doesn't resolve, on the assumption the model was
+    // already validated.
+    let errors = database_model.validate();
+    if !errors.is_empty() {
+        eprintln!("Error: the schema file is invalid:");
+        for error in &errors {
+            eprintln!("  {}", error);
+        }
+        std::process::exit(1);
+    }
+
+    database_model
 }
 
 fn build_output_path(path: &Path, database_type: String) -> String {

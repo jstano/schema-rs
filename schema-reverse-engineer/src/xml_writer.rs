@@ -64,7 +64,8 @@ fn write_view(out: &mut String, view: &View, indent: usize) {
     push_indent(out, indent);
     let _ = writeln!(out, "<view name=\"{}\">", xml_escape(view.name()));
     push_indent(out, indent + 1);
-    let _ = writeln!(out, "<![CDATA[{}]]>", view.sql());
+    write_cdata(out, view.sql());
+    out.push('\n');
     push_indent(out, indent);
     out.push_str("</view>\n\n");
 }
@@ -217,9 +218,15 @@ fn write_constraints(out: &mut String, constraints: &[Constraint], indent: usize
     out.push_str("<constraints>\n");
     for constraint in constraints {
         push_indent(out, indent + 1);
-        let _ = writeln!(out, "<constraint name=\"{}\">", xml_escape(constraint.name()));
+        let _ = writeln!(
+            out,
+            "<constraint name=\"{}\" databaseType=\"{}\">",
+            xml_escape(constraint.name()),
+            database_type_str(constraint.database_type())
+        );
         push_indent(out, indent + 2);
-        let _ = writeln!(out, "<![CDATA[{}]]>", constraint.sql());
+        write_cdata(out, constraint.sql());
+        out.push('\n');
         push_indent(out, indent + 1);
         out.push_str("</constraint>\n");
     }
@@ -245,6 +252,15 @@ fn boolean_mode_str(mode: BooleanMode) -> &'static str {
     }
 }
 
+fn database_type_str(database_type: schema_model::model::types::DatabaseType) -> &'static str {
+    use schema_model::model::types::DatabaseType;
+    match database_type {
+        DatabaseType::Postgresql => "postgresql",
+        DatabaseType::Sqlite => "sqlite",
+        DatabaseType::SqlServer => "sqlserver",
+    }
+}
+
 fn foreign_key_mode_str(mode: ForeignKeyMode) -> &'static str {
     match mode {
         ForeignKeyMode::None => "none",
@@ -257,6 +273,17 @@ fn push_indent(out: &mut String, indent: usize) {
     for _ in 0..indent {
         out.push_str("  ");
     }
+}
+
+/// Writes `content` as a `<![CDATA[...]]>` section, splitting any embedded `]]>` across
+/// adjacent CDATA sections first. The literal sequence `]]>` is illegal inside XML
+/// character data (not just "outside CDATA") - e.g. SQL text containing an array-slice
+/// like `arr[1:2]]>x` would otherwise close the CDATA section early and produce
+/// non-well-formed XML that fails to parse back.
+fn write_cdata(out: &mut String, content: &str) {
+    out.push_str("<![CDATA[");
+    out.push_str(&content.replace("]]>", "]]]]><![CDATA[>"));
+    out.push_str("]]>");
 }
 
 /// XML-escapes attribute and text content consistently (the Java writer inconsistently escaped
@@ -316,6 +343,53 @@ mod tests {
         assert!(xml.contains("<relation src=\"parent_id\" table=\"parent\" column=\"id\" type=\"cascade\"/>"));
         assert!(xml.contains("<enum name=\"mood\">"));
         assert!(xml.contains("<view name=\"v1\">"));
+    }
+
+    #[test]
+    fn write_cdata_splits_embedded_close_sequence() {
+        let mut out = String::new();
+        write_cdata(&mut out, "select arr[1:2]]>x from t");
+        assert!(!out.contains("2]]>x"), "the literal ]]> must not survive unescaped inside one CDATA block: {out}");
+        assert!(out.starts_with("<![CDATA["));
+        assert!(out.ends_with("]]>"));
+    }
+
+    #[test]
+    fn view_sql_containing_cdata_close_sequence_round_trips_through_the_real_parser() {
+        let view = View::new(
+            None::<&str>,
+            "v1",
+            "select * from t where arr[1:2]]>x",
+            None,
+        );
+        let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model);
+
+        let reparsed = schema_parser::parse_database_xml(&xml)
+            .expect("XML containing a ]]> sequence inside a view's SQL must still be well-formed");
+        let reparsed_view = &reparsed.default_schema().all_views()[0];
+        assert_eq!(reparsed_view.sql(), "select * from t where arr[1:2]]>x");
+    }
+
+    #[test]
+    fn constraint_sql_containing_cdata_close_sequence_round_trips_through_the_real_parser() {
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
+            .add_constraint(schema_model::model::constraint::Constraint::new(
+                "ck_a",
+                "check (a[1:2]]>0)",
+                DatabaseType::Postgresql,
+            ))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model);
+
+        let reparsed = schema_parser::parse_database_xml(&xml)
+            .expect("XML containing a ]]> sequence inside a constraint's SQL must still be well-formed");
+        let reparsed_table = reparsed.default_schema().get_table("t");
+        assert_eq!(reparsed_table.constraints()[0].sql(), "check (a[1:2]]>0)");
     }
 
     #[test]

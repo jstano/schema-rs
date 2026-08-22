@@ -36,13 +36,17 @@ impl SchemaInstaller {
         let database_model = parse_database_xml(&schema_content)
             .map_err(SchemaInstallerError::Parse)?;
 
+        // Catches dangling relation targets and enum-type references up front, with a
+        // clear message - several generator code paths panic on a reference that
+        // doesn't resolve, on the assumption the model was already validated.
+        let validation_errors = database_model.validate();
+        if !validation_errors.is_empty() {
+            return Err(SchemaInstallerError::ValidationFailed(validation_errors.join("\n")));
+        }
+
         // Generate SQL by writing to temp file
         // (PrintWriter's BufWriter makes it difficult to extract bytes in memory)
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        let temp_file = std::env::temp_dir().join(format!("schema_install_temp_{}.sql", nanos));
+        let temp_file = std::env::temp_dir().join(temp_install_file_name());
         let file = std::fs::File::create(&temp_file)
             .map_err(SchemaInstallerError::Io)?;
 
@@ -152,5 +156,45 @@ impl SchemaInstaller {
         }
 
         Ok(())
+    }
+}
+
+/// Builds a temp filename for the generated install SQL. Combines the full (not just
+/// sub-second) nanosecond timestamp, the process id, and a per-process monotonic
+/// counter: `subsec_nanos()` alone (discarding the seconds component, with no PID or
+/// counter) could collide between two concurrent `install()` calls on the same host
+/// started moments apart, letting one overwrite or read the other's generated SQL
+/// mid-flight - and the timestamp alone isn't safe either, since two calls on a coarser
+/// clock (or simply fast enough back-to-back) can still land on the same nanosecond
+/// reading. The counter guarantees uniqueness within a process regardless of clock
+/// resolution; the PID guarantees it across processes.
+fn temp_install_file_name() -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("schema_install_temp_{}_{}_{}.sql", std::process::id(), nanos, count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temp_install_file_name_embeds_the_process_id() {
+        let name = temp_install_file_name();
+        assert!(name.starts_with(&format!("schema_install_temp_{}_", std::process::id())));
+        assert!(name.ends_with(".sql"));
+    }
+
+    #[test]
+    fn temp_install_file_name_is_unique_across_calls() {
+        // A cheap proxy for the concurrency fix: two calls (even back-to-back, so the
+        // PID is identical) must not produce the same filename, since the nanosecond
+        // timestamp component differs.
+        let names: std::collections::HashSet<String> = (0..20).map(|_| temp_install_file_name()).collect();
+        assert_eq!(names.len(), 20, "expected all 20 generated names to be unique");
     }
 }

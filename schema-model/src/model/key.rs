@@ -84,7 +84,7 @@ impl Key {
     }
 
     pub fn contains_column(&self, column_name: &str) -> bool {
-        self.columns.iter().any(|c| c.name() == column_name)
+        self.columns.iter().any(|c| c.name().eq_ignore_ascii_case(column_name))
     }
 
     pub fn columns_as_string(&self) -> String {
@@ -119,5 +119,18 @@ mod tests {
         assert!(k2.is_compress());
         assert!(k2.is_unique());
         assert_eq!(k2.include(), Some("inc"));
+    }
+
+    #[test]
+    fn contains_column_is_case_insensitive() {
+        // Matches the case-insensitive lookup used everywhere else in the model
+        // (Table::column/has_column), so a key declared with `Id` is found by callers
+        // that look up `id` (or any other casing) rather than incorrectly reporting the
+        // column as absent.
+        let k = Key::new(KeyType::Primary, vec![KeyColumn::new("Id")]);
+        assert!(k.contains_column("Id"));
+        assert!(k.contains_column("id"));
+        assert!(k.contains_column("ID"));
+        assert!(!k.contains_column("other"));
     }
 }

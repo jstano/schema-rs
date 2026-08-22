@@ -15,6 +15,7 @@ pub mod view_generator;
 pub mod procedure_generator;
 pub mod trigger_generator;
 pub mod other_sql_generator;
+pub mod sql_string;
 pub mod sql_writer;
 pub mod column_type_generator;
 pub mod sql_generator_settings;

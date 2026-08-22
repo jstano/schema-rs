@@ -24,10 +24,15 @@ impl DefaultProcedureGenerator {
     pub fn context(&self) -> &GeneratorContext {
         &self.context
     }
-}
 
-impl ProcedureGenerator for DefaultProcedureGenerator {
-    fn output_procedures(&self) {
+    /// Same iteration/filtering logic as `output_procedures`, but dispatches each
+    /// procedure through `generator` rather than `self`. Rust has no virtual dispatch on
+    /// concrete types, so a dialect wrapper (e.g. `SqlServerProcedureGenerator`) that
+    /// overrides `output_procedure` but delegates `output_procedures` straight to this
+    /// struct would otherwise never see its own override invoked - callers that need
+    /// their override honored should pass `self` (as a `&dyn ProcedureGenerator`) here
+    /// instead of calling `output_procedures` directly.
+    pub fn output_procedures_via(&self, generator: &dyn ProcedureGenerator) {
         let database_type = self.context.settings().database_type();
         let statement_separator = self.context.settings().statement_separator();
         let database_model = self.context.settings().database_model();
@@ -39,10 +44,16 @@ impl ProcedureGenerator for DefaultProcedureGenerator {
                     .iter()
                     .filter(|procedure| procedure.database_type() == database_type)
                     .for_each(|procedure| {
-                        self.output_procedure(writer, statement_separator, procedure);
+                        generator.output_procedure(writer, statement_separator, procedure);
                     })
             });
         });
+    }
+}
+
+impl ProcedureGenerator for DefaultProcedureGenerator {
+    fn output_procedures(&self) {
+        self.output_procedures_via(self);
     }
 
     fn output_procedure(&self, writer: &mut SqlWriter, statement_separator: &str, procedure: &Procedure) {

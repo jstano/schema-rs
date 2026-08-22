@@ -334,7 +334,13 @@ impl AnyPool {
         status: &str,
         execution_time_ms: i64,
     ) -> Result<(), SchemaInstallerError> {
-        match self {
+        // Every call site relies on this succeeding to record that a migration it just
+        // ran to completion is now tracked - if the row silently isn't there any more
+        // (e.g. `repair()`'s stale-pending cleanup raced a still-running migration and
+        // deleted its row), a plain "0 rows affected" success would let a migration that
+        // really did apply go unrecorded, so `migrate()` would treat it as still
+        // pending and try to re-apply it next time. Surface that as a loud error instead.
+        let rows_affected = match self {
             AnyPool::Postgresql(pool) => {
                 sqlx::query("UPDATE schema_migration SET status = $1, execution_time_ms = $2 WHERE id = $3")
                     .bind(status)
@@ -342,8 +348,8 @@ impl AnyPool {
                     .bind(id)
                     .execute(pool)
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .rows_affected()
             }
             AnyPool::Sqlite(pool) => {
                 sqlx::query("UPDATE schema_migration SET status = ?, execution_time_ms = ? WHERE id = ?")
@@ -352,8 +358,8 @@ impl AnyPool {
                     .bind(id)
                     .execute(pool)
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .rows_affected()
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
@@ -363,10 +369,21 @@ impl AnyPool {
                         &[&status, &(execution_time_ms as i32), &id],
                     )
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .rows_affected()
+                    .iter()
+                    .sum()
             }
+        };
+
+        if rows_affected == 0 {
+            return Err(SchemaInstallerError::Database(format!(
+                "failed to record migration status as '{}': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
+                status, id
+            )));
         }
+
+        Ok(())
     }
 
     pub async fn delete_failed_migrations(&self) -> Result<(), SchemaInstallerError> {
@@ -391,6 +408,50 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 client
                     .execute("DELETE FROM schema_migration WHERE status = @P1", &[&"failed"])
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Deletes "pending" tracking rows older than `older_than_seconds`. A row stays
+    /// "pending" only for as long as the process that inserted it is actively running
+    /// the migration (see `wait_for_slot` in migrator.rs); one still "pending" well past
+    /// that window means the owning process crashed or was killed mid-migration and
+    /// never got to mark it "success"/"failed", which would otherwise wedge every future
+    /// `migrate()` call behind the lock-wait timeout forever with no way to recover.
+    pub async fn delete_stale_pending_migrations(&self, older_than_seconds: i64) -> Result<(), SchemaInstallerError> {
+        match self {
+            AnyPool::Postgresql(pool) => {
+                sqlx::query(
+                    "DELETE FROM schema_migration WHERE status = $1 AND installed_at < now() - ($2 || ' seconds')::interval",
+                )
+                .bind("pending")
+                .bind(older_than_seconds.to_string())
+                .execute(pool)
+                .await
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::Sqlite(pool) => {
+                sqlx::query(
+                    "DELETE FROM schema_migration WHERE status = ? AND installed_at < datetime('now', '-' || ? || ' seconds')",
+                )
+                .bind("pending")
+                .bind(older_than_seconds)
+                .execute(pool)
+                .await
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "DELETE FROM schema_migration WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, GETDATE())",
+                        &[&"pending", &(older_than_seconds as i32)],
+                    )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
