@@ -38,10 +38,17 @@ pub enum SchemaChange {
     AddKey {
         table_name: String,
         key: Key,
+        /// 1-based position of `key` among the sibling keys the create path numbers it
+        /// with - unique keys are numbered among the table's other unique keys, indexes
+        /// among the table's other indexes - so a migration can reproduce the exact
+        /// `ak_<table><n>` / `ix_<table><n>` name the create path would use.
+        ordinal: usize,
     },
     DropKey {
         table_name: String,
         key: Key,
+        /// See `AddKey::ordinal`.
+        ordinal: usize,
     },
     AddConstraint {
         table_name: String,
@@ -53,9 +60,14 @@ pub enum SchemaChange {
     },
     AddRelation {
         relation: Relation,
+        /// 1-based position of `relation` among its table's relations, matching the
+        /// create path's `fk_<table><n>` numbering.
+        ordinal: usize,
     },
     DropRelation {
         relation: Relation,
+        /// See `AddRelation::ordinal`.
+        ordinal: usize,
     },
     AddView {
         view: View,

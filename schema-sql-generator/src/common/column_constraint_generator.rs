@@ -47,13 +47,26 @@ impl DefaultColumnConstraintGenerator {
         if column.column_type() == ColumnType::Boolean {
             self.boolean_check_constraint(column)
         } else if let Some(constraint) = column.check_constraint() {
-            Some(constraint.to_string())
+            Some(Self::wrap_in_check(constraint))
         } else if column.column_type() == ColumnType::Enum {
             self.enum_check_constraint_sql(column)
         } else if column.has_min_or_max_value() {
             self.min_max_constraint_sql(column)
         } else {
             None
+        }
+    }
+
+    /// The `<check>` element holds just the boolean expression (e.g. `foo = 'ABC'`), not a
+    /// full `check(...)` clause - wrap it, unless the user already wrote the `check(...)`
+    /// wrapper themselves, in which case wrapping again would double it.
+    fn wrap_in_check(expression: &str) -> String {
+        let trimmed = expression.trim();
+
+        if trimmed.to_ascii_lowercase().starts_with("check") {
+            trimmed.to_string()
+        } else {
+            format!("check({})", trimmed)
         }
     }
 
@@ -119,5 +132,57 @@ impl ColumnConstraintGenerator for DefaultColumnConstraintGenerator {
             .iter()
             .map(|column| self.generate_constraint(table, column))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn user_check_constraint_is_wrapped_in_check() {
+        let table = TableBuilder::new(None::<&str>, "test")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "varcharWithCheck", ColumnType::Varchar)
+                    .length(10)
+                    .check_constraint(Some("varcharWithCheck = 'ABC123'".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultColumnConstraintGenerator::new(ctx);
+        let constraints = generator.column_check_constraints(&table);
+
+        assert_eq!(constraints.len(), 1);
+        assert!(constraints[0].contains("check(varcharWithCheck = 'ABC123')"));
+    }
+
+    #[test]
+    fn user_check_constraint_already_wrapped_is_not_double_wrapped() {
+        let table = TableBuilder::new(None::<&str>, "test")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "code", ColumnType::Varchar)
+                    .length(10)
+                    .check_constraint(Some("check(code <> '')".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultColumnConstraintGenerator::new(ctx);
+        let constraints = generator.column_check_constraints(&table);
+
+        assert_eq!(constraints.len(), 1);
+        assert!(constraints[0].contains("check(code <> '')"));
+        assert!(!constraints[0].contains("check(check("));
     }
 }

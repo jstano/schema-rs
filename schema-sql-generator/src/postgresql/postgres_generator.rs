@@ -70,11 +70,20 @@ impl PostgresGenerator {
             Some(user) => format!("'{}'", escape_sql_literal(user)),
             None => "CURRENT_USER".to_string(),
         };
+        // generate_uuid() (created below in create_uuid_generator_function, when the target
+        // version is older than 18's built-in uuidv7()) calls gen_random_bytes(), which lives
+        // in pgcrypto - not citext/btree_gist. Without this, the function creates fine (its
+        // body isn't resolved until first call) and fails on the first insert into a Uuid
+        // column with "function gen_random_bytes(integer) does not exist" (H8).
+        let needs_pgcrypto = self.context.settings().target_postgres_version() < 18;
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "do $$");
             sql_println!(writer, "begin");
             sql_println!(writer, "   if (select usesuper from pg_user where usename = {}) then", check_user);
+            if needs_pgcrypto {
+                sql_println!(writer, "      create extension if not exists \"pgcrypto\";");
+            }
             sql_println!(writer, "      create extension if not exists \"citext\";");
             sql_println!(writer, "      create extension if not exists \"btree_gist\";");
             sql_println!(writer, "   else");
@@ -82,6 +91,34 @@ impl PostgresGenerator {
             sql_println!(writer, "   end if;");
             sql_println!(writer, "end;");
             sql_println!(writer, "$${}", separator);
+            sql_println!(writer, "");
+        });
+    }
+
+    /// Emits `create schema if not exists ...` for every non-default schema the model
+    /// declares, so `create table {schema}.{table}` further down doesn't fail against a
+    /// schema that was never created (C4). `public` is skipped - Postgres always has it.
+    fn create_schemas(&self) {
+        let separator = self.context.settings().statement_separator().to_string();
+        let database_model = self.context.settings().database_model();
+
+        let mut schema_names: Vec<&str> = database_model
+            .schemas()
+            .iter()
+            .filter_map(|schema| schema.schema_name())
+            .filter(|name| !name.eq_ignore_ascii_case("public"))
+            .collect();
+        schema_names.sort_unstable();
+        schema_names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+
+        if schema_names.is_empty() {
+            return;
+        }
+
+        self.context.with_writer(|writer| {
+            for schema_name in schema_names {
+                sql_println!(writer, "create schema if not exists {}{}", schema_name, separator);
+            }
             sql_println!(writer, "");
         });
     }
@@ -116,6 +153,7 @@ impl SqlGenerator for PostgresGenerator {
     }
 
     fn output_header(&self) {
+        self.create_schemas();
         if self.context.settings().target_postgres_version() < 18 {
             self.create_uuid_generator_function();
         }
@@ -254,6 +292,48 @@ mod tests {
     }
 
     #[test]
+    fn output_header_creates_non_default_schemas() {
+        let default_schema = SchemaBuilder::new(None::<&str>).build();
+        let app_schema = SchemaBuilder::new(Some("app")).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app_schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create schema if not exists app;"));
+    }
+
+    #[test]
+    fn output_header_never_creates_the_public_schema() {
+        // `public` always exists in Postgres; emitting `create schema if not exists public`
+        // is harmless but noisy, so it's skipped.
+        let schema = SchemaBuilder::new(Some("public")).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("create schema"));
+    }
+
+    #[test]
+    fn output_header_omits_schema_creation_when_only_default_schema_present() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("create schema"));
+    }
+
+    #[test]
     fn output_header_includes_extensions_block_by_default() {
         let schema = SchemaBuilder::new(None::<&str>).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
@@ -265,6 +345,32 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("create extension if not exists \"citext\""));
         assert!(output.contains("create extension if not exists \"btree_gist\""));
+    }
+
+    #[test]
+    fn output_header_includes_pgcrypto_before_postgres_18() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 17);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("create extension if not exists \"pgcrypto\""));
+    }
+
+    #[test]
+    fn output_header_omits_pgcrypto_on_postgres_18_and_later() {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        let generator = PostgresGenerator::new(ctx);
+        generator.output_header();
+
+        let output = buffer.contents();
+        assert!(!output.contains("pgcrypto"));
     }
 
     #[test]

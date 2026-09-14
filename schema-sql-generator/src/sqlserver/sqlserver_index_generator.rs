@@ -1,5 +1,5 @@
 use crate::common::generator_context::GeneratorContext;
-use crate::common::index_generator::{DefaultIndexGenerator, IndexGenerator};
+use crate::common::index_generator::{DefaultIndexGenerator, IndexGenerator, format_column_list};
 use crate::common::sql_writer::SqlWriter;
 use schema_model::model::key::Key;
 use schema_model::model::table::Table;
@@ -18,19 +18,39 @@ impl SqlServerIndexGenerator {
 
 impl IndexGenerator for SqlServerIndexGenerator {
     fn output_indexes(&self) {
-        self.index_generator.output_indexes();
+        // Self-dispatching (via `output_indexes_via(self)`, not a plain delegation to
+        // `DefaultIndexGenerator::output_indexes`) so every index routes through *this*
+        // type's `index_options` override below - see `render_index`/`output_indexes_via`
+        // for the same static-dispatch trap this avoids (M1).
+        self.index_generator.output_indexes_via(self);
     }
 
     fn output_indexes_for_table(&self, writer: &mut SqlWriter, table: &Table) {
-        self.index_generator.output_indexes_for_table(writer, table);
+        self.index_generator.output_indexes_for_table_via(self, writer, table);
     }
 
     fn output_index(&self, writer: &mut SqlWriter, statement_separator: &str, table: &Table, key_name: &str, key: &Key) {
-        self.index_generator.output_index(writer, statement_separator, table, key_name, key);
+        let index_options = self.index_options(key);
+        self.index_generator.render_index(writer, statement_separator, table, key_name, key, index_options);
     }
 
     fn index_options(&self, key: &Key) -> Option<String> {
-        self.index_generator.index_options(key)
+        let mut options = Vec::new();
+
+        if let Some(columns) = key.include() {
+            options.push(format!("include ({})", format_column_list(columns)));
+        }
+        if key.is_compress() {
+            // `compress` is a plain bool in the XML with no PAGE/ROW distinction; PAGE is
+            // the higher-compression, generally-recommended default.
+            options.push("with (data_compression = page)".to_string());
+        }
+
+        if options.is_empty() {
+            None
+        } else {
+            Some(options.join(" "))
+        }
     }
 }
 
@@ -73,5 +93,74 @@ mod tests {
         });
 
         assert_eq!(buffer.contents(), "");
+    }
+
+    #[test]
+    fn output_indexes_for_table_renders_include_columns() {
+        // Regression test for M1: `include` used to be parsed then thrown away.
+        let index = Key::new_full(
+            KeyType::Index,
+            vec![KeyColumn::new("id")],
+            false,
+            false,
+            false,
+            Some("name,code"),
+        );
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("create index ix_t11 on dbo.t1 (id) include (name, code)"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn output_indexes_for_table_renders_data_compression() {
+        // Regression test for M1: `compress` used to be parsed then thrown away.
+        let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("id")], false, true, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("create index ix_t11 on dbo.t1 (id) with (data_compression = page)"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn output_indexes_for_table_combines_include_and_compression() {
+        let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("id")], false, true, false, Some("code"));
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("create index ix_t11 on dbo.t1 (id) include (code) with (data_compression = page)"),
+            "unexpected output: {output}"
+        );
     }
 }

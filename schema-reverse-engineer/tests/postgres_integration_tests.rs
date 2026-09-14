@@ -64,7 +64,8 @@ async fn test_reverse_engineer_postgres_schema() {
     let (_container, pool) = setup_pool().await;
 
     let model = read_schema(&pool, "public").await.expect("introspection should succeed");
-    let schema = model.default_schema();
+    let schema = model.find_schema(Some("public"));
+    assert_eq!(schema.schema_name(), Some("public"));
 
     let customers = schema.get_table("customers");
     assert_eq!(customers.column("id").column_type(), ColumnType::Uuid);
@@ -99,9 +100,9 @@ async fn test_reverse_engineer_postgres_schema() {
 
     // Round-trip the generated XML back through the existing parser to make sure the writer
     // produces XML the rest of the toolkit can actually read.
-    let xml = write_database_xml(&model);
+    let xml = write_database_xml(&model).expect("generated xml should include the primary keys/indexes captured above");
     let parsed = schema_parser::parse_database_xml(&xml).expect("generated xml should parse");
-    let parsed_schema = parsed.default_schema();
+    let parsed_schema = parsed.find_schema(Some("public"));
     assert!(parsed_schema.get_optional_table("customers").is_some());
     assert!(parsed_schema.get_optional_table("orders").is_some());
     let parsed_orders = parsed_schema.get_table("orders");

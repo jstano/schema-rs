@@ -4,8 +4,7 @@ use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::RelationType;
-
-const FK_PREFIX: &str = "fk_";
+use schema_model::naming::foreign_key_name;
 
 pub trait RelationGenerator {
     fn output_relations(&self);
@@ -39,23 +38,7 @@ impl DefaultRelationGenerator {
     /// portion so the identifier stays within the target database's max key name length.
     pub fn relation_constraint_name(&self, table: &Table, relation_index: usize) -> String {
         let database_type = self.context.settings().database_type();
-        let max_key_name_length = database_type.max_key_name_length();
-        let table_name = table.name();
-        let suffix_str = (relation_index + 1).to_string();
-        let mut relation_name = format!("{}{}{}", FK_PREFIX, table_name, suffix_str);
-
-        if relation_name.len() > max_key_name_length {
-            // Reserve space for the *actual* suffix length, not a hard-coded single
-            // digit - a table with >=10 relations needs a 2-digit suffix, and reserving
-            // only 1 char for it would produce an identifier over the length limit.
-            // Truncate by char, not byte index, so multi-byte UTF-8 table names don't
-            // panic ("byte index N is not a char boundary").
-            let available = max_key_name_length.saturating_sub(FK_PREFIX.len() + suffix_str.len());
-            let truncated_table_name: String = table_name.chars().take(available).collect();
-            relation_name = format!("{}{}{}", FK_PREFIX, truncated_table_name, suffix_str);
-        }
-
-        relation_name.to_lowercase()
+        foreign_key_name(database_type, table.name(), relation_index + 1)
     }
 
     fn output_relation(&self,

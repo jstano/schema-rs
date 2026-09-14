@@ -38,13 +38,10 @@ impl SqlGenerator for SqliteGenerator {
         self.sql_generator.context()
     }
 
-    fn generate(&self) {
-        self.sql_generator.generate()
-    }
-
-    fn output_sql(&self) {
-        self.sql_generator.output_sql();
-    }
+    // `generate`/`output_sql` are intentionally *not* overridden here: see the identical
+    // comment on `SqlServerGenerator` - delegating them to the concrete `sql_generator` field
+    // would bypass any future override of `output_header` on this type via the same
+    // static-dispatch trap as H1.
 
     fn output_header(&self) {
         self.sql_generator.output_header();

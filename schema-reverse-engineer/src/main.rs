@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let model = read_schema(&pool, &args.db_schema).await?;
-    let xml = write_database_xml(&model);
+    let xml = write_database_xml(&model)?;
 
     std::fs::write(&args.file, xml)?;
 

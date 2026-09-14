@@ -3,6 +3,7 @@ use schema_model::model::constraint::Constraint;
 use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
+use schema_model::model::types::KeyType;
 use schema_model::model::view::View;
 
 use crate::change::SchemaChange;
@@ -118,16 +119,44 @@ fn columns_differ(a: &Column, b: &Column) -> bool {
         || a.required() != b.required()
         || a.default_constraint() != b.default_constraint()
         || a.check_constraint() != b.check_constraint()
+        || a.enum_type() != b.enum_type()
+        || a.element_type() != b.element_type()
+        || a.generated() != b.generated()
+        || a.min_value() != b.min_value()
+        || a.max_value() != b.max_value()
 }
 
 fn diff_drop_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for old_table in old.tables() {
         if let Some(new_table) = new.get_optional_table(old_table.name()) {
-            for old_key in old_table.keys().iter().chain(old_table.indexes().iter()) {
+            // Ordinal counts only siblings of the same category (unique keys among unique
+            // keys, indexes among indexes) in list order - matching how the create path
+            // numbers `ak_<table><n>` / `ix_<table><n>` - so the migration generator can
+            // reproduce the exact same name for the object it's dropping.
+            let mut unique_ordinal = 0;
+            for old_key in old_table.keys() {
+                if old_key.key_type() == KeyType::Unique {
+                    unique_ordinal += 1;
+                }
                 if !key_exists_in(old_key, new_table.keys()) && !key_exists_in(old_key, new_table.indexes()) {
                     cs.add_change(SchemaChange::DropKey {
                         table_name: old_table.name().to_string(),
                         key: old_key.clone(),
+                        ordinal: unique_ordinal,
+                    });
+                }
+            }
+
+            let mut index_ordinal = 0;
+            for old_key in old_table.indexes() {
+                if old_key.is_index() {
+                    index_ordinal += 1;
+                }
+                if !key_exists_in(old_key, new_table.keys()) && !key_exists_in(old_key, new_table.indexes()) {
+                    cs.add_change(SchemaChange::DropKey {
+                        table_name: old_table.name().to_string(),
+                        key: old_key.clone(),
+                        ordinal: index_ordinal,
                     });
                 }
             }
@@ -138,11 +167,32 @@ fn diff_drop_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 fn diff_add_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
         if let Some(old_table) = old.get_optional_table(new_table.name()) {
-            for new_key in new_table.keys().iter().chain(new_table.indexes().iter()) {
+            // See diff_drop_keys - same per-category ordinal so an added key gets the
+            // name the create path would give it.
+            let mut unique_ordinal = 0;
+            for new_key in new_table.keys() {
+                if new_key.key_type() == KeyType::Unique {
+                    unique_ordinal += 1;
+                }
                 if !key_exists_in(new_key, old_table.keys()) && !key_exists_in(new_key, old_table.indexes()) {
                     cs.add_change(SchemaChange::AddKey {
                         table_name: new_table.name().to_string(),
                         key: new_key.clone(),
+                        ordinal: unique_ordinal,
+                    });
+                }
+            }
+
+            let mut index_ordinal = 0;
+            for new_key in new_table.indexes() {
+                if new_key.is_index() {
+                    index_ordinal += 1;
+                }
+                if !key_exists_in(new_key, old_table.keys()) && !key_exists_in(new_key, old_table.indexes()) {
+                    cs.add_change(SchemaChange::AddKey {
+                        table_name: new_table.name().to_string(),
+                        key: new_key.clone(),
+                        ordinal: index_ordinal,
                     });
                 }
             }
@@ -156,6 +206,9 @@ fn key_exists_in(key: &Key, keys: &[Key]) -> bool {
 
 fn keys_equal(a: &Key, b: &Key) -> bool {
     a.key_type() == b.key_type()
+        && a.is_unique() == b.is_unique()
+        && a.is_cluster() == b.is_cluster()
+        && a.include() == b.include()
         && a.columns().len() == b.columns().len()
         && a.columns().iter().zip(b.columns().iter()).all(|(ac, bc)| {
             ac.name().eq_ignore_ascii_case(bc.name())
@@ -193,18 +246,24 @@ fn diff_add_constraints(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 }
 
 fn constraint_exists_in(con: &Constraint, constraints: &[Constraint]) -> bool {
-    constraints
-        .iter()
-        .any(|c| c.name().eq_ignore_ascii_case(con.name()))
+    constraints.iter().any(|c| constraints_equal(c, con))
+}
+
+fn constraints_equal(a: &Constraint, b: &Constraint) -> bool {
+    a.name().eq_ignore_ascii_case(b.name()) && a.sql().trim() == b.sql().trim()
 }
 
 fn diff_drop_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for old_table in old.tables() {
         if let Some(new_table) = new.get_optional_table(old_table.name()) {
-            for old_rel in old_table.relations() {
+            // Ordinal is the relation's 1-based position in the table's relation list,
+            // matching the create path's `fk_<table><n>` numbering, so the migration
+            // generator can reproduce the exact name of the constraint it's dropping.
+            for (index, old_rel) in old_table.relations().iter().enumerate() {
                 if !relation_exists_in(old_rel, new_table.relations()) {
                     cs.add_change(SchemaChange::DropRelation {
                         relation: old_rel.clone(),
+                        ordinal: index + 1,
                     });
                 }
             }
@@ -215,10 +274,13 @@ fn diff_drop_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 fn diff_add_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
         if let Some(old_table) = old.get_optional_table(new_table.name()) {
-            for new_rel in new_table.relations() {
+            // See diff_drop_relations - same ordinal so an added relation gets the name
+            // the create path would give it.
+            for (index, new_rel) in new_table.relations().iter().enumerate() {
                 if !relation_exists_in(new_rel, old_table.relations()) {
                     cs.add_change(SchemaChange::AddRelation {
                         relation: new_rel.clone(),
+                        ordinal: index + 1,
                     });
                 }
             }
@@ -235,6 +297,7 @@ fn relations_equal(a: &Relation, b: &Relation) -> bool {
         && a.from_column_name().eq_ignore_ascii_case(b.from_column_name())
         && a.to_table_name().eq_ignore_ascii_case(b.to_table_name())
         && a.to_column_name().eq_ignore_ascii_case(b.to_column_name())
+        && a.relation_type() == b.relation_type()
 }
 
 fn diff_drop_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
@@ -258,7 +321,9 @@ fn diff_add_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 }
 
 fn view_exists_in(view: &View, views: &[View]) -> bool {
-    views
-        .iter()
-        .any(|v| v.name().eq_ignore_ascii_case(view.name()))
+    views.iter().any(|v| views_equal(v, view))
+}
+
+fn views_equal(a: &View, b: &View) -> bool {
+    a.name().eq_ignore_ascii_case(b.name()) && a.sql().trim() == b.sql().trim()
 }

@@ -72,8 +72,8 @@ impl SqlServerTriggerGenerator {
             sql_println!(writer, "/* {}_delete */", table_name);
             sql_println!(
                 writer,
-                "if exists (select name from dbo.sysobjects where name = '{}_delete' and type = 'TR')",
-                escape_sql_literal(&table_name)
+                "if object_id('{}', 'TR') is not null",
+                escape_sql_literal(&fully_qualified_trigger)
             );
             sql_println!(writer, "   drop trigger {}{}", fully_qualified_trigger, separator);
             sql_println!(writer, "");
@@ -173,8 +173,8 @@ impl SqlServerTriggerGenerator {
             sql_println!(writer, "/* {}_update */", table_name);
             sql_println!(
                 writer,
-                "if exists (select name from dbo.sysobjects where name = '{}_update' and type = 'TR')",
-                escape_sql_literal(&table_name)
+                "if object_id('{}', 'TR') is not null",
+                escape_sql_literal(&fully_qualified_trigger)
             );
             sql_println!(writer, "   drop trigger {}{}", fully_qualified_trigger, separator);
             sql_println!(writer, "");
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn output_triggers_escapes_single_quote_in_table_name() {
         // Regression test: an unescaped embedded quote would break the generated
-        // sysobjects existence-check SQL string literal.
+        // object_id existence-check SQL string literal.
         let table = TableBuilder::new(None::<&str>, "o'brien")
             .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
             .add_trigger(schema_model::model::trigger::Trigger::new(
@@ -325,7 +325,7 @@ mod tests {
         generator.output_triggers();
 
         let output = buffer.contents();
-        assert!(output.contains("where name = 'o''brien_update' and type = 'TR'"));
+        assert!(output.contains("if object_id('dbo.o''brien_update', 'TR') is not null"));
     }
 
     #[test]

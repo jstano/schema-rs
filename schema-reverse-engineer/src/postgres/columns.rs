@@ -55,12 +55,10 @@ pub async fn list_columns(
     .await
     .map_err(|e| SchemaReverseEngineerError::Introspection(e.to_string()))?;
 
-    rows.into_iter()
-        .map(|row| build_column_info(row, enum_type_names))
-        .collect()
+    Ok(rows.into_iter().map(|row| build_column_info(row, enum_type_names)).collect())
 }
 
-fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Result<ColumnInfo, SchemaReverseEngineerError> {
+fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> ColumnInfo {
     let is_generated = row.is_generated == "ALWAYS";
     let is_autoincrement = row.is_identity == "YES"
         || row
@@ -69,8 +67,21 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Resul
             .map(|d| d.starts_with("nextval("))
             .unwrap_or(false);
 
+    // An unsupported type (inet, money, xml, hstore, PostGIS, ...) falls back to `Text` with a
+    // warning rather than aborting the whole run -- losing one column's exact type is far
+    // better than producing no output file at all for the rest of the database.
     let (column_type, element_type) =
-        map_column_type(&row.data_type, &row.udt_name, is_autoincrement, enum_type_names)?;
+        match map_column_type(&row.data_type, &row.udt_name, is_autoincrement, enum_type_names) {
+            Ok(mapped) => mapped,
+            Err(SchemaReverseEngineerError::UnsupportedColumnType(type_name)) => {
+                eprintln!(
+                    "warning: {}.{} has unsupported type '{}' -- falling back to text",
+                    row.table_name, row.column_name, type_name
+                );
+                (ColumnType::Text, None)
+            }
+            Err(other) => unreachable!("map_column_type only ever returns UnsupportedColumnType: {other}"),
+        };
 
     let enum_type = if column_type == ColumnType::Enum {
         Some(row.udt_name.clone())
@@ -107,7 +118,7 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Resul
         row.column_default
     };
 
-    Ok(ColumnInfo {
+    ColumnInfo {
         table_name: row.table_name,
         column_name: row.column_name,
         column_type,
@@ -118,7 +129,7 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Resul
         generated,
         enum_type,
         element_type,
-    })
+    }
 }
 
 /// Maps a Postgres column's `data_type`/`udt_name` (as reported by `information_schema.columns`)
@@ -253,5 +264,38 @@ mod tests {
         let none = enums(&[]);
         let err = map_column_type("USER-DEFINED", "some_domain", false, &none).unwrap_err();
         assert!(matches!(err, SchemaReverseEngineerError::UnsupportedColumnType(_)));
+    }
+
+    fn column_row(data_type: &str, udt_name: &str) -> ColumnRow {
+        ColumnRow {
+            table_name: "t".to_string(),
+            column_name: "c".to_string(),
+            data_type: data_type.to_string(),
+            udt_name: udt_name.to_string(),
+            character_maximum_length: None,
+            numeric_precision: None,
+            numeric_scale: None,
+            is_nullable: "YES".to_string(),
+            column_default: None,
+            is_identity: "NO".to_string(),
+            is_generated: "NEVER".to_string(),
+            generation_expression: None,
+        }
+    }
+
+    #[test]
+    fn unsupported_column_type_falls_back_to_text_instead_of_aborting() {
+        // inet, money, xml, hstore, PostGIS, etc. all reach here as an unmapped udt_name --
+        // one such column anywhere used to abort the entire reverse-engineer run.
+        let info = build_column_info(column_row("USER-DEFINED", "inet"), &enums(&[]));
+        assert_eq!(info.column_type, ColumnType::Text);
+        assert_eq!(info.element_type, None);
+    }
+
+    #[test]
+    fn unsupported_array_element_type_falls_back_to_text() {
+        let info = build_column_info(column_row("ARRAY", "_inet"), &enums(&[]));
+        assert_eq!(info.column_type, ColumnType::Text);
+        assert_eq!(info.element_type, None);
     }
 }

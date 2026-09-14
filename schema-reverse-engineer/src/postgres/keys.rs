@@ -85,15 +85,23 @@ pub async fn list_keys(
     .await
     .map_err(|e| SchemaReverseEngineerError::Introspection(e.to_string()))?;
 
-    let mut by_index: HashMap<(String, String), (bool, bool, Vec<String>)> = HashMap::new();
+    // Grouped by hand instead of via a `HashMap` keyed on `(table_name, index_name)`: the query
+    // is already `ORDER BY t.relname, i.relname, ...`, so consecutive rows belong to the same
+    // index -- iterating a `HashMap` here would silently discard that order, making two runs
+    // against an unchanged database produce differently-ordered XML.
+    let mut grouped: Vec<(String, String, bool, bool, Vec<String>)> = Vec::new();
     for row in index_rows {
-        let entry = by_index
-            .entry((row.table_name, row.index_name))
-            .or_insert((row.is_unique, row.is_primary, Vec::new()));
-        entry.2.push(row.column_name);
+        if let Some(last) = grouped.last_mut()
+            && last.0 == row.table_name
+            && last.1 == row.index_name
+        {
+            last.4.push(row.column_name);
+            continue;
+        }
+        grouped.push((row.table_name, row.index_name, row.is_unique, row.is_primary, vec![row.column_name]));
     }
 
-    for ((table_name, index_name), (is_unique, is_primary, columns)) in by_index {
+    for (table_name, index_name, is_unique, is_primary, columns) in grouped {
         // The index backing the primary key is already represented via the PK query above.
         if is_primary {
             continue;

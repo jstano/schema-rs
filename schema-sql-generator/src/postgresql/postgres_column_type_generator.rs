@@ -159,6 +159,15 @@ mod tests {
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 
+    fn assert_type_with_length(column_type: ColumnType, length: i32, expected: &str) {
+        let model = make_model_default();
+        let (ctx, table_builder) = make_context(model);
+        let generator = PostgresColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", column_type).length(length).build();
+        assert_eq!(generator.column_type_sql(&table, &col), expected);
+    }
+
     #[test]
     fn sequence_types() {
         assert_type(ColumnType::Sequence, "serial");
@@ -191,7 +200,7 @@ mod tests {
         assert_type(ColumnType::Text, "text");
         assert_type(ColumnType::CiText, "citext");
         assert_type(ColumnType::CsText, "text");
-        assert_type(ColumnType::Char, "char(0)");
+        assert_type_with_length(ColumnType::Char, 1, "char(1)");
         assert_type(ColumnType::Json, "jsonb");
         assert_type(ColumnType::Uuid, "uuid");
     }

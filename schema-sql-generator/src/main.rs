@@ -63,6 +63,10 @@ pub fn main() {
             .long("extension-check-user")
             .value_name("USER")
             .help("Postgres role to check for superuser privilege in the create-extension block (default: CURRENT_USER)"))
+        .arg(Arg::new("output-file")
+            .long("output-file")
+            .value_name("FILE")
+            .help("Sets the exact output SQL file path (default: {schema-stem}-{database-type}.sql next to --schema-file)"))
         .arg(Arg::new("new-schema")
             .long("new-schema")
             .action(ArgAction::SetTrue)
@@ -112,11 +116,32 @@ pub fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let schema_path = Path::new(schema_file);
-    let output_path = build_output_path(schema_path, database_type.to_string().to_lowercase());
+    let output_path = match arguments.get_one::<String>("output-file") {
+        Some(path) => path.clone(),
+        None => build_output_path(schema_path, database_type.to_string().to_lowercase()),
+    };
+    if let Some(parent) = Path::new(&output_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).expect("failed to create output directory");
+        }
+    }
     let output_file = File::create(output_path).expect("");
     let print_writer = PrintWriter::new(Box::new(output_file));
     let generator_type: GeneratorType = database_type.parse().unwrap();
     let database_model = load_schema(schema_path);
+
+    // Dialect-specific checks `database_model.validate()` (inside `load_schema`) can't make
+    // on its own, since it has no notion of which dialect is about to render this model -
+    // one schema.xml is meant to target all three databases (H23).
+    let dialect_errors = generator_type.validate_for_dialect(&database_model);
+    if !dialect_errors.is_empty() {
+        eprintln!("Error: the schema file is invalid for --database-type {}:", database_type);
+        for error in &dialect_errors {
+            eprintln!("  {}", error);
+        }
+        std::process::exit(1);
+    }
+
     let options = GenerateOptions {
         database_model: Rc::new(database_model),
         writer: Rc::new(RefCell::new(print_writer)),

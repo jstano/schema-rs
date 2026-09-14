@@ -4,6 +4,7 @@ use crate::tracking::SchemaMigrationDdl;
 use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::{Pool, Postgres, Sqlite, postgres::PgPoolOptions, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
 use std::str::FromStr;
+use std::time::Instant;
 use tiberius::Client;
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
@@ -97,11 +98,33 @@ impl AnyPool {
         self.execute_sql(&ddl).await
     }
 
-    /// Executes a sequence of already-split SQL statements as a single database
-    /// transaction: all statements commit together, or none of them do. This prevents a
-    /// migration file that fails partway through from leaving earlier statements in that
-    /// same file permanently applied to the schema.
-    pub async fn execute_transactional(&self, statements: &[String]) -> Result<(), SchemaInstallerError> {
+    /// Executes a migration's already-split SQL statements and marks its tracking row
+    /// `"success"` as **one** database transaction, returning the elapsed milliseconds on
+    /// success.
+    ///
+    /// Previously the DDL and the status update were two separate transactions (insert
+    /// "pending", commit the DDL, then a third autocommit `UPDATE ... status = 'success'`),
+    /// which left a real gap: a process killed after the DDL commit but before the status
+    /// update left the migration permanently applied while its tracking row stayed
+    /// "pending" forever - wedging every future `migrate` behind the lock-wait timeout,
+    /// with `repair`'s stale-pending cleanup then deleting the row and causing the next
+    /// `migrate` to re-run DDL that already succeeded (BUGS_AND_GAPS H9). Folding the
+    /// status update into the same transaction as the DDL means the two now commit
+    /// together or not at all: a crash before commit leaves the row exactly "pending" (safe
+    /// to reclaim, since none of the DDL took effect either), and a crash after commit
+    /// leaves it "success", always matching whether the DDL actually ran.
+    ///
+    /// On a statement failure the transaction is rolled back (by never committing it, or
+    /// explicitly for SQL Server) and this returns `Err` without touching the tracking row
+    /// at all - the caller then records `"failed"` as a separate, deliberately
+    /// non-atomic `update_migration_status` call, since a failed attempt has no DDL
+    /// side effect it needs to stay atomic with.
+    pub async fn execute_migration_transactional(
+        &self,
+        statements: &[String],
+        migration_id: i64,
+    ) -> Result<i64, SchemaInstallerError> {
+        let start = Instant::now();
         match self {
             AnyPool::Postgresql(pool) => {
                 let mut tx = pool
@@ -114,10 +137,28 @@ impl AnyPool {
                         .await
                         .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 }
+                let elapsed_ms = start.elapsed().as_millis() as i64;
+                let rows_affected = sqlx::query("UPDATE schema_migration SET status = 'success', execution_time_ms = $1 WHERE id = $2")
+                    .bind(elapsed_ms)
+                    .bind(migration_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                    .rows_affected();
+                if rows_affected == 0 {
+                    // `tx` drops here without a `commit()`, rolling back the DDL along
+                    // with it - see the "no tracking row found" comment on
+                    // `update_migration_status` for why a silent no-op here would be worse
+                    // than failing loudly.
+                    return Err(SchemaInstallerError::Database(format!(
+                        "failed to record migration status as 'success': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
+                        migration_id
+                    )));
+                }
                 tx.commit()
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
-                Ok(())
+                Ok(elapsed_ms)
             }
             AnyPool::Sqlite(pool) => {
                 let mut tx = pool
@@ -130,10 +171,24 @@ impl AnyPool {
                         .await
                         .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 }
+                let elapsed_ms = start.elapsed().as_millis() as i64;
+                let rows_affected = sqlx::query("UPDATE schema_migration SET status = 'success', execution_time_ms = ? WHERE id = ?")
+                    .bind(elapsed_ms)
+                    .bind(migration_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                    .rows_affected();
+                if rows_affected == 0 {
+                    return Err(SchemaInstallerError::Database(format!(
+                        "failed to record migration status as 'success': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
+                        migration_id
+                    )));
+                }
                 tx.commit()
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
-                Ok(())
+                Ok(elapsed_ms)
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
@@ -150,11 +205,33 @@ impl AnyPool {
                     }
                 }
 
+                let elapsed_ms = start.elapsed().as_millis() as i64;
+                let rows_affected: u64 = match client
+                    .execute(
+                        "UPDATE schema_migration SET status = 'success', execution_time_ms = @P1 WHERE id = @P2",
+                        &[&(elapsed_ms as i32), &migration_id],
+                    )
+                    .await
+                {
+                    Ok(result) => result.rows_affected().iter().sum(),
+                    Err(e) => {
+                        let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                        return Err(SchemaInstallerError::Execution(e.to_string()));
+                    }
+                };
+                if rows_affected == 0 {
+                    let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                    return Err(SchemaInstallerError::Database(format!(
+                        "failed to record migration status as 'success': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
+                        migration_id
+                    )));
+                }
+
                 client
                     .execute("COMMIT TRANSACTION", &[])
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
-                Ok(())
+                Ok(elapsed_ms)
             }
         }
     }
@@ -233,7 +310,14 @@ impl AnyPool {
                     let script_path: &str = row.get(2).ok_or_else(|| SchemaInstallerError::Database("Missing script_path".to_string()))?;
                     let checksum: &str = row.get(3).ok_or_else(|| SchemaInstallerError::Database("Missing checksum".to_string()))?;
                     let execution_time_ms: i32 = row.get(4).ok_or_else(|| SchemaInstallerError::Database("Missing execution_time_ms".to_string()))?;
-                    let installed_at: chrono::DateTime<chrono::Utc> = row.get(5).ok_or_else(|| SchemaInstallerError::Database("Missing installed_at".to_string()))?;
+                    // `DATETIME2` round-trips through tiberius as a naive (timezone-less)
+                    // `chrono::NaiveDateTime`, not `chrono::DateTime<Utc>` - that FromSql impl
+                    // matches only `DateTimeOffset` (SQL Server's separate `DATETIMEOFFSET`
+                    // type). Reading it as `DateTime<Utc>` panics via `Row::get`'s internal
+                    // `.unwrap()` as soon as the table has a row. `installed_at`'s default is
+                    // `SYSUTCDATETIME()` (see `tracking.rs`), so the naive value is already UTC.
+                    let installed_at: chrono::NaiveDateTime = row.get(5).ok_or_else(|| SchemaInstallerError::Database("Missing installed_at".to_string()))?;
+                    let installed_at = installed_at.and_utc();
                     let status: &str = row.get(6).ok_or_else(|| SchemaInstallerError::Database("Missing status".to_string()))?;
                     let tool_version: &str = row.get(7).ok_or_else(|| SchemaInstallerError::Database("Missing tool_version".to_string()))?;
 
@@ -449,8 +533,50 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 client
                     .execute(
-                        "DELETE FROM schema_migration WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, GETDATE())",
+                        "DELETE FROM schema_migration WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, SYSUTCDATETIME())",
                         &[&"pending", &(older_than_seconds as i32)],
+                    )
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Deletes a single version's tracking row if - and only if - it's `"failed"`.
+    /// `install()` uses this to clear a leftover row from a previous failed attempt
+    /// before re-inserting a fresh `"pending"` one (H14): unlike `migrate()`, `install()`
+    /// doesn't go through `wait_for_slot`'s lock/wait dance, so without this a retry's
+    /// `insert_migration` would collide with the leftover row's `UNIQUE (version)` and
+    /// surface as a bogus `ConcurrentMigrationDetected` with no concurrency involved.
+    /// Scoped to `"failed"` (not `"pending"`) so it never removes a row a genuinely
+    /// concurrent attempt is still in the middle of.
+    pub async fn delete_failed_migration_by_version(&self, version: &str) -> Result<(), SchemaInstallerError> {
+        match self {
+            AnyPool::Postgresql(pool) => {
+                sqlx::query("DELETE FROM schema_migration WHERE version = $1 AND status = $2")
+                    .bind(version)
+                    .bind("failed")
+                    .execute(pool)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::Sqlite(pool) => {
+                sqlx::query("DELETE FROM schema_migration WHERE version = ? AND status = ?")
+                    .bind(version)
+                    .bind("failed")
+                    .execute(pool)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(())
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "DELETE FROM schema_migration WHERE version = @P1 AND status = @P2",
+                        &[&version, &"failed"],
                     )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;

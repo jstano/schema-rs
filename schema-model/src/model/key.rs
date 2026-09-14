@@ -84,7 +84,8 @@ impl Key {
     }
 
     pub fn contains_column(&self, column_name: &str) -> bool {
-        self.columns.iter().any(|c| c.name().eq_ignore_ascii_case(column_name))
+        let lower = column_name.to_lowercase();
+        self.columns.iter().any(|c| c.name().to_lowercase() == lower)
     }
 
     pub fn columns_as_string(&self) -> String {
@@ -132,5 +133,11 @@ mod tests {
         assert!(k.contains_column("id"));
         assert!(k.contains_column("ID"));
         assert!(!k.contains_column("other"));
+
+        // Unicode casing (eq_ignore_ascii_case only folds ASCII letters, so this must go
+        // through to_lowercase() on both sides, per H21).
+        let k2 = Key::new(KeyType::Primary, vec![KeyColumn::new("ÉTAT")]);
+        assert!(k2.contains_column("ÉTAT"));
+        assert!(k2.contains_column("état"));
     }
 }

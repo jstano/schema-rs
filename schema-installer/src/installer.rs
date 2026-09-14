@@ -44,6 +44,14 @@ impl SchemaInstaller {
             return Err(SchemaInstallerError::ValidationFailed(validation_errors.join("\n")));
         }
 
+        // Dialect-specific checks `validate()` can't make on its own, since it has no
+        // notion of which dialect is about to render this model - one schema.xml is meant
+        // to target all three databases (H23).
+        let dialect_errors = config.database_type.validate_for_dialect(&database_model);
+        if !dialect_errors.is_empty() {
+            return Err(SchemaInstallerError::ValidationFailed(dialect_errors.join("\n")));
+        }
+
         // Generate SQL by writing to temp file
         // (PrintWriter's BufWriter makes it difficult to extract bytes in memory)
         let temp_file = std::env::temp_dir().join(temp_install_file_name());
@@ -76,17 +84,27 @@ impl SchemaInstaller {
         let checksum = crate::migration::compute_checksum(&sql);
         let tool_version = env!("CARGO_PKG_VERSION");
 
+        // Clear a leftover "failed" row from a previous, non-transactional install
+        // attempt before claiming a fresh "pending" one - otherwise it collides with
+        // the insert below (UNIQUE (version)) and surfaces as a bogus
+        // `ConcurrentMigrationDetected` with no concurrency involved (H14).
+        pool.delete_failed_migration_by_version(install_version).await?;
+
         let migration_id = pool
             .insert_migration(install_version, script_name, &checksum, 0, "pending", tool_version)
             .await?;
 
-        // Execute SQL statements
+        // Execute all statements and record "success" as one transaction (H14): the
+        // previous loop ran each statement autocommit via `execute_sql`, so a failure
+        // partway through (e.g. statement 23 of 40) left every prior table behind with
+        // nothing rolled back, and re-running `install` then failed trying to re-insert
+        // the reserved version-0 tracking row over the leftovers. Reusing the same
+        // `execute_migration_transactional` the migration path uses (see H9) means a
+        // failure rolls back the entire script, leaving nothing behind to retry against.
         let start = std::time::Instant::now();
-        match Self::execute_sql_script(&pool, &config.database_type, &sql).await {
+        let statements = crate::sql_split::split_sql_statements(&sql, &config.database_type);
+        match pool.execute_migration_transactional(&statements, migration_id).await {
             Ok(_) => {
-                let elapsed_ms = start.elapsed().as_millis() as i64;
-                pool.update_migration_status(migration_id, "success", elapsed_ms)
-                    .await?;
                 println!("Schema installed successfully.");
                 Ok(())
             }
@@ -128,8 +146,14 @@ impl SchemaInstaller {
     }
 
     async fn check_if_installed(pool: &AnyPool) -> Result<bool, SchemaInstallerError> {
+        // Scoped to the reserved `install` tracking row only (H14): checking for *any*
+        // successful row conflated "the XML install ran" with "a Flyway-style migration
+        // ran", so running `migrate` first made a later `install` report "already
+        // installed" and exit 0 without creating a single table.
         match pool.get_applied_migrations().await {
-            Ok(migrations) => Ok(migrations.iter().any(|m| m.status == "success")),
+            Ok(migrations) => Ok(migrations.iter().any(|m| {
+                m.status == "success" && m.version == crate::migration::RESERVED_INSTALL_VERSION
+            })),
             Err(e) => {
                 // Table might not exist yet, which is fine
                 if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
@@ -143,18 +167,6 @@ impl SchemaInstaller {
 
     async fn ensure_tracking_tables(pool: &AnyPool, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {
         pool.ensure_migration_table(database_type).await?;
-        Ok(())
-    }
-
-    async fn execute_sql_script(
-        pool: &AnyPool,
-        database_type: &GeneratorType,
-        sql: &str,
-    ) -> Result<(), SchemaInstallerError> {
-        for statement in crate::sql_split::split_sql_statements(sql, database_type) {
-            pool.execute_sql(&statement).await?;
-        }
-
         Ok(())
     }
 }

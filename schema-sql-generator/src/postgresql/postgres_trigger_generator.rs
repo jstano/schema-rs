@@ -148,11 +148,11 @@ impl PostgresTriggerGenerator {
             sql_println!(writer, "$BODY$ language plpgsql{}", separator);
             sql_println!(writer, "");
 
-            sql_println!(writer, "drop trigger if exists {} on {} cascade{}", table_name, fully_qualified_table, separator);
+            sql_println!(writer, "drop trigger if exists {} on {} cascade{}", fn_name, fully_qualified_table, separator);
             sql_println!(
                 writer,
                 "create trigger {} after delete on {}",
-                table_name,
+                fn_name,
                 fully_qualified_table
             );
             sql_println!(writer, "   for each row execute procedure {}(){}", fully_qualified_fn, separator);
@@ -225,11 +225,11 @@ impl PostgresTriggerGenerator {
             sql_println!(writer, "$BODY$ language plpgsql{}", separator);
             sql_println!(writer, "");
 
-            sql_println!(writer, "drop trigger if exists {} on {} cascade{}", table_name, fully_qualified_table, separator);
+            sql_println!(writer, "drop trigger if exists {} on {} cascade{}", fn_name, fully_qualified_table, separator);
             sql_println!(
                 writer,
                 "create trigger {} after insert or update on {}",
-                table_name,
+                fn_name,
                 fully_qualified_table
             );
             sql_println!(writer, "   for each row execute procedure {}(){}", fully_qualified_fn, separator);
@@ -293,7 +293,7 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("create or replace function app.child_update() returns trigger"));
         assert!(output.contains("was not found in the app.parent table"));
-        assert!(output.contains("create trigger child after insert or update on app.child"));
+        assert!(output.contains("create trigger child_update after insert or update on app.child"));
     }
 
     #[test]

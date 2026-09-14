@@ -82,7 +82,6 @@
   <table name="ColumnTesterTable" data="true" compress="true" lockEscalation="disable" noExport="true" exportDataColumn="byte">
     <columns>
       <column name="sequence" type="sequence" required="true"/>
-      <column name="longsequence" type="longsequence"/>
       <column name="byte" type="byte"/>
       <column name="short" type="short"/>
       <column name="int" type="int" minValue="1" maxValue="500"/>
@@ -105,6 +104,12 @@
       <column name="binary" type="binary"/>
       <column name="uuid" type="uuid"/>
       <column name="json" type="json"/>
+    </columns>
+  </table>
+
+  <table name="LongSequenceTesterTable">
+    <columns>
+      <column name="longsequence" type="longsequence" required="true"/>
     </columns>
   </table>
 

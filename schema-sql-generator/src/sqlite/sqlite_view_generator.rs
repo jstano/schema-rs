@@ -71,7 +71,9 @@ mod tests {
     }
 
     #[test]
-    fn output_views_preserves_explicit_schema_name() {
+    fn output_views_flattens_explicit_schema_name() {
+        // SQLite has no schema concept - `app.active_users` would be parsed as a reference to
+        // an ATTACHed database named `app`, so the schema is flattened into the name instead.
         let view = View::new(Some("app"), "active_users", "select 1", None);
         let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
@@ -80,7 +82,7 @@ mod tests {
         let generator = SqliteViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("create view app.active_users as"));
+        assert!(buffer.contents().contains("create view app_active_users as"));
     }
 
     #[test]

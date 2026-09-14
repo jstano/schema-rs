@@ -31,14 +31,12 @@ pub fn convert_database(database_xml: DatabaseXml) -> Result<DatabaseModel, Stri
         .boolean_mode
         .as_deref()
         .map(|s| s.parse::<BooleanMode>())
-        .unwrap_or(Ok(BooleanMode::Native))
-        .unwrap();
+        .unwrap_or(Ok(BooleanMode::Native))?;
     let foreign_key_mode = database_xml
         .foreign_key_mode
         .as_deref()
         .map(|s| s.parse::<ForeignKeyMode>())
-        .unwrap_or(Ok(ForeignKeyMode::Relations))
-        .unwrap();
+        .unwrap_or(Ok(ForeignKeyMode::Relations))?;
 
     let mut database_model = DatabaseModel::new(boolean_mode, foreign_key_mode, schemas);
 
@@ -359,5 +357,69 @@ fn split_schema_table(table_name: &str) -> (Option<String>, String) {
         (Some(schema), table)
     } else {
         (None, table_name.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_database_xml() -> DatabaseXml {
+        DatabaseXml {
+            foreign_key_mode: None,
+            boolean_mode: None,
+            case_sensitive_text: None,
+            tables: Vec::new(),
+            enums: Vec::new(),
+            views: Vec::new(),
+            functions: Vec::new(),
+            procedures: Vec::new(),
+            other_sql: Vec::new(),
+            schemas: Vec::new(),
+        }
+    }
+
+    /// H5: a typo'd `booleanMode` attribute must return an `Err`, not panic via `.unwrap()`.
+    #[test]
+    fn invalid_boolean_mode_returns_err_instead_of_panicking() {
+        let mut database_xml = empty_database_xml();
+        database_xml.boolean_mode = Some("yes_no".to_string());
+
+        let result = convert_database(database_xml);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown boolean mode"));
+    }
+
+    /// H5: a typo'd `foreignKeyMode` attribute must return an `Err`, not panic via `.unwrap()`.
+    #[test]
+    fn invalid_foreign_key_mode_returns_err_instead_of_panicking() {
+        let mut database_xml = empty_database_xml();
+        database_xml.foreign_key_mode = Some("relation".to_string());
+
+        let result = convert_database(database_xml);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown foreign key mode"));
+    }
+
+    #[test]
+    fn valid_modes_still_parse_successfully() {
+        let mut database_xml = empty_database_xml();
+        database_xml.boolean_mode = Some("YesNo".to_string());
+        database_xml.foreign_key_mode = Some("triggers".to_string());
+
+        let model = convert_database(database_xml).unwrap();
+
+        assert_eq!(model.boolean_mode(), BooleanMode::YesNo);
+        assert_eq!(model.foreign_key_mode(), ForeignKeyMode::Triggers);
+    }
+
+    #[test]
+    fn missing_modes_default_to_native_and_relations() {
+        let model = convert_database(empty_database_xml()).unwrap();
+
+        assert_eq!(model.boolean_mode(), BooleanMode::Native);
+        assert_eq!(model.foreign_key_mode(), ForeignKeyMode::Relations);
     }
 }

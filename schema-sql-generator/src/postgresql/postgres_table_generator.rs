@@ -8,6 +8,7 @@ use crate::postgresql::postgres_table_constraint_generator::PostgresTableConstra
 use schema_model::model::table::Table;
 
 pub struct PostgresTableGenerator {
+    context: GeneratorContext,
     table_generator: DefaultTableGenerator,
 }
 
@@ -22,17 +23,36 @@ impl PostgresTableGenerator {
                 Box::new(PostgresTableConstraintGenerator::new(context.clone())),
                 Box::new(PostgresIndexGenerator::new(context.clone())),
             ),
+            context,
         }
     }
 }
 
 impl TableGenerator for PostgresTableGenerator {
     fn output_tables(&self) {
-        self.table_generator.output_tables();
+        // Self-dispatching loop, not a delegation to `DefaultTableGenerator::output_tables` -
+        // see `SqliteTableGenerator`/`SqlServerTableGenerator` for why: delegating would call
+        // `self.output_table` on the `DefaultTableGenerator`, statically bypassing any future
+        // override of `output_table`/its steps on this type.
+        let database_model = self.context.settings().database_model();
+        for schema in database_model.schemas() {
+            for table in schema.tables() {
+                self.output_table(table);
+            }
+        }
     }
 
     fn output_table(&self, table: &Table) {
-        self.table_generator.output_table_header(table);
+        self.output_table_drop(table);
+        self.output_table_header(table);
+        self.output_table_definition(table);
+        self.output_table_footer(table);
+        self.output_indexes(table);
+        self.output_initial_data(table);
+    }
+
+    fn output_table_drop(&self, table: &Table) {
+        self.table_generator.output_table_drop(table);
     }
 
     fn output_table_header(&self, table: &Table) {

@@ -70,16 +70,22 @@ impl DefaultColumnGenerator {
     }
 
     fn boolean_default_value(&self, default_constraint: Option<&str>) -> Option<String> {
-        if let Some(default_constraint) = default_constraint {
-            if default_constraint.eq_ignore_ascii_case("null") {
-                return None;
-            }
+        // No `default` attribute at all means no default constraint - unlike the old
+        // behaviour here, this must *not* fall back to `default false`: that made a nullable
+        // boolean column with no default inexpressible (H2). `parse_boolean_default` already
+        // recognizes the `null` sentinel as "no default constraint" (`Ok(None)`), distinct
+        // from this "attribute absent" case.
+        let default_constraint = default_constraint?;
 
-            let value = matches!(default_constraint.to_ascii_lowercase().as_str(), "true");
-            return Some(self.convert_boolean_default_constraint(value));
+        // `Schema::validate()` rejects any value `parse_boolean_default` can't parse before
+        // generation ever runs, so `Err(())` here is unreachable through the CLI/installer -
+        // but a caller going straight to the generator without validating first should still
+        // get a working (if surprising) `false` rather than a panic.
+        match schema_model::model::column::parse_boolean_default(default_constraint) {
+            Ok(Some(value)) => Some(self.convert_boolean_default_constraint(value)),
+            Ok(None) => None,
+            Err(()) => Some(self.convert_boolean_default_constraint(false)),
         }
-
-        Some(self.convert_boolean_default_constraint(false))
     }
 
     fn uuid_default_value(
@@ -184,5 +190,86 @@ impl ColumnGenerator for DefaultColumnGenerator {
             ColumnType::Uuid => self.uuid_default_value(table, column, default_constraint),
             _ => default_constraint.map(String::from),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::schema::Schema;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    /// Bare-minimum `ColumnTypeGenerator` - only `native_boolean_sql` matters here, the rest
+    /// exist purely to satisfy the trait's other required methods.
+    struct DummyColumnTypeGenerator(GeneratorContext);
+    impl ColumnTypeGenerator for DummyColumnTypeGenerator {
+        fn context(&self) -> &GeneratorContext { &self.0 }
+        fn sequence_sql(&self) -> String { String::new() }
+        fn long_sequence_sql(&self) -> String { String::new() }
+        fn text_sql(&self, _column: &Column) -> String { String::new() }
+        fn citext_sql(&self) -> String { String::new() }
+        fn cstext_sql(&self) -> String { String::new() }
+        fn binary_sql(&self) -> String { String::new() }
+        fn uuid_default_value_sql(&self, _schema: &Schema) -> String { String::new() }
+        fn array_sql(&self, _column: &Column) -> String { String::new() }
+        fn json_sql(&self, _column: &Column) -> String { String::new() }
+        fn native_boolean_sql(&self) -> String { "boolean".to_string() }
+    }
+
+    fn boolean_column_default(default_constraint: Option<&str>) -> Option<String> {
+        let mut builder = ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean);
+        if let Some(default_constraint) = default_constraint {
+            builder = builder.default_constraint(Some(default_constraint.to_string()));
+        }
+        let table = TableBuilder::new(None::<&str>, "widget").add_column(builder.build()).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultColumnGenerator::new(
+            ctx.clone(),
+            Box::new(DummyColumnTypeGenerator(ctx)),
+            DefaultConstraintNaming::Unnamed,
+        );
+        let column = table.columns()[0].clone();
+        generator.default_value(&table, &column)
+    }
+
+    #[test]
+    fn boolean_column_with_no_default_attribute_gets_no_default_constraint() {
+        // Regression test for H2: omitting `default` used to silently force `default false`,
+        // making a nullable boolean column with no default inexpressible.
+        assert_eq!(boolean_column_default(None), None);
+    }
+
+    #[test]
+    fn boolean_column_default_null_sentinel_means_no_default_constraint() {
+        assert_eq!(boolean_column_default(Some("null")), None);
+        assert_eq!(boolean_column_default(Some("NULL")), None);
+    }
+
+    #[test]
+    fn boolean_column_default_recognizes_truthy_spellings() {
+        for value in ["true", "TRUE", " true ", "1", "yes", "on"] {
+            assert_eq!(boolean_column_default(Some(value)), Some("true".to_string()), "value: {:?}", value);
+        }
+    }
+
+    #[test]
+    fn boolean_column_default_recognizes_falsy_spellings() {
+        for value in ["false", "FALSE", "0", "no", "off"] {
+            assert_eq!(boolean_column_default(Some(value)), Some("false".to_string()), "value: {:?}", value);
+        }
+    }
+
+    #[test]
+    fn boolean_column_default_falls_back_to_false_for_an_unrecognized_value() {
+        // `Schema::validate()` rejects this before generation ever runs (see schema-model's
+        // `Schema::validate` tests), so this only exercises the defensive fallback for a
+        // caller that invokes the generator directly without validating first.
+        assert_eq!(boolean_column_default(Some("maybe")), Some("false".to_string()));
     }
 }

@@ -31,8 +31,12 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
         "bigint identity(1,1)".to_string()
     }
 
-    fn text_sql(&self, _column: &Column) -> String {
-        "nvarchar(max)".to_string()
+    fn text_sql(&self, column: &Column) -> String {
+        if column.length() > 0 {
+            format!("nvarchar({})", column.length())
+        } else {
+            "nvarchar(max)".to_string()
+        }
     }
 
     fn citext_sql(&self) -> String {
@@ -202,6 +206,17 @@ mod tests {
         assert_type(ColumnType::CsText, "nvarchar(max)");
         assert_type(ColumnType::Json, "json");
         assert_type(ColumnType::Uuid, "uniqueidentifier");
+    }
+
+    #[test]
+    fn text_type_with_length_uses_bounded_nvarchar() {
+        let (ctx, table_builder) = make_context();
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Text)
+            .length(255)
+            .build();
+        assert_eq!(generator.column_type_sql(&table, &col), "nvarchar(255)");
     }
 
     #[test]

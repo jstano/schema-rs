@@ -21,11 +21,15 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
     }
 
     fn sequence_sql(&self) -> String {
-        "integer auto_increment".to_string()
+        // The `integer primary key autoincrement` rowid-alias form is emitted directly by
+        // `SqliteColumnGenerator::column_sql` for the (common) case where this column is the
+        // table's sole primary key column - see `sqlite_pk_support`. Absent that inline form,
+        // SQLite has no auto-increment behaviour to offer, so this is a plain integer column.
+        "integer".to_string()
     }
 
     fn long_sequence_sql(&self) -> String {
-        "integer auto_increment".to_string()
+        "integer".to_string()
     }
 
     fn text_sql(&self, _column: &Column) -> String {
@@ -119,10 +123,22 @@ mod tests {
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 
+    fn assert_type_with_length(column_type: ColumnType, length: i32, expected: &str) {
+        let model = make_model_default();
+        let (ctx, table_builder) = make_context(model);
+        let generator = SqliteColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", column_type).length(length).build();
+        assert_eq!(generator.column_type_sql(&table, &col), expected);
+    }
+
     #[test]
     fn sequence_types() {
-        assert_type(ColumnType::Sequence, "integer auto_increment");
-        assert_type(ColumnType::LongSequence, "integer auto_increment");
+        // A Sequence/LongSequence column not participating in a single-column primary key
+        // (the case covered by `sqlite_column_generator`'s inline-autoincrement handling)
+        // renders as a plain integer.
+        assert_type(ColumnType::Sequence, "integer");
+        assert_type(ColumnType::LongSequence, "integer");
     }
 
     #[test]
@@ -146,11 +162,11 @@ mod tests {
 
     #[test]
     fn text_types() {
-        assert_type(ColumnType::Varchar, "varchar(0)");
+        assert_type_with_length(ColumnType::Varchar, 100, "varchar(100)");
         assert_type(ColumnType::Text, "text");
         assert_type(ColumnType::CiText, "text");
         assert_type(ColumnType::CsText, "text");
-        assert_type(ColumnType::Char, "char(0)");
+        assert_type_with_length(ColumnType::Char, 1, "char(1)");
         assert_type(ColumnType::Json, "text");
         assert_type(ColumnType::Uuid, "text");
     }

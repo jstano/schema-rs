@@ -5,7 +5,8 @@ use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
-use schema_model::model::types::{KeyType, RelationType};
+use schema_model::model::types::{DatabaseType, KeyType, RelationType};
+use schema_model::naming::{index_name, unique_key_name};
 
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
@@ -82,11 +83,11 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "-- Manually recreate the table with the updated column definition.")?;
                     writeln!(writer)?;
                 }
-                SchemaChange::AddKey { table_name, key } => {
-                    write_add_key(writer, table_name, key)?;
+                SchemaChange::AddKey { table_name, key, ordinal } => {
+                    write_add_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::DropKey { table_name, key } => {
-                    write_drop_key(writer, table_name, key)?;
+                SchemaChange::DropKey { table_name, key, ordinal } => {
+                    write_drop_key(writer, table_name, key, *ordinal)?;
                 }
                 SchemaChange::AddConstraint { table_name, constraint } => {
                     writeln!(
@@ -108,10 +109,10 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "-- Manually recreate the table without the constraint.")?;
                     writeln!(writer)?;
                 }
-                SchemaChange::AddRelation { relation } => {
+                SchemaChange::AddRelation { relation, .. } => {
                     write_add_relation(writer, relation)?;
                 }
-                SchemaChange::DropRelation { relation } => {
+                SchemaChange::DropRelation { relation, .. } => {
                     writeln!(
                         writer,
                         "-- SQLite does not support dropping foreign key on '{}.{}'.",
@@ -153,9 +154,8 @@ fn column_type_sql(column: &Column) -> String {
     }
 }
 
-fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<(), MigrationGeneratorError> {
-    let col_names: Vec<&str> = key.columns().iter().map(|c| c.name()).collect();
-    let cols = col_names.join(", ");
+fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
     match key.key_type() {
         KeyType::Primary => {
             writeln!(
@@ -166,15 +166,15 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<
             writeln!(writer, "-- Manually recreate the table with the primary key.")?;
         }
         KeyType::Unique => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+            let constraint_name = unique_key_name(DatabaseType::Sqlite, table_name, ordinal);
             writeln!(
                 writer,
                 "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({});",
-                idx_name, table_name, cols
+                constraint_name, table_name, cols
             )?;
         }
         KeyType::Index => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+            let idx_name = index_name(DatabaseType::Sqlite, table_name, ordinal);
             writeln!(
                 writer,
                 "CREATE INDEX IF NOT EXISTS {} ON {} ({});",
@@ -186,8 +186,7 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<
     Ok(())
 }
 
-fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<(), MigrationGeneratorError> {
-    let col_names: Vec<&str> = key.columns().iter().map(|c| c.name()).collect();
+fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
     match key.key_type() {
         KeyType::Primary => {
             writeln!(
@@ -197,8 +196,12 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result
             )?;
             writeln!(writer, "-- Manually recreate the table without the primary key.")?;
         }
-        KeyType::Unique | KeyType::Index => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+        KeyType::Unique => {
+            let constraint_name = unique_key_name(DatabaseType::Sqlite, table_name, ordinal);
+            writeln!(writer, "DROP INDEX IF EXISTS {};", constraint_name)?;
+        }
+        KeyType::Index => {
+            let idx_name = index_name(DatabaseType::Sqlite, table_name, ordinal);
             writeln!(writer, "DROP INDEX IF EXISTS {};", idx_name)?;
         }
     }

@@ -26,7 +26,7 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
         columns_by_table.entry(column.table_name.clone()).or_default().push(column);
     }
 
-    let mut schema_builder = SchemaBuilder::new(None::<&str>);
+    let mut schema_builder = SchemaBuilder::new(Some(db_schema));
     for enum_type in enum_types {
         schema_builder = schema_builder.add_enum_type(enum_type);
     }
@@ -35,11 +35,11 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
     }
 
     for table_name in &table_names {
-        let mut table_builder = TableBuilder::new(None::<&str>, table_name.as_str());
+        let mut table_builder = TableBuilder::new(Some(db_schema), table_name.as_str());
 
         for column in columns_by_table.remove(table_name).unwrap_or_default() {
             table_builder = table_builder.add_column(
-                ColumnBuilder::new(None::<&str>, column.column_name.as_str(), column.column_type)
+                ColumnBuilder::new(Some(db_schema), column.column_name.as_str(), column.column_type)
                     .length(column.length)
                     .scale(column.scale)
                     .required(column.required)

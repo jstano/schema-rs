@@ -37,6 +37,11 @@ impl DatabaseType {
             None => self.default_schema(),
         };
         match resolved {
+            // SQLite has no schema concept - `schema.name` would be parsed as a reference to
+            // an ATTACHed database named `schema`, which doesn't exist. Flatten instead, so a
+            // multi-schema model still produces runnable (if less prettily namespaced) SQLite
+            // output.
+            Some(schema) if *self == DatabaseType::Sqlite => format!("{}_{}", schema, name),
             Some(schema) => format!("{}.{}", schema, name),
             None => name.to_string(),
         }
@@ -208,7 +213,15 @@ mod tests {
     fn qualified_name_preserves_explicit_non_default_schema() {
         assert_eq!(DatabaseType::Postgresql.qualified_name(Some("app"), "users"), "app.users");
         assert_eq!(DatabaseType::SqlServer.qualified_name(Some("app"), "users"), "app.users");
-        assert_eq!(DatabaseType::Sqlite.qualified_name(Some("app"), "users"), "app.users");
+    }
+
+    #[test]
+    fn qualified_name_flattens_schema_for_sqlite() {
+        // SQLite has no schema concept - `app.users` would be parsed as a reference to an
+        // ATTACHed database named `app`. Flatten to `app_users` instead of emitting SQL that
+        // can never execute.
+        assert_eq!(DatabaseType::Sqlite.qualified_name(Some("app"), "users"), "app_users");
+        assert_eq!(DatabaseType::Sqlite.qualified_name(None, "users"), "users");
     }
 
     #[test]

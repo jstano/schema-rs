@@ -2,8 +2,7 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::sql_writer::SqlWriter;
 use schema_model::model::key::Key;
 use schema_model::model::table::Table;
-
-const IX_PREFIX: &str = "ix_";
+use schema_model::naming::index_name;
 
 pub trait IndexGenerator {
     fn output_indexes(&self);
@@ -36,26 +35,33 @@ impl DefaultIndexGenerator {
     }
 }
 
-impl IndexGenerator for DefaultIndexGenerator {
-    fn output_indexes(&self) {
+impl DefaultIndexGenerator {
+    /// Same iteration logic as `output_indexes`, but dispatches each table (and,
+    /// transitively, each index) through `generator` rather than `self` - see
+    /// `DefaultFunctionGenerator::output_functions_via` for why: a dialect wrapper (e.g.
+    /// `SqlServerIndexGenerator`) that overrides `index_options` but delegates
+    /// `output_indexes` straight to this struct would otherwise never see its own override
+    /// invoked, because Rust has no virtual dispatch on concrete types. Callers that need
+    /// their override honored should pass `self` (as a `&dyn IndexGenerator`) here instead
+    /// of calling `output_indexes` directly.
+    pub fn output_indexes_via(&self, generator: &dyn IndexGenerator) {
         let database_model = self.context.settings().database_model();
 
         self.context.with_writer(|writer| {
             database_model.schemas().iter().for_each(|schema| {
                 schema.tables().iter().for_each(|table| {
-                    self.output_indexes_for_table(writer, table);
+                    generator.output_indexes_for_table(writer, table);
                 });
             });
         });
     }
 
-    fn output_indexes_for_table(&self, writer: &mut SqlWriter, table: &Table) {
+    /// Same as `output_indexes_via`, one table at a time - see that method for why
+    /// dispatching through `generator` (rather than calling `self.output_index` directly)
+    /// matters.
+    pub fn output_indexes_for_table_via(&self, generator: &dyn IndexGenerator, writer: &mut SqlWriter, table: &Table) {
         if !table.indexes().is_empty() {
-            let max_key_name_length = self
-                .context()
-                .settings()
-                .database_type()
-                .max_key_name_length();
+            let database_type = self.context().settings().database_type();
 
             for (key_index, key) in table
                 .indexes()
@@ -63,24 +69,9 @@ impl IndexGenerator for DefaultIndexGenerator {
                 .filter(|key| key.is_index())
                 .enumerate()
             {
-                let suffix_str = (key_index + 1).to_string();
-                let mut key_name = format!("{}{}{}", IX_PREFIX, table.name(), suffix_str).to_lowercase();
+                let key_name = index_name(database_type, table.name(), key_index + 1);
 
-                if key_name.len() > max_key_name_length {
-                    // Reserve space for the *actual* suffix length, not a hard-coded
-                    // budget - a table with >=10 indexes needs a 2-digit suffix, and a
-                    // fixed 4-char reservation (3-char prefix + 1-digit suffix) would
-                    // produce an identifier over the length limit.
-                    let max_name_len = max_key_name_length.saturating_sub(IX_PREFIX.len() + suffix_str.len());
-                    let truncated = table
-                        .name()
-                        .chars()
-                        .take(max_name_len)
-                        .collect::<String>();
-                    key_name = format!("{}{}{}", IX_PREFIX, truncated, suffix_str).to_lowercase();
-                }
-
-                self.output_index(
+                generator.output_index(
                     writer,
                     self.context().settings().statement_separator(),
                     table,
@@ -93,15 +84,18 @@ impl IndexGenerator for DefaultIndexGenerator {
         }
     }
 
-    fn output_index(
+    /// Renders one `create index` statement given an already-computed `index_options` -
+    /// shared by `DefaultIndexGenerator::output_index` and every dialect override, so each
+    /// only has to supply its own `index_options` before calling back into this.
+    pub fn render_index(
         &self,
         writer: &mut SqlWriter,
         statement_separator: &str,
         table: &Table,
         key_name: &str,
         key: &Key,
+        index_options: Option<String>,
     ) {
-        let index_options = self.index_options(key);
         let fully_qualified_table_name = table.fully_qualified_table_name(self.context().settings().database_type());
         let index_columns = key
             .columns()
@@ -137,10 +131,38 @@ impl IndexGenerator for DefaultIndexGenerator {
             );
         }
     }
+}
+
+impl IndexGenerator for DefaultIndexGenerator {
+    fn output_indexes(&self) {
+        self.output_indexes_via(self);
+    }
+
+    fn output_indexes_for_table(&self, writer: &mut SqlWriter, table: &Table) {
+        self.output_indexes_for_table_via(self, writer, table);
+    }
+
+    fn output_index(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        table: &Table,
+        key_name: &str,
+        key: &Key,
+    ) {
+        let index_options = self.index_options(key);
+        self.render_index(writer, statement_separator, table, key_name, key, index_options);
+    }
 
     fn index_options(&self, _key: &Key) -> Option<String> {
         None
     }
+}
+
+/// Formats a comma-separated column list from XML (e.g. `"name,code"`) as SQL wants it
+/// (e.g. `"name, code"`), trimming any incidental whitespace around each name.
+pub(crate) fn format_column_list(columns: &str) -> String {
+    columns.split(',').map(|c| c.trim()).collect::<Vec<_>>().join(", ")
 }
 
 #[cfg(test)]

@@ -1,6 +1,30 @@
 use crate::model::column_type::ColumnType;
 use crate::model::types::BooleanMode;
 
+/// Parses a boolean column's `default` attribute (an untyped `xsd:string` in the schema XSD,
+/// not `xsd:boolean` - it has to tolerate whatever a hand-written schema file spells out) into
+/// either an explicit default value or, for the `null` sentinel, an explicit request for *no*
+/// default constraint to be emitted at all (distinct from the attribute being absent, which
+/// callers should handle before ever calling this).
+///
+/// Recognizes `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`, trimmed and case-insensitive.
+/// Returns `Err(())` for anything else - shared by `Schema::validate()` (which reports it as a
+/// validation error up front) and the SQL generator (which can then treat any value reaching it
+/// as already validated, rather than silently guessing).
+pub fn parse_boolean_default(value: &str) -> Result<Option<bool>, ()> {
+    let trimmed = value.trim();
+
+    if trimmed.eq_ignore_ascii_case("null") {
+        return Ok(None);
+    }
+
+    match trimmed.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Ok(Some(true)),
+        "false" | "0" | "no" | "off" => Ok(Some(false)),
+        _ => Err(()),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Column {
     schema_name: Option<String>,
@@ -160,6 +184,34 @@ mod tests {
         assert_eq!(c.scale(), 0);
         assert!(c.required());
         assert!(c.is_required());
+    }
+
+    #[test]
+    fn parse_boolean_default_recognizes_truthy_spellings() {
+        for value in ["true", "TRUE", " true ", "1", "yes", "YES", "on"] {
+            assert_eq!(parse_boolean_default(value), Ok(Some(true)), "value: {:?}", value);
+        }
+    }
+
+    #[test]
+    fn parse_boolean_default_recognizes_falsy_spellings() {
+        for value in ["false", "FALSE", " false ", "0", "no", "NO", "off"] {
+            assert_eq!(parse_boolean_default(value), Ok(Some(false)), "value: {:?}", value);
+        }
+    }
+
+    #[test]
+    fn parse_boolean_default_null_sentinel_means_no_default() {
+        assert_eq!(parse_boolean_default("null"), Ok(None));
+        assert_eq!(parse_boolean_default("NULL"), Ok(None));
+        assert_eq!(parse_boolean_default(" null "), Ok(None));
+    }
+
+    #[test]
+    fn parse_boolean_default_rejects_unrecognized_values() {
+        for value in ["maybe", "T", "getdate()", ""] {
+            assert_eq!(parse_boolean_default(value), Err(()), "value: {:?}", value);
+        }
     }
 
     #[test]

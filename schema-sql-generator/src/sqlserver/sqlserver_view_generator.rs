@@ -32,7 +32,7 @@ impl ViewGenerator for SqlServerViewGenerator {
                 for view in views {
                     let view_name = view.fully_qualified_view_name(database_type);
                     sql_println!(writer, "/* {} */", view_name);
-                    sql_println!(writer, "if exists (select name from dbo.sysobjects where name = '{}' and type = 'V')", escape_sql_literal(view.name()));
+                    sql_println!(writer, "if object_id('{}', 'V') is not null", escape_sql_literal(&view_name));
                     sql_println!(writer, "   drop view {}{}", view_name, separator);
                     sql_println!(writer, "create view {} as", view_name);
                     sql_println!(writer, "   {}{}", view.sql(), separator);
@@ -64,7 +64,7 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("dbo.active_users"));
         assert!(!output.contains("public.active_users"));
-        assert!(output.contains("if exists (select name from dbo.sysobjects where name = 'active_users' and type = 'V')"));
+        assert!(output.contains("if object_id('dbo.active_users', 'V') is not null"));
         assert!(output.contains("create view dbo.active_users as"));
     }
 
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn output_views_escapes_single_quote_in_view_name() {
         // Regression test: an unescaped embedded quote would break the generated
-        // sysobjects existence-check SQL string literal.
+        // object_id existence-check SQL string literal.
         let view = View::new(None::<&str>, "o'brien", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
@@ -106,7 +106,7 @@ mod tests {
         let generator = SqlServerViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("where name = 'o''brien' and type = 'V'"));
+        assert!(buffer.contents().contains("if object_id('dbo.o''brien', 'V') is not null"));
     }
 
     #[test]

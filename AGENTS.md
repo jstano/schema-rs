@@ -72,7 +72,7 @@ cargo run -p schema-installer -- \
 cargo make coverage
 ```
 
-The CLI writes output to a file named `{schema-stem}-{database-type}.sql` in the same directory as the input schema file (e.g. `schema-parser-test-schema-postgres.sql`), not to stdout.
+By default the CLI writes output to a file named `{schema-stem}-{database-type}.sql` in the same directory as the input schema file (e.g. `schema-parser-test-schema-postgres.sql`), not to stdout. Pass `--output-file <path>` to override this with an exact output path (parent directories are created if missing), e.g. `--output-file migration/V1__initial_schema.sql`.
 
 ## Architecture
 
@@ -212,7 +212,7 @@ The `schema-installer` crate provides a Flyway-style migration system.
 **PostgreSQL:**
 - Sequence: `SERIAL` / `BIGSERIAL`
 - UUID: Custom RFC 4122 v7 generator function emitted in `output_header()`
-- Extensions: uuid-ossp, citext, btree_gist (emitted in `output_header()`)
+- Extensions: pgcrypto (only for `target_postgres_version < 18`), citext, btree_gist (emitted in `output_header()`)
 - `varchar` → `text` (or `citext` when `ignore_case = true`)
 - Array support: `type[]` syntax
 - Migration params: `$1/$2` syntax

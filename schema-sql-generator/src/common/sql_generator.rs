@@ -212,6 +212,7 @@ mod tests {
     impl TableGenerator for FakeTableGenerator {
         fn output_tables(&self) { self.0.record("tables"); }
         fn output_table(&self, _table: &Table) {}
+        fn output_table_drop(&self, _table: &Table) {}
         fn output_table_header(&self, _table: &Table) {}
         fn output_table_definition(&self, _table: &Table) {}
         fn output_table_footer(&self, _table: &Table) {}

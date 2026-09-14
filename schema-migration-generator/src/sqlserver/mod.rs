@@ -5,7 +5,8 @@ use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
-use schema_model::model::types::{KeyType, RelationType};
+use schema_model::model::types::{DatabaseType, KeyType, RelationType};
+use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
@@ -88,11 +89,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer, "GO")?;
                     writeln!(writer)?;
                 }
-                SchemaChange::AddKey { table_name, key } => {
-                    write_add_key(writer, table_name, key)?;
+                SchemaChange::AddKey { table_name, key, ordinal } => {
+                    write_add_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::DropKey { table_name, key } => {
-                    write_drop_key(writer, table_name, key)?;
+                SchemaChange::DropKey { table_name, key, ordinal } => {
+                    write_drop_key(writer, table_name, key, *ordinal)?;
                 }
                 SchemaChange::AddConstraint { table_name, constraint } => {
                     writeln!(
@@ -114,11 +115,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer, "GO")?;
                     writeln!(writer)?;
                 }
-                SchemaChange::AddRelation { relation } => {
-                    write_add_relation(writer, relation)?;
+                SchemaChange::AddRelation { relation, ordinal } => {
+                    write_add_relation(writer, relation, *ordinal)?;
                 }
-                SchemaChange::DropRelation { relation } => {
-                    let fk_name = fk_constraint_name(relation);
+                SchemaChange::DropRelation { relation, ordinal } => {
+                    let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), *ordinal);
                     writeln!(
                         writer,
                         "ALTER TABLE {} DROP CONSTRAINT {};",
@@ -192,23 +193,22 @@ fn column_type_sql(column: &Column) -> String {
     }
 }
 
-fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<(), MigrationGeneratorError> {
-    let col_names: Vec<&str> = key.columns().iter().map(|c| c.name()).collect();
-    let cols = col_names.join(", ");
+fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
     match key.key_type() {
         KeyType::Primary => {
             writeln!(writer, "ALTER TABLE {} ADD PRIMARY KEY ({});", table_name, cols)?;
         }
         KeyType::Unique => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+            let constraint_name = unique_key_name(DatabaseType::SqlServer, table_name, ordinal);
             writeln!(
                 writer,
                 "CREATE UNIQUE INDEX {} ON {} ({});",
-                idx_name, table_name, cols
+                constraint_name, table_name, cols
             )?;
         }
         KeyType::Index => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+            let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
             writeln!(
                 writer,
                 "CREATE INDEX {} ON {} ({});",
@@ -221,18 +221,26 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<
     Ok(())
 }
 
-fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result<(), MigrationGeneratorError> {
-    let col_names: Vec<&str> = key.columns().iter().map(|c| c.name()).collect();
+fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
     match key.key_type() {
         KeyType::Primary => {
+            let constraint_name = primary_key_name(DatabaseType::SqlServer, table_name);
             writeln!(
                 writer,
-                "ALTER TABLE {} DROP CONSTRAINT {}_pkey;",
-                table_name, table_name
+                "ALTER TABLE {} DROP CONSTRAINT {};",
+                table_name, constraint_name
             )?;
         }
-        KeyType::Unique | KeyType::Index => {
-            let idx_name = format!("idx_{}_{}", table_name, col_names.join("_"));
+        KeyType::Unique => {
+            let constraint_name = unique_key_name(DatabaseType::SqlServer, table_name, ordinal);
+            writeln!(
+                writer,
+                "IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = '{}') DROP INDEX {} ON {};",
+                constraint_name, constraint_name, table_name
+            )?;
+        }
+        KeyType::Index => {
+            let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
             writeln!(
                 writer,
                 "IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = '{}') DROP INDEX {} ON {};",
@@ -245,8 +253,8 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key) -> Result
     Ok(())
 }
 
-fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(), MigrationGeneratorError> {
-    let fk_name = fk_constraint_name(relation);
+fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), ordinal);
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " ON DELETE CASCADE",
         RelationType::SetNull => " ON DELETE SET NULL",
@@ -266,12 +274,4 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(),
     writeln!(writer, "GO")?;
     writeln!(writer)?;
     Ok(())
-}
-
-fn fk_constraint_name(relation: &Relation) -> String {
-    format!(
-        "fk_{}_{}",
-        relation.from_table_name(),
-        relation.from_column_name()
-    )
 }

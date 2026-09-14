@@ -6,6 +6,7 @@ mod sqlite_function_generator;
 mod sqlite_index_generator;
 mod sqlite_key_generator;
 mod sqlite_other_sql_generator;
+mod sqlite_pk_support;
 mod sqlite_procedure_generator;
 mod sqlite_relation_generator;
 mod sqlite_table_constraint_generator;

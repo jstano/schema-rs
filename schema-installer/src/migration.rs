@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// `Migrator::validate`) must treat it as exempt rather than "missing."
 pub(crate) const RESERVED_INSTALL_VERSION: &str = "0";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Migration {
     pub version: String,
     pub description: String,
@@ -103,7 +103,10 @@ impl MigrationSource for DirectoryMigrationSource {
                 continue;
             }
 
-            let (version, description) = parse_migration_filename(filename)?;
+            let (version, description) = match parse_migration_filename(filename)? {
+                Some(parsed) => parsed,
+                None => continue,
+            };
             let sql = std::fs::read_to_string(&path)
                 .map_err(SchemaInstallerError::Io)?;
 
@@ -119,6 +122,8 @@ impl MigrationSource for DirectoryMigrationSource {
 
         migrations.sort_by(|a, b| compare_versions(&a.version, &b.version));
 
+        check_no_duplicate_versions(&migrations)?;
+
         Ok(migrations)
     }
 }
@@ -129,11 +134,43 @@ pub struct EmbeddedMigrationSource {
 
 impl MigrationSource for EmbeddedMigrationSource {
     fn migrations(&self) -> Result<Vec<Migration>, SchemaInstallerError> {
+        check_no_duplicate_versions(&self.migrations)?;
+
         Ok(self.migrations.clone())
     }
 }
 
-fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaInstallerError> {
+/// Hard-errors on duplicate migration versions, matching Flyway's behavior. Without this,
+/// two files resolving to the same version (e.g. `V1__add_users.sql` and
+/// `V1__add_orders.sql`) would silently let the first one `read_dir` happens to return win
+/// the slot; the second would hit the `UNIQUE (version)` constraint on insert, get
+/// misread as `ConcurrentMigrationDetected`, see the first's `status == "success"` and be
+/// reported as "already applied by another process; skipping" - never executed and never
+/// recorded, with the winner depending on filesystem iteration order (H13).
+fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaInstallerError> {
+    let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+
+    for migration in migrations {
+        if let Some(first_path) = seen.insert(migration.version.as_str(), migration.script_path.as_str()) {
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Duplicate migration version '{}': {} and {}",
+                migration.version, first_path, migration.script_path
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Parses a `V{version}__{description}.sql`-style filename. Returns `Ok(None)` for a
+/// file that isn't a versioned migration at all (its name doesn't start with `V`/`v`) -
+/// e.g. a Flyway-style repeatable (`R__...`) or undo (`U__...`) migration, or any other
+/// file someone dropped into the directory - so the caller can skip it with a warning
+/// instead of aborting the entire directory scan over a file this tool was never going
+/// to manage (H11). A file that *does* start with `V` but is otherwise malformed still
+/// hard-errors, since that shape is far more likely to be a typo in a real migration
+/// than an intentional non-versioned file.
+fn parse_migration_filename(filename: &str) -> Result<Option<(String, String)>, SchemaInstallerError> {
     let name_without_ext = filename
         .strip_suffix(".sql")
         .ok_or_else(|| {
@@ -141,6 +178,14 @@ fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaIn
                 format!("File does not end with .sql: {}", filename),
             )
         })?;
+
+    if !name_without_ext.to_lowercase().starts_with('v') {
+        eprintln!(
+            "Warning: skipping non-versioned migration file (expected V{{version}}__{{description}}.sql): {}",
+            filename
+        );
+        return Ok(None);
+    }
 
     let parts: Vec<&str> = name_without_ext.splitn(2, "__").collect();
 
@@ -154,15 +199,6 @@ fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaIn
     }
 
     let version_part = parts[0].to_lowercase();
-    if !version_part.starts_with('v') {
-        return Err(SchemaInstallerError::InvalidConfiguration(
-            format!(
-                "Migration filename must start with V (case-insensitive): {}",
-                filename
-            ),
-        ));
-    }
-
     let version = version_part[1..].to_string();
     let description = parts[1].replace('_', " ");
 
@@ -195,7 +231,7 @@ fn parse_migration_filename(filename: &str) -> Result<(String, String), SchemaIn
         )));
     }
 
-    Ok((version, description))
+    Ok(Some((version, description)))
 }
 
 pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
@@ -239,20 +275,31 @@ mod tests {
 
     #[test]
     fn test_parse_migration_filename() {
-        let (version, description) = parse_migration_filename("V1__create_users.sql").unwrap();
+        let (version, description) = parse_migration_filename("V1__create_users.sql").unwrap().unwrap();
         assert_eq!(version, "1");
         assert_eq!(description, "create users");
 
-        let (version, description) = parse_migration_filename("V1_2__add_email_column.sql").unwrap();
+        let (version, description) = parse_migration_filename("V1_2__add_email_column.sql").unwrap().unwrap();
         assert_eq!(version, "1_2");
         assert_eq!(description, "add email column");
     }
 
     #[test]
     fn test_parse_migration_filename_case_insensitive() {
-        let (version, description) = parse_migration_filename("v1__create_users.sql").unwrap();
+        let (version, description) = parse_migration_filename("v1__create_users.sql").unwrap().unwrap();
         assert_eq!(version, "1");
         assert_eq!(description, "create users");
+    }
+
+    #[test]
+    fn test_parse_migration_filename_skips_non_versioned_files() {
+        // Flyway-style repeatable (`R__...`) and undo (`U__...`) migrations, and any
+        // other file that doesn't start with `V`, aren't versioned migrations this tool
+        // manages - they must be skipped (Ok(None)) rather than aborting the whole
+        // directory scan (H11).
+        assert!(parse_migration_filename("R__refresh_view.sql").unwrap().is_none());
+        assert!(parse_migration_filename("U__undo_something.sql").unwrap().is_none());
+        assert!(parse_migration_filename("readme.sql").unwrap().is_none());
     }
 
     #[test]
@@ -292,6 +339,63 @@ mod tests {
         assert!(compare_versions("1_2", "1_3") == std::cmp::Ordering::Less);
         assert!(compare_versions("1_10", "1_2") == std::cmp::Ordering::Greater);
         assert!(compare_versions("1_2", "1_2") == std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_check_no_duplicate_versions_ok() {
+        let migrations = vec![
+            Migration {
+                version: "1".to_string(),
+                description: "add users".to_string(),
+                script_path: "V1__add_users.sql".to_string(),
+                sql: String::new(),
+            },
+            Migration {
+                version: "2".to_string(),
+                description: "add orders".to_string(),
+                script_path: "V2__add_orders.sql".to_string(),
+                sql: String::new(),
+            },
+        ];
+
+        assert!(check_no_duplicate_versions(&migrations).is_ok());
+    }
+
+    #[test]
+    fn test_check_no_duplicate_versions_rejects_duplicates() {
+        // Regression test for H13: two migration files resolving to the same version
+        // must hard-error at load time rather than let the first one `read_dir` happens
+        // to return silently win the slot while the second is never executed.
+        let migrations = vec![
+            Migration {
+                version: "1".to_string(),
+                description: "add users".to_string(),
+                script_path: "V1__add_users.sql".to_string(),
+                sql: String::new(),
+            },
+            Migration {
+                version: "1".to_string(),
+                description: "add orders".to_string(),
+                script_path: "V1__add_orders.sql".to_string(),
+                sql: String::new(),
+            },
+        ];
+
+        let err = check_no_duplicate_versions(&migrations).unwrap_err();
+        assert!(err.to_string().contains("Duplicate migration version '1'"));
+        assert!(err.to_string().contains("V1__add_users.sql"));
+        assert!(err.to_string().contains("V1__add_orders.sql"));
+    }
+
+    #[test]
+    fn test_directory_migration_source_rejects_duplicate_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("V1__add_users.sql"), "CREATE TABLE users (id INT);").unwrap();
+        std::fs::write(dir.path().join("V1__add_orders.sql"), "CREATE TABLE orders (id INT);").unwrap();
+
+        let source = DirectoryMigrationSource { path: dir.path().to_path_buf() };
+        let err = source.migrations().unwrap_err();
+        assert!(err.to_string().contains("Duplicate migration version '1'"));
     }
 
     #[test]

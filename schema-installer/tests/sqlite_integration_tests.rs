@@ -1,7 +1,7 @@
 use schema_installer::connection::AnyPool;
 use schema_installer::{
-    DirectoryMigrationSource, EmbeddedMigrationSource, Migration, Migrator, SchemaInstallerConfigBuilder,
-    SchemaInstallerError,
+    DirectoryMigrationSource, EmbeddedMigrationSource, Migration, Migrator, SchemaInstaller,
+    SchemaInstallerConfigBuilder, SchemaInstallerError,
 };
 use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::Row;
@@ -136,6 +136,57 @@ async fn test_sqlite_failed_migration_rolls_back_partial_statements() {
     assert_eq!(
         count, 0,
         "widgets table should have been rolled back after the migration failed"
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_migration_ddl_and_success_status_commit_atomically() {
+    // Regression test for BUGS_AND_GAPS H9: previously the migration DDL and the
+    // "success" status update were separate transactions, so a crash between the two
+    // left the DDL permanently applied while the tracking row stayed "pending" forever.
+    // They are now folded into one transaction inside `execute_migration_transactional`,
+    // so if the tracking-row update can't happen (here: it targets a migration id that
+    // doesn't exist), the DDL must never take effect either - proving the two are truly
+    // atomic rather than merely sequential.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_atomic_status.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let pool = AnyPool::connect(&config.database_type, &config.connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&config.database_type)
+        .await
+        .expect("ensure migration table");
+
+    let statements = vec!["create table widgets (id integer primary key)".to_string()];
+    const NONEXISTENT_MIGRATION_ID: i64 = 999_999;
+    let result = pool
+        .execute_migration_transactional(&statements, NONEXISTENT_MIGRATION_ID)
+        .await;
+    assert!(
+        result.is_err(),
+        "the status update should fail because no tracking row has that id"
+    );
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(match &pool {
+        AnyPool::Sqlite(p) => p,
+        _ => unreachable!("sqlite pool in a sqlite test"),
+    })
+    .await
+    .expect("query sqlite_master");
+    let count: i64 = row.get("count");
+    assert_eq!(
+        count, 0,
+        "the DDL must be rolled back when the same-transaction status update fails"
     );
 }
 
@@ -317,6 +368,94 @@ async fn test_sqlite_validate_exempts_reserved_install_version() {
     Migrator::validate(&config, empty_source)
         .await
         .expect("validate should not flag the reserved install version as missing");
+}
+
+#[tokio::test]
+async fn test_sqlite_validate_detects_failed_migration() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_validate_failed.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    // Simulate a migration that a previous `migrate` run recorded as "failed" (`migrate`
+    // itself would refuse to re-run this version until `repair` clears it out - see
+    // `wait_for_slot`'s "run `repair` before retrying" error). BUGS_AND_GAPS H10: before
+    // this fix, `validate`'s loop skipped any non-"success" row outright and reported no
+    // issue at all.
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    pool.insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "failed", "test")
+        .await
+        .expect("insert failed migration row");
+
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets".to_string(),
+        script_path: "V1__create_widgets.sql".to_string(),
+        sql: "create table widgets (id integer primary key);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one],
+    });
+    let result = Migrator::validate(&config, source).await;
+    assert!(
+        result.is_err(),
+        "validate should flag a migration left in a \"failed\" state, matching what migrate rejects"
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_validate_detects_out_of_order_unapplied_migration() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_validate_out_of_order.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    // V2 applies first, as if V1 didn't exist yet at the time.
+    let migration_two = Migration {
+        version: "2".to_string(),
+        description: "add widget color".to_string(),
+        script_path: "V2__add_widget_color.sql".to_string(),
+        sql: "create table widgets (id integer primary key, color text);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_two.clone()],
+    });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("V2 should apply cleanly on its own");
+
+    // V1 shows up afterward, unapplied. `migrate` rejects this as `OutOfOrderMigration`
+    // (see `test_sqlite_migrate_rejects_out_of_order_migration`); BUGS_AND_GAPS H10:
+    // before this fix, `validate` only ever looked at already-applied migrations and
+    // never noticed a resolved-but-unapplied one at all, so it passed on this identical
+    // state.
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets base".to_string(),
+        script_path: "V1__create_widgets_base.sql".to_string(),
+        sql: "select 1;".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one, migration_two],
+    });
+    let result = Migrator::validate(&config, source).await;
+    assert!(
+        result.is_err(),
+        "validate should flag a resolved migration older than the highest applied version that was never applied"
+    );
 }
 
 #[tokio::test]
@@ -563,6 +702,27 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
 }
 
 #[tokio::test]
+async fn test_sqlite_repair_succeeds_on_an_un_set_up_database() {
+    // H12: `repair` used to go straight to `delete_failed_migrations()` without first
+    // calling `ensure_migration_table`, unlike every other entry point (migrate/info/
+    // validate). Against a database that has never had a migration run against it, that
+    // meant `repair` was the one command that failed with "no such table: schema_migration".
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_repair_fresh_database.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    Migrator::repair(&config, empty_source)
+        .await
+        .expect("repair should succeed even when schema_migration does not exist yet");
+}
+
+#[tokio::test]
 async fn test_sqlite_info_reports_no_migrations_on_a_fresh_database() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let connection_string = sqlite_connection_string(&temp_dir, "test_info_fresh.db");
@@ -613,6 +773,128 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
     Migrator::info(&config, source)
         .await
         .expect("info should succeed and list both the applied and pending migration");
+}
+
+fn simple_schema_file() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/simple-test-schema.xml")
+}
+
+#[tokio::test]
+async fn test_sqlite_install_is_not_skipped_by_an_unrelated_migration() {
+    // Regression test for BUGS_AND_GAPS H14: `check_if_installed` used to treat *any*
+    // successful tracking row as "already installed", so running a Flyway-style
+    // `migrate` first made a later `install` report "already installed" and skip,
+    // without ever creating a single table.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_not_skipped.db");
+
+    let migrate_config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets".to_string(),
+        script_path: "V1__create_widgets.sql".to_string(),
+        sql: "create table widgets (id integer primary key);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one],
+    });
+    Migrator::migrate(&migrate_config, source)
+        .await
+        .expect("unrelated migration should succeed");
+
+    let install_config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+    SchemaInstaller::install(&install_config)
+        .await
+        .expect("install should still run after an unrelated migration was applied");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify install ran");
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'users'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 1, "install should have created the schema's users table");
+}
+
+#[tokio::test]
+async fn test_sqlite_install_twice_is_a_noop_on_the_second_call() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_twice.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    SchemaInstaller::install(&config)
+        .await
+        .expect("first install should succeed");
+    SchemaInstaller::install(&config)
+        .await
+        .expect("second install should be a no-op rather than erroring");
+}
+
+#[tokio::test]
+async fn test_sqlite_install_can_be_retried_after_a_failed_attempt() {
+    // Regression test for BUGS_AND_GAPS H14: a previous `install` attempt that failed
+    // partway used to leave a "failed" tracking row for the reserved version behind
+    // (simulated here directly rather than by forcing a real mid-script failure). A
+    // retry's `insert_migration` would then collide with that leftover row's
+    // `UNIQUE (version)` and surface as a bogus `ConcurrentMigrationDetected("0")`
+    // instead of just running the install.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_retry.db");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    pool.insert_migration("0", "V0__install_schema.sql", "deadbeef", 0, "failed", "test")
+        .await
+        .expect("simulate leftover failed install row");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    SchemaInstaller::install(&config)
+        .await
+        .expect("install should succeed despite a leftover failed tracking row");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify install ran");
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'users'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 1, "retried install should have created the schema's users table");
 }
 
 #[tokio::test]

@@ -130,11 +130,47 @@ impl Schema {
 
     pub fn validate(&self) -> Vec<String> {
         let mut errors: Vec<String> = Vec::new();
+
+        let mut seen_table_names: HashMap<String, &str> = HashMap::new();
+        for table in &self.tables {
+            let name_lower = table.name().to_lowercase();
+            if seen_table_names.contains_key(&name_lower) {
+                errors.push(format!(
+                    "ERROR: duplicate table name '{}'; table names must be unique within a schema \
+                     (comparison is case-insensitive)",
+                    table.name()
+                ));
+            } else {
+                seen_table_names.insert(name_lower, table.name());
+            }
+        }
+
         for table in &self.tables {
             if table.columns().is_empty() {
                 errors.push(format!(
                     "ERROR: table {} has no columns; generated `create table` SQL would be invalid",
                     table.name()
+                ));
+            }
+
+            let identity_columns: Vec<&str> = table
+                .columns()
+                .iter()
+                .filter(|c| {
+                    matches!(
+                        c.column_type(),
+                        crate::model::column_type::ColumnType::Sequence
+                            | crate::model::column_type::ColumnType::LongSequence
+                    )
+                })
+                .map(|c| c.name())
+                .collect();
+            if identity_columns.len() > 1 {
+                errors.push(format!(
+                    "ERROR: table {} has more than one identity column ({}); \
+                     a table may have at most one sequence/longsequence column",
+                    table.name(),
+                    identity_columns.join(", ")
                 ));
             }
 
@@ -177,13 +213,61 @@ impl Schema {
                     ));
                 }
 
-                if column.column_type() == crate::model::column_type::ColumnType::Array
-                    && column.element_type().is_none()
-                {
+                if column.column_type() == crate::model::column_type::ColumnType::Enum && column.enum_type().is_none() {
                     errors.push(format!(
-                        "ERROR: {}.{} is an array column but has no elementType",
+                        "ERROR: {}.{} is an enum column but has no enumType",
                         table.name(),
                         column.name()
+                    ));
+                }
+
+                if column.column_type() == crate::model::column_type::ColumnType::Array {
+                    match column.element_type() {
+                        None => {
+                            errors.push(format!(
+                                "ERROR: {}.{} is an array column but has no elementType",
+                                table.name(),
+                                column.name()
+                            ));
+                        }
+                        Some(element_type_name) => {
+                            if let Err(e) = crate::model::column_type::ColumnType::from_type_name(element_type_name) {
+                                errors.push(format!(
+                                    "ERROR: {}.{} is an array column with an invalid elementType '{}': {}",
+                                    table.name(),
+                                    column.name(),
+                                    element_type_name,
+                                    e
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                if column.column_type() == crate::model::column_type::ColumnType::Boolean
+                    && let Some(default_constraint) = column.default_constraint()
+                    && crate::model::column::parse_boolean_default(default_constraint).is_err()
+                {
+                    errors.push(format!(
+                        "ERROR: {}.{} has default '{}', which is not a recognized boolean value \
+                         (expected true/false, 1/0, yes/no, on/off, or 'null' for no default)",
+                        table.name(),
+                        column.name(),
+                        default_constraint
+                    ));
+                }
+
+                if matches!(
+                    column.column_type(),
+                    crate::model::column_type::ColumnType::Char | crate::model::column_type::ColumnType::Varchar
+                ) && column.length() <= 0
+                {
+                    errors.push(format!(
+                        "ERROR: {}.{} is a {:?} column with no length (or length <= 0); \
+                         a length attribute greater than zero is required",
+                        table.name(),
+                        column.name(),
+                        column.column_type()
                     ));
                 }
             }
@@ -435,6 +519,33 @@ mod tests {
     }
 
     #[test]
+    fn validate_reports_error_for_duplicate_table_names() {
+        // Two tables with the same name (case-insensitive) collapse to a single entry in
+        // the lookup index (H22): the second silently wins, so relations to the first
+        // resolve against the wrong table and the generated SQL fails to create the
+        // second table. This must be caught up front rather than silently corrupting
+        // lookups.
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let make_table = |name: &str| {
+            TableBuilder::new(Some("s"), name)
+                .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+                .build()
+        };
+
+        let schema = SchemaBuilder::new(Some("s"))
+            .add_table(make_table("Users"))
+            .add_table(make_table("users"))
+            .build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("duplicate table name"));
+        assert!(errors[0].contains("users"));
+    }
+
+    #[test]
     fn validate_reports_error_for_table_with_no_columns() {
         // A table with zero columns generates invalid `create table t (\n)` DDL; this
         // must be caught up front rather than crash/emit invalid SQL during generation.
@@ -447,6 +558,40 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("widget"));
         assert!(errors[0].contains("no columns"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_table_with_multiple_identity_columns() {
+        // SQL Server permits at most one `identity` column per table (Msg 2744); a table
+        // with both a Sequence and a LongSequence column must be rejected up front rather
+        // than silently emitting a second `identity(1,1)` that fails at execution time.
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(Some("s"), "big_id", CT::LongSequence).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("widget"));
+        assert!(errors[0].contains("id"));
+        assert!(errors[0].contains("big_id"));
+    }
+
+    #[test]
+    fn validate_accepts_table_with_a_single_identity_column() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        assert!(schema.validate().is_empty());
     }
 
     #[test]
@@ -476,6 +621,145 @@ mod tests {
                     .element_type(Some("varchar".to_string()))
                     .build(),
             )
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        assert!(schema.validate().is_empty());
+    }
+
+    #[test]
+    fn validate_reports_error_for_array_column_with_unparseable_element_type() {
+        // `postgres_column_type_generator.rs::array_sql` panics on an `elementType` that
+        // doesn't name a real column type (H23); `validate()` only checked that
+        // `elementType` was *present*, not that it was meaningful.
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(
+                ColumnBuilder::new(Some("s"), "tags", CT::Array)
+                    .element_type(Some("not_a_real_type".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("tags"));
+        assert!(errors[0].contains("not_a_real_type"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_enum_column_with_no_enum_type() {
+        // `<column type="enum"/>` with no `enumType` attribute previously passed
+        // `validate()` and panicked in every generator's `enum_sql()` via
+        // `column.enum_type().as_ref().unwrap()` (H23).
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "status", CT::Enum).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("status"));
+        assert!(errors[0].contains("enumType"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_unrecognized_boolean_default() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(
+                ColumnBuilder::new(Some("s"), "active", CT::Boolean)
+                    .default_constraint(Some("maybe".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("active"));
+        assert!(errors[0].contains("maybe"));
+    }
+
+    #[test]
+    fn validate_accepts_recognized_boolean_default_spellings() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        for value in ["true", "1", "yes", "on", "false", "0", "no", "off", "null"] {
+            let table = TableBuilder::new(Some("s"), "widget")
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "active", CT::Boolean)
+                        .default_constraint(Some(value.to_string()))
+                        .build(),
+                )
+                .build();
+            let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+            assert!(schema.validate().is_empty(), "value: {:?}", value);
+        }
+    }
+
+    #[test]
+    fn validate_accepts_boolean_column_with_no_default() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "active", CT::Boolean).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        assert!(schema.validate().is_empty());
+    }
+
+    #[test]
+    fn validate_reports_error_for_varchar_column_with_no_length() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "name", CT::Varchar).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("name"));
+        assert!(errors[0].contains("length"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_char_column_with_zero_length() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "code", CT::Char).length(0).build())
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("code"));
+    }
+
+    #[test]
+    fn validate_accepts_char_and_varchar_columns_with_positive_length() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(ColumnBuilder::new(Some("s"), "code", CT::Char).length(1).build())
+            .add_column(ColumnBuilder::new(Some("s"), "name", CT::Varchar).length(100).build())
             .build();
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
 

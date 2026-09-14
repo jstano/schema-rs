@@ -129,7 +129,7 @@ impl Table {
         let lower = column_name.to_lowercase();
         self.columns
             .iter()
-            .find(|c| c.name().eq_ignore_ascii_case(&lower))
+            .find(|c| c.name().to_lowercase() == lower)
             .unwrap_or_else(|| {
                 panic!(
                     "Unable to locate a column with the name '{}' in table '{}'",
@@ -146,7 +146,7 @@ impl Table {
         let lower = column_name.to_lowercase();
         self.columns
             .iter()
-            .any(|c| c.name().eq_ignore_ascii_case(&lower))
+            .any(|c| c.name().to_lowercase() == lower)
     }
 
     pub fn identity_column(&self) -> Option<&Column> {
@@ -244,6 +244,30 @@ mod tests {
         let t = sample_table();
         assert_eq!(t.fully_qualified_table_name(DatabaseType::Postgresql), "schema.table");
         assert_eq!(t.fully_qualified_table_name(DatabaseType::SqlServer), "schema.table");
+        // SQLite has no schema concept, so an explicit schema is flattened into the name
+        // rather than emitted as `schema.table` (which SQLite would parse as a reference to
+        // an ATTACHed database).
+        assert_eq!(t.fully_qualified_table_name(DatabaseType::Sqlite), "schema_table");
+    }
+
+    #[test]
+    fn column_and_has_column_are_unicode_case_insensitive() {
+        use crate::builder::column::ColumnBuilder;
+
+        let mut t = sample_table();
+        t.columns
+            .push(ColumnBuilder::new(Some("schema"), "ÉTAT", ColumnType::Varchar).build());
+
+        // Same casing as stored.
+        assert!(t.has_column("ÉTAT"));
+        assert_eq!(t.column("ÉTAT").name(), "ÉTAT");
+
+        // Differing case, non-ASCII: to_lowercase("ÉTAT") == "état", which must still match.
+        assert!(t.has_column("état"));
+        assert_eq!(t.column("état").name(), "ÉTAT");
+
+        // Unknown column is still reported as absent, not found by accident.
+        assert!(!t.has_column("nonexistent"));
     }
 
     #[test]

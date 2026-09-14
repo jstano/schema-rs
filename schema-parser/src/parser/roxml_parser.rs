@@ -16,7 +16,7 @@ pub fn parse_database_roxml(xml: &str) -> Result<DatabaseXml, String> {
 fn parse_database_node(node: Node) -> Result<DatabaseXml, String> {
     let foreign_key_mode = attr_string(node, "foreignKeyMode");
     let boolean_mode = attr_string(node, "booleanMode");
-    let case_sensitive_text = attr_bool(node, "caseSensitiveText");
+    let case_sensitive_text = attr_bool(node, "caseSensitiveText")?;
 
     let mut tables = Vec::new();
     let mut enums = Vec::new();
@@ -55,7 +55,7 @@ fn parse_database_node(node: Node) -> Result<DatabaseXml, String> {
 
 fn parse_schema_node(node: Node) -> Result<SchemaXml, String> {
     let name = attr_string_required(node, "name")?;
-    let case_sensitive_text = attr_bool(node, "caseSensitiveText");
+    let case_sensitive_text = attr_bool(node, "caseSensitiveText")?;
 
     let mut tables = Vec::new();
     let mut enums = Vec::new();
@@ -81,10 +81,10 @@ fn parse_schema_node(node: Node) -> Result<SchemaXml, String> {
 
 fn parse_table_node(node: Node) -> Result<TableXml, String> {
     let name = attr_string_required(node, "name")?;
-    let data_opt = attr_bool(node, "data");
-    let no_export = attr_bool(node, "noExport");
+    let data_opt = attr_bool(node, "data")?;
+    let no_export = attr_bool(node, "noExport")?;
     let export_data_column = attr_string(node, "exportDataColumn");
-    let compress = attr_bool(node, "compress");
+    let compress = attr_bool(node, "compress")?;
     let lock_escalation = attr_string(node, "lockEscalation");
 
     let mut columns: Option<ColumnsXml> = None;
@@ -142,15 +142,15 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
     Ok(ColumnXml {
         name: attr_string_required(node, "name")?,
         r#type: attr_string_required(node, "type")?,
-        length: attr_i32(node, "length"),
-        scale: attr_i32(node, "scale"),
-        required: attr_bool(node, "required"),
+        length: attr_i32(node, "length")?,
+        scale: attr_i32(node, "scale")?,
+        required: attr_bool(node, "required")?,
         default_value: attr_string(node, "default"),
         generated: attr_string(node, "generated"),
         enum_type: attr_string(node, "enumType"),
         element_type: attr_string(node, "elementType"),
-        min_value: attr_f64(node, "minValue"),
-        max_value: attr_f64(node, "maxValue"),
+        min_value: attr_f64(node, "minValue")?,
+        max_value: attr_f64(node, "maxValue")?,
         check: node
             .children()
             .find(|n| n.has_tag_name((NS, "check")))
@@ -188,7 +188,7 @@ fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
             name: attr_string_required(c, "name")?,
         });
     }
-    let cluster = attr_bool(node, "cluster");
+    let cluster = attr_bool(node, "cluster")?;
     Ok(KeyColumnsXml { columns, cluster })
 }
 
@@ -200,8 +200,8 @@ fn parse_index_node(node: Node) -> Result<IndexXml, String> {
     Ok(IndexXml {
         columns,
         include: attr_string(node, "include"),
-        compress: attr_bool(node, "compress"),
-        unique: attr_bool(node, "unique"),
+        compress: attr_bool(node, "compress")?,
+        unique: attr_bool(node, "unique")?,
     })
 }
 
@@ -213,7 +213,7 @@ fn parse_relations_node(node: Node) -> Result<RelationsXml, String> {
             table: attr_string_required(r, "table")?,
             column: attr_string_required(r, "column")?,
             r#type: attr_string_required(r, "type")?,
-            disable_usage_checking: attr_bool(r, "disableUsageChecking"),
+            disable_usage_checking: attr_bool(r, "disableUsageChecking")?,
         });
     }
     Ok(RelationsXml { relation: rels })
@@ -382,20 +382,59 @@ fn attr_string_required(node: Node, name: &str) -> Result<String, String> {
     })
 }
 
-fn attr_bool(node: Node, name: &str) -> Option<bool> {
-    node.attribute(name).and_then(|v| match v.to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
-        _ => None,
-    })
+/// Reads an optional boolean attribute. Unlike a missing attribute (which is a legitimate
+/// "not specified"), a *present but unparseable* value (`required="yep"`) is a malformed
+/// schema definition - silently falling back to `None`/`false` would hide a typo instead of
+/// reporting it, so this errors instead.
+fn attr_bool(node: Node, name: &str) -> Result<Option<bool>, String> {
+    match node.attribute(name) {
+        None => Ok(None),
+        Some(v) => match v.to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => Ok(Some(true)),
+            "false" | "0" | "no" | "off" => Ok(Some(false)),
+            _ => Err(format!(
+                "<{}> attribute '{}' has invalid boolean value '{}' (expected true/false, 1/0, yes/no, or on/off)",
+                node.tag_name().name(),
+                name,
+                v
+            )),
+        },
+    }
 }
 
-fn attr_i32(node: Node, name: &str) -> Option<i32> {
-    node.attribute(name).and_then(|v| v.parse::<i32>().ok())
+/// Reads an optional integer attribute, erroring (rather than silently defaulting to `None`)
+/// when the attribute is present but not a valid `i32` - a typo like `length="1O0"` or an
+/// overflowing value like `length="99999999999"` should be reported, not turned into 0.
+fn attr_i32(node: Node, name: &str) -> Result<Option<i32>, String> {
+    match node.attribute(name) {
+        None => Ok(None),
+        Some(v) => v.parse::<i32>().map(Some).map_err(|_| {
+            format!(
+                "<{}> attribute '{}' has invalid integer value '{}'",
+                node.tag_name().name(),
+                name,
+                v
+            )
+        }),
+    }
 }
 
-fn attr_f64(node: Node, name: &str) -> Option<f64> {
-    node.attribute(name).and_then(|v| v.parse::<f64>().ok())
+/// Reads an optional numeric attribute, erroring (rather than silently defaulting to `None`)
+/// when the attribute is present but not a finite `f64` - this covers unparseable typos like
+/// `minValue="1o"` as well as `inf`/`nan`, which `f64::parse` otherwise accepts silently.
+fn attr_f64(node: Node, name: &str) -> Result<Option<f64>, String> {
+    match node.attribute(name) {
+        None => Ok(None),
+        Some(v) => match v.parse::<f64>() {
+            Ok(n) if n.is_finite() => Ok(Some(n)),
+            _ => Err(format!(
+                "<{}> attribute '{}' has invalid numeric value '{}'",
+                node.tag_name().name(),
+                name,
+                v
+            )),
+        },
+    }
 }
 
 fn collect_text(node: Node) -> String {
@@ -429,8 +468,60 @@ mod tests {
         .unwrap();
         let node = doc.root_element();
 
-        assert_eq!(attr_bool(node, "required"), Some(true));
-        assert_eq!(attr_bool(node, "cluster"), Some(false));
+        assert_eq!(attr_bool(node, "required"), Ok(Some(true)));
+        assert_eq!(attr_bool(node, "cluster"), Ok(Some(false)));
+    }
+
+    #[test]
+    fn attr_bool_errors_on_unrecognized_value() {
+        let doc = Document::parse(
+            r#"<column xmlns="http://stano.com/database" name="x" type="int" required="yep"/>"#,
+        )
+        .unwrap();
+        let node = doc.root_element();
+
+        let err = attr_bool(node, "required").unwrap_err();
+        assert!(err.contains("required"));
+        assert!(err.contains("yep"));
+    }
+
+    #[test]
+    fn attr_i32_errors_on_unparseable_value() {
+        let doc = Document::parse(
+            r#"<column xmlns="http://stano.com/database" name="x" type="varchar" length="1O0"/>"#,
+        )
+        .unwrap();
+        let node = doc.root_element();
+
+        let err = attr_i32(node, "length").unwrap_err();
+        assert!(err.contains("length"));
+        assert!(err.contains("1O0"));
+    }
+
+    #[test]
+    fn attr_f64_errors_on_unparseable_value() {
+        let doc = Document::parse(
+            r#"<column xmlns="http://stano.com/database" name="x" type="int" minValue="1o"/>"#,
+        )
+        .unwrap();
+        let node = doc.root_element();
+
+        let err = attr_f64(node, "minValue").unwrap_err();
+        assert!(err.contains("minValue"));
+        assert!(err.contains("1o"));
+    }
+
+    #[test]
+    fn attr_f64_errors_on_infinite_value() {
+        let doc = Document::parse(
+            r#"<column xmlns="http://stano.com/database" name="x" type="int" maxValue="inf"/>"#,
+        )
+        .unwrap();
+        let node = doc.root_element();
+
+        let err = attr_f64(node, "maxValue").unwrap_err();
+        assert!(err.contains("maxValue"));
+        assert!(err.contains("inf"));
     }
 
     #[test]

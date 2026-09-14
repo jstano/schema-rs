@@ -179,11 +179,8 @@ impl Migrator {
             };
 
             let start = Instant::now();
-            match execute_migration(&pool, &config.database_type, &migration.sql).await {
+            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql).await {
                 Ok(_) => {
-                    let elapsed_ms = start.elapsed().as_millis() as i64;
-                    pool.update_migration_status(migration_id, "success", elapsed_ms)
-                        .await?;
                     println!(
                         "Applied migration: {} - {}",
                         migration.version, migration.description
@@ -274,8 +271,23 @@ impl Migrator {
 
         let mut issue_count = 0usize;
 
+        let applied_versions: HashSet<String> = applied
+            .iter()
+            .filter(|m| m.status == "success")
+            .map(|m| m.version.clone())
+            .collect();
+
         for applied_migration in &applied {
             if applied_migration.status != "success" {
+                // `migrate` never treats these as harmless: a "failed" row makes the next
+                // `migrate` attempt collide and abort ("run `repair` before retrying"), and
+                // a "pending" row does the same after `LOCK_MAX_WAIT`. Reporting them here
+                // instead of silently skipping is what closes BUGS_AND_GAPS H10.
+                issue_count += 1;
+                eprintln!(
+                    "Migration {} is in a non-successful state ({}); run `repair` before retrying",
+                    applied_migration.version, applied_migration.status
+                );
                 continue;
             }
 
@@ -305,6 +317,25 @@ impl Migrator {
                             version: applied_migration.version.clone(),
                             script_path: applied_migration.script_path.clone(),
                         }
+                    );
+                }
+            }
+        }
+
+        // Mirror `migrate`'s out-of-order check: a resolved migration older than the
+        // highest successfully-applied version that was never applied at all. `migrate`
+        // rejects this with `OutOfOrderMigration` as soon as it tries to run it; Flyway
+        // reports the same state as "Detected resolved migration not applied to database".
+        // Without this, `validate` never looks at unapplied source migrations at all.
+        if let Some(highest_applied) = applied_versions.iter().max_by(|a, b| compare_versions(a, b)) {
+            for source_migration in &source_migrations {
+                if !applied_versions.contains(&source_migration.version)
+                    && compare_versions(&source_migration.version, highest_applied) == std::cmp::Ordering::Less
+                {
+                    issue_count += 1;
+                    eprintln!(
+                        "Detected resolved migration not applied to database: {} - {}",
+                        source_migration.version, source_migration.description
                     );
                 }
             }
@@ -352,6 +383,9 @@ impl Migrator {
     ) -> Result<(), SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
 
+        pool.ensure_migration_table(&config.database_type)
+            .await?;
+
         pool.delete_failed_migrations().await?;
         println!("Deleted failed migrations");
 
@@ -393,10 +427,12 @@ impl Migrator {
 async fn execute_migration(
     pool: &AnyPool,
     database_type: &GeneratorType,
+    migration_id: i64,
     sql: &str,
-) -> Result<(), SchemaInstallerError> {
+) -> Result<i64, SchemaInstallerError> {
     let statements = crate::sql_split::split_sql_statements(sql, database_type);
-    // All statements in a migration file commit or roll back together, so a failure
-    // partway through never leaves earlier statements permanently applied.
-    pool.execute_transactional(&statements).await
+    // All statements in a migration file, plus the tracking row's "success" update,
+    // commit or roll back together as one transaction - see `execute_migration_transactional`
+    // for why (BUGS_AND_GAPS H9).
+    pool.execute_migration_transactional(&statements, migration_id).await
 }
