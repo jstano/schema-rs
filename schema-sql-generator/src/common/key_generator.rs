@@ -22,7 +22,10 @@ impl DefaultKeyGenerator {
     }
 
     /// When set, primary key constraints render `primary key nonclustered (...)` instead of
-    /// `primary key (...)` - matches SQL Server's legacy codegen convention.
+    /// `primary key (...)` when another key on the same table has explicitly claimed the
+    /// table's one clustered slot (`cluster="true"`). Has no effect otherwise - dialects
+    /// without a `clustered`/`nonclustered` constraint keyword (Postgres, SQLite) should
+    /// leave this false.
     pub fn with_nonclustered_primary_key(mut self, value: bool) -> Self {
         self.nonclustered_primary_key = value;
         self
@@ -53,6 +56,27 @@ impl DefaultKeyGenerator {
             false
         }
     }
+
+    /// `compress="true"` on a `<primary>`/`<unique>` key only has a rendering on SQL Server
+    /// (`with (data_compression = page)`) - PostgreSQL and SQLite have no equivalent, so the
+    /// attribute is warned about and ignored there rather than hard-erroring, matching how
+    /// `effective_cluster` and the index generators handle dialect-specific tuning hints (M1).
+    fn effective_compress(&self, table_name: &str, key_kind: &str, key: &Key) -> bool {
+        if !key.is_compress() {
+            return false;
+        }
+
+        let database_type = self.context.settings().database_type();
+        if database_type == DatabaseType::SqlServer {
+            true
+        } else {
+            eprintln!(
+                "warning: table '{}' has a compressed {} constraint, but {:?} does not support key compression -- ignoring",
+                table_name, key_kind, database_type
+            );
+            false
+        }
+    }
 }
 
 impl DefaultKeyGenerator {
@@ -76,21 +100,41 @@ impl DefaultKeyGenerator {
 
                     let database_type = self.context.settings().database_type();
                     let constraint_name = primary_key_name(database_type, table.name());
-                    // `cluster="true"` always wins over the dialect's own nonclustered-by-
-                    // default convention below - otherwise a SQL Server primary key
-                    // explicitly asking to be clustered would render the opposite (M1).
+                    // `cluster="true"` always wins over the nonclustered fallback below -
+                    // otherwise a SQL Server primary key explicitly asking to be clustered
+                    // would render the opposite (M1).
+                    //
+                    // `NONCLUSTERED` is only ever emitted here when it's actually needed: a
+                    // table can have at most one clustered index/constraint, so if some other
+                    // key on this table explicitly claims that slot (`cluster="true"`), the PK
+                    // must be pushed off it. Otherwise the PK renders bare and SQL Server's own
+                    // default (`CLUSTERED` for a `PRIMARY KEY` constraint) applies - a plain
+                    // `nonclustered_primary_key` flag once forced this unconditionally, which
+                    // needlessly turned every SQL Server table into a heap even when nothing
+                    // else wanted the clustered slot.
+                    let other_key_is_clustered = self.nonclustered_primary_key
+                        && table
+                            .keys()
+                            .iter()
+                            .any(|k| !k.is_index() && k.key_type() != schema_model::model::types::KeyType::Primary && k.is_cluster());
                     let primary_key_clause = if self.effective_cluster(table.name(), "primary key", key) {
                         "primary key clustered"
-                    } else if self.nonclustered_primary_key {
+                    } else if other_key_is_clustered {
                         "primary key nonclustered"
                     } else {
                         "primary key"
                     };
+                    let compress_clause = if self.effective_compress(table.name(), "primary key", key) {
+                        " with (data_compression = page)"
+                    } else {
+                        ""
+                    };
                     constraints.push(format!(
-                        "   constraint {} {} ({})",
+                        "   constraint {} {} ({}){}",
                         constraint_name,
                         primary_key_clause,
-                        key.columns_as_string()
+                        key.columns_as_string(),
+                        compress_clause
                     ));
                 }
                 schema_model::model::types::KeyType::Unique => {
@@ -102,11 +146,17 @@ impl DefaultKeyGenerator {
                     } else {
                         "unique"
                     };
+                    let compress_clause = if self.effective_compress(table.name(), "unique", key) {
+                        " with (data_compression = page)"
+                    } else {
+                        ""
+                    };
                     constraints.push(format!(
-                        "   constraint {} {} ({})",
+                        "   constraint {} {} ({}){}",
                         constraint_name,
                         unique_clause,
-                        key.columns_as_string()
+                        key.columns_as_string(),
+                        compress_clause
                     ));
                 }
                 schema_model::model::types::KeyType::Index => unreachable!(),
@@ -354,7 +404,12 @@ mod tests {
     }
 
     #[test]
-    fn with_nonclustered_primary_key_adds_nonclustered_keyword() {
+    fn with_nonclustered_primary_key_leaves_pk_bare_when_nothing_else_is_clustered() {
+        // Regression test: `nonclustered_primary_key` used to force `nonclustered`
+        // unconditionally on every SQL Server PK, turning tables into heaps even when
+        // nothing else on the table wanted the clustered slot. Since SQL Server's own
+        // default (`CLUSTERED` for a `PRIMARY KEY` constraint) is fine here, no keyword
+        // should be emitted.
         let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
         let uq = Key::new(KeyType::Unique, vec![KeyColumn::new("email")]);
         let table = TableBuilder::new(None::<&str>, "users")
@@ -370,9 +425,31 @@ mod tests {
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
         let constraints = generator.key_constraints(&table);
         assert_eq!(constraints.len(), 2);
-        assert_eq!(constraints[0], "   constraint pk_users primary key nonclustered (id)");
-        // Unique keys are unaffected.
+        assert_eq!(constraints[0], "   constraint pk_users primary key (id)");
         assert_eq!(constraints[1], "   constraint ak_users1 unique (email)");
+    }
+
+    #[test]
+    fn with_nonclustered_primary_key_adds_nonclustered_keyword_when_another_key_is_clustered() {
+        // The one case NONCLUSTERED is actually needed: a unique key has claimed the
+        // table's single clustered slot, so the PK must be pushed off it.
+        let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("location_id")], true, false, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_key(pk)
+            .add_key(uq)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0], "   constraint pk_users primary key nonclustered (id)");
+        assert_eq!(constraints[1], "   constraint ak_users1 unique clustered (location_id)");
     }
 
     #[test]
@@ -410,6 +487,60 @@ mod tests {
         // is ignored (with a warning) rather than rendering invalid SQL (M1).
         let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, false, false, None::<String>);
         let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultKeyGenerator::new(ctx);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(constraints[0], "   constraint pk_users primary key (id)");
+        assert_eq!(constraints[1], "   constraint ak_users1 unique (email)");
+    }
+
+    #[test]
+    fn compress_true_on_sql_server_adds_data_compression_clause() {
+        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], false, true, false, None::<String>);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], false, true, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(
+            constraints[0],
+            "   constraint pk_users primary key (id) with (data_compression = page)"
+        );
+        assert_eq!(
+            constraints[1],
+            "   constraint ak_users1 unique (email) with (data_compression = page)"
+        );
+    }
+
+    #[test]
+    fn compress_true_combines_with_clustered_keyword() {
+        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, true, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
+        let constraints = generator.key_constraints(&table);
+        assert_eq!(
+            constraints,
+            vec!["   constraint pk_users primary key clustered (id) with (data_compression = page)"]
+        );
+    }
+
+    #[test]
+    fn compress_true_is_ignored_on_dialects_without_key_compression() {
+        // PostgreSQL/SQLite have no key-level compression syntax - `compress` is ignored
+        // (with a warning) rather than rendering invalid SQL, matching `cluster` handling (M1).
+        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], false, true, false, None::<String>);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], false, true, false, None::<String>);
         let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);

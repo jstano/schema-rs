@@ -8,7 +8,7 @@ use crate::sqlite::sqlite_generator::SqliteGenerator;
 use crate::sqlserver::sqlserver_generator::SqlServerGenerator;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::database_model::DatabaseModel;
-use schema_model::model::types::DatabaseType;
+use schema_model::model::types::{DatabaseType, KeyType};
 use std::str::FromStr;
 
 /// Array element types `postgres_column_type_generator.rs::array_sql` knows how to render.
@@ -121,6 +121,32 @@ impl GeneratorType {
         // all three databases from one file, and one dialect's SQL-Server-only tuning hint
         // shouldn't stop the other two from generating.
 
+        // A SQL Server table may have at most one clustered index/constraint. Unlike the
+        // `cluster="true"` cross-dialect ignoring above, this is a hard error rather than a
+        // warning: `key_generator.rs` renders every clustered key's keyword literally, so
+        // two `cluster="true"` keys on the same table would only be caught at DDL execution
+        // time ("Cannot create more than one clustered index...") instead of up front.
+        if matches!(self, GeneratorType::SqlServer) {
+            for table in database_model.all_tables() {
+                let clustered_keys: Vec<&str> = table
+                    .keys()
+                    .iter()
+                    .filter(|k| !k.is_index() && k.is_cluster())
+                    .map(|k| if k.key_type() == KeyType::Primary { "primary key" } else { "unique key" })
+                    .collect();
+
+                if clustered_keys.len() > 1 {
+                    errors.push(format!(
+                        "ERROR: table '{}' has {} keys marked cluster=\"true\" ({}), but SQL Server allows only \
+                         one clustered index per table",
+                        table.name(),
+                        clustered_keys.len(),
+                        clustered_keys.join(", ")
+                    ));
+                }
+            }
+        }
+
         errors
     }
 
@@ -223,5 +249,55 @@ mod tests {
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         assert!(GeneratorType::Sqlite.validate_for_dialect(&model).is_empty());
+    }
+
+    #[test]
+    fn validate_for_dialect_rejects_two_clustered_keys_on_the_same_sqlserver_table() {
+        // A table can have at most one clustered index/constraint - `key_generator.rs`
+        // would otherwise happily render two `clustered` keywords and let SQL Server
+        // reject the DDL at execution time.
+        use schema_model::model::key::{Key, KeyColumn};
+        use schema_model::model::types::KeyType;
+
+        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, false, false, None::<String>);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        let errors = GeneratorType::SqlServer.validate_for_dialect(&model);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("users"));
+        assert!(errors[0].contains("only one clustered index"));
+    }
+
+    #[test]
+    fn validate_for_dialect_accepts_a_single_clustered_key_on_sqlserver() {
+        use schema_model::model::key::{Key, KeyColumn};
+        use schema_model::model::types::KeyType;
+
+        let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        assert!(GeneratorType::SqlServer.validate_for_dialect(&model).is_empty());
+    }
+
+    #[test]
+    fn validate_for_dialect_ignores_multiple_clustered_keys_on_dialects_without_clustering() {
+        // Postgres/SQLite have no clustered-index concept - two `cluster="true"` keys are
+        // just ignored (with a warning, elsewhere) rather than rejected here.
+        use schema_model::model::key::{Key, KeyColumn};
+        use schema_model::model::types::KeyType;
+
+        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, false, false, None::<String>);
+        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        assert!(GeneratorType::Postgresql.validate_for_dialect(&model).is_empty());
     }
 }

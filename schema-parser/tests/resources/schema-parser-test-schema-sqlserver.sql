@@ -58,7 +58,7 @@ create table dbo.ChildTable
    ID integer identity(1,1) not null,
    ParentID integer not null,
    Name nvarchar(100) not null,
-   constraint pk_childtable primary key nonclustered (ID),
+   constraint pk_childtable primary key (ID),
    constraint ak_childtable1 unique (ParentID,Name)
 )
 GO
@@ -107,7 +107,7 @@ create table dbo.KBI
    ShowInModule nchar(1) not null,
    MasterKBICodeID integer,
    UnitID integer,
-   constraint pk_kbi primary key nonclustered (ID),
+   constraint pk_kbi primary key (ID),
    constraint ak_kbi1 unique (PropertyID,Name),
    constraint ak_kbi2 unique (PropertyID,Code),
    constraint ck_kbi_showinmod_B47F96FB check(ShowInModule in ('A','B','L'))
@@ -137,7 +137,7 @@ create table dbo.MasterKBICode
    ShowOnDashboard bit not null,
    SortOrder integer,
    GroupingFreeForm nvarchar(50),
-   constraint pk_masterkbicode primary key nonclustered (ID),
+   constraint pk_masterkbicode primary key (ID),
    constraint ak_masterkbicode1 unique (Code)
 )
 GO
@@ -181,7 +181,7 @@ create table dbo.Property
    AltCode nvarchar(25) not null,
    NumberRooms smallint not null,
    RegionID integer,
-   constraint pk_property primary key nonclustered (ID),
+   constraint pk_property primary key (ID),
    constraint ak_property1 unique (Name),
    constraint ak_property2 unique (Code),
    constraint ak_property3 unique (AltCode),
@@ -199,7 +199,7 @@ create table dbo.Region
    ShortName nvarchar(25) not null,
    Code nvarchar(25) not null,
    ExcludeFromCorpReports bit not null,
-   constraint pk_region primary key nonclustered (ID),
+   constraint pk_region primary key (ID),
    constraint ak_region1 unique (Name),
    constraint ak_region2 unique (Code)
 )
@@ -216,7 +216,7 @@ create table test.Unit
    SingularName nvarchar(50) not null,
    Symbol nvarchar(5) not null,
    Comment nvarchar(255),
-   constraint pk_unit primary key nonclustered (ID),
+   constraint pk_unit primary key (ID),
    constraint ak_unit1 unique (PropertyID,Name),
    constraint ak_unit2 unique (PropertyID,SingularName)
 )
