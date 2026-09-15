@@ -55,7 +55,7 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
         "timestamptz".to_string()
     }
 
-    fn binary_sql(&self) -> String {
+    fn binary_sql(&self, _column: &Column) -> String {
         "bytea".to_string()
     }
 

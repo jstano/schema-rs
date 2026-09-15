@@ -44,7 +44,7 @@ impl ColumnTypeGenerator for SqliteColumnTypeGenerator {
         "text".to_string()
     }
 
-    fn binary_sql(&self) -> String {
+    fn binary_sql(&self, _column: &Column) -> String {
         "blob".to_string()
     }
 

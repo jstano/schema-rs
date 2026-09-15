@@ -212,7 +212,7 @@ mod tests {
         fn text_sql(&self, _column: &Column) -> String { String::new() }
         fn citext_sql(&self) -> String { String::new() }
         fn cstext_sql(&self) -> String { String::new() }
-        fn binary_sql(&self) -> String { String::new() }
+        fn binary_sql(&self, _column: &Column) -> String { String::new() }
         fn uuid_default_value_sql(&self, _schema: &Schema) -> String { String::new() }
         fn array_sql(&self, _column: &Column) -> String { String::new() }
         fn json_sql(&self, _column: &Column) -> String { String::new() }

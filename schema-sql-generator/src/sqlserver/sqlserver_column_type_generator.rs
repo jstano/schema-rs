@@ -51,8 +51,12 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
         "datetimeoffset".to_string()
     }
 
-    fn binary_sql(&self) -> String {
-        "varbinary(max)".to_string()
+    fn binary_sql(&self, column: &Column) -> String {
+        if column.length() > 0 {
+            format!("varbinary({})", column.length())
+        } else {
+            "varbinary(max)".to_string()
+        }
     }
 
     fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
@@ -223,6 +227,17 @@ mod tests {
     fn other_types() {
         assert_type(ColumnType::Boolean, "bit");
         assert_type(ColumnType::Binary, "varbinary(max)");
+    }
+
+    #[test]
+    fn binary_type_with_length_uses_bounded_varbinary() {
+        let (ctx, table_builder) = make_context();
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+        let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Binary)
+            .length(16)
+            .build();
+        assert_eq!(generator.column_type_sql(&table, &col), "varbinary(16)");
     }
 
     #[test]

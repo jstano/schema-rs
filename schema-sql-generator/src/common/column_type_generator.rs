@@ -33,7 +33,7 @@ pub trait ColumnTypeGenerator {
             ColumnType::Text => self.text_sql(column),
             ColumnType::CiText => self.citext_sql(),
             ColumnType::CsText => self.cstext_sql(),
-            ColumnType::Binary => self.binary_sql(),
+            ColumnType::Binary => self.binary_sql(column),
             ColumnType::Uuid => self.uuid_sql(column),
             ColumnType::Json => self.json_sql(column),
             ColumnType::Array => self.array_sql(column),
@@ -50,7 +50,7 @@ pub trait ColumnTypeGenerator {
 
     fn cstext_sql(&self) -> String;
 
-    fn binary_sql(&self) -> String;
+    fn binary_sql(&self, column: &Column) -> String;
 
     fn uuid_default_value_sql(&self, schema: &Schema) -> String;
 
