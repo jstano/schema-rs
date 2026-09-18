@@ -100,10 +100,10 @@ impl TableGenerator for SqlServerTableGenerator {
     fn output_table_footer(&self, table: &Table) {
         self.table_generator.output_table_footer(table);
 
-        // Unlike Postgres/SQLite, the legacy Java tool always emits the lock_escalation clause,
-        // including for the default `Auto` setting.
+        // `Auto` is SQL Server's own default for LOCK_ESCALATION, so emitting the ALTER for it
+        // would be a no-op; only emit it when it actually changes behavior.
         let lock_escalation_value = match table.lock_escalation() {
-            LockEscalation::Auto => "auto",
+            LockEscalation::Auto => return,
             LockEscalation::Disable => "disable",
             LockEscalation::Table => "table",
         };
@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn output_table_footer_emits_lock_escalation_when_auto() {
+    fn output_table_footer_omits_lock_escalation_when_auto() {
         let table = TableBuilder::new(None::<&str>, "users")
             .lock_escalation(LockEscalation::Auto)
             .build();
@@ -245,7 +245,20 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = auto)\nGO"));
+        assert!(!buffer.contents().contains("lock_escalation"));
+    }
+
+    #[test]
+    fn output_table_footer_omits_lock_escalation_when_unset() {
+        let table = TableBuilder::new(None::<&str>, "users").build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerTableGenerator::new(ctx);
+        generator.output_table_footer(&table);
+
+        assert!(!buffer.contents().contains("lock_escalation"));
     }
 
     #[test]

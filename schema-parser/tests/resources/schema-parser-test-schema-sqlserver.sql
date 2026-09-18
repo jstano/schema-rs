@@ -63,9 +63,6 @@ create table dbo.ChildTable
 )
 GO
 
-alter table dbo.ChildTable set (lock_escalation = auto)
-GO
-
 create table dbo.ColumnTesterTable
 (
    sequence integer identity(1,1) not null,
@@ -114,9 +111,6 @@ create table dbo.KBI
 )
 GO
 
-alter table dbo.KBI set (lock_escalation = auto)
-GO
-
 create index ix_kbi1 on dbo.KBI (MasterKBICodeID)
 GO
 
@@ -124,9 +118,6 @@ create table dbo.LongSequenceTesterTable
 (
    longsequence bigint identity(1,1) not null
 )
-GO
-
-alter table dbo.LongSequenceTesterTable set (lock_escalation = auto)
 GO
 
 create table dbo.MasterKBICode
@@ -142,9 +133,6 @@ create table dbo.MasterKBICode
 )
 GO
 
-alter table dbo.MasterKBICode set (lock_escalation = auto)
-GO
-
 create table dbo.ParentTable
 (
    ID integer identity(1,1) not null,
@@ -155,9 +143,6 @@ create table dbo.ParentTable
    constraint ak_parenttable1 unique clustered (Name,Extra),
    constraint ck_parenttab_gender_E250C9FC check(Gender in ('M','F'))
 )
-GO
-
-alter table dbo.ParentTable set (lock_escalation = auto)
 GO
 
 create index ix_parenttable1 on dbo.ParentTable (Extra, Name) with (data_compression = page)
@@ -189,9 +174,6 @@ create table dbo.Property
 )
 GO
 
-alter table dbo.Property set (lock_escalation = auto)
-GO
-
 create table dbo.Region
 (
    ID integer identity(1,1) not null,
@@ -203,9 +185,6 @@ create table dbo.Region
    constraint ak_region1 unique (Name),
    constraint ak_region2 unique (Code)
 )
-GO
-
-alter table dbo.Region set (lock_escalation = auto)
 GO
 
 create table test.Unit
@@ -220,9 +199,6 @@ create table test.Unit
    constraint ak_unit1 unique (PropertyID,Name),
    constraint ak_unit2 unique (PropertyID,SingularName)
 )
-GO
-
-alter table test.Unit set (lock_escalation = auto)
 GO
 
 /* relations */
