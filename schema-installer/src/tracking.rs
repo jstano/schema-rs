@@ -58,6 +58,57 @@ END"#
             }
         }
     }
+
+    /// Idempotent repair for SQL Server `schema_migration` tables created before the
+    /// NVARCHAR(MAX) -> bounded-length fix (see the comment on `schema_migration_ddl`'s
+    /// `SqlServer` arm). `CREATE TABLE IF NOT EXISTS`-style guards never touch a table that
+    /// already exists, so a database that ran `ensure_migration_table` before that fix landed
+    /// is left with an unbounded `version` column forever, still hitting error 1919 on every
+    /// startup - this brings such a table in line with the current DDL in place, without
+    /// requiring the operator to run manual ALTER TABLE statements. Each column is only
+    /// touched when it's still the old `NVARCHAR(MAX)`, so this is a no-op against a table
+    /// that already has the current shape (including a fresh install).
+    pub fn sqlserver_repair_ddl() -> String {
+        r#"IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'schema_migration' AND COLUMN_NAME = 'version' AND CHARACTER_MAXIMUM_LENGTH = -1
+)
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM sys.key_constraints
+        WHERE name = 'UQ_schema_migration_version' AND parent_object_id = OBJECT_ID('dbo.schema_migration')
+    )
+        ALTER TABLE dbo.schema_migration DROP CONSTRAINT UQ_schema_migration_version;
+
+    ALTER TABLE dbo.schema_migration ALTER COLUMN version NVARCHAR(200) NOT NULL;
+    ALTER TABLE dbo.schema_migration ADD CONSTRAINT UQ_schema_migration_version UNIQUE (version);
+END
+
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'schema_migration' AND COLUMN_NAME = 'script_path' AND CHARACTER_MAXIMUM_LENGTH = -1
+)
+    ALTER TABLE dbo.schema_migration ALTER COLUMN script_path NVARCHAR(1000) NOT NULL;
+
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'schema_migration' AND COLUMN_NAME = 'checksum' AND CHARACTER_MAXIMUM_LENGTH = -1
+)
+    ALTER TABLE dbo.schema_migration ALTER COLUMN checksum NVARCHAR(64) NOT NULL;
+
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'schema_migration' AND COLUMN_NAME = 'status' AND CHARACTER_MAXIMUM_LENGTH = -1
+)
+    ALTER TABLE dbo.schema_migration ALTER COLUMN status NVARCHAR(20) NOT NULL;
+
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'schema_migration' AND COLUMN_NAME = 'tool_version' AND CHARACTER_MAXIMUM_LENGTH = -1
+)
+    ALTER TABLE dbo.schema_migration ALTER COLUMN tool_version NVARCHAR(50) NOT NULL;"#
+            .to_string()
+    }
 }
 
 #[cfg(test)]
@@ -118,5 +169,34 @@ mod tests {
         let ddl = SchemaMigrationDdl::schema_migration_ddl(&GeneratorType::SqlServer);
         assert!(ddl.contains("DEFAULT SYSUTCDATETIME()"));
         assert!(!ddl.contains("GETDATE()"));
+    }
+
+    #[test]
+    fn test_sqlserver_repair_ddl_checks_all_originally_max_columns() {
+        let ddl = SchemaMigrationDdl::sqlserver_repair_ddl();
+        for column in ["version", "script_path", "checksum", "status", "tool_version"] {
+            assert!(
+                ddl.contains(&format!("COLUMN_NAME = '{}'", column)),
+                "repair DDL should check column '{}' for the old NVARCHAR(MAX) type",
+                column
+            );
+        }
+    }
+
+    #[test]
+    fn test_sqlserver_repair_ddl_fixes_version_column_and_constraint() {
+        let ddl = SchemaMigrationDdl::sqlserver_repair_ddl();
+        assert!(ddl.contains("ALTER TABLE dbo.schema_migration DROP CONSTRAINT UQ_schema_migration_version"));
+        assert!(ddl.contains("ALTER TABLE dbo.schema_migration ALTER COLUMN version NVARCHAR(200) NOT NULL"));
+        assert!(ddl.contains("ALTER TABLE dbo.schema_migration ADD CONSTRAINT UQ_schema_migration_version UNIQUE (version)"));
+    }
+
+    #[test]
+    fn test_sqlserver_repair_ddl_bounds_remaining_columns_to_match_fresh_ddl() {
+        let ddl = SchemaMigrationDdl::sqlserver_repair_ddl();
+        assert!(ddl.contains("ALTER COLUMN script_path NVARCHAR(1000) NOT NULL"));
+        assert!(ddl.contains("ALTER COLUMN checksum NVARCHAR(64) NOT NULL"));
+        assert!(ddl.contains("ALTER COLUMN status NVARCHAR(20) NOT NULL"));
+        assert!(ddl.contains("ALTER COLUMN tool_version NVARCHAR(50) NOT NULL"));
     }
 }

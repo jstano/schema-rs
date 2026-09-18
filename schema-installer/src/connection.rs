@@ -95,7 +95,18 @@ impl AnyPool {
 
     pub async fn ensure_migration_table(&self, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {
         let ddl = SchemaMigrationDdl::schema_migration_ddl(database_type);
-        self.execute_sql(&ddl).await
+        self.execute_sql(&ddl).await?;
+
+        // `schema_migration_ddl`'s `CREATE TABLE IF NOT EXISTS` guard never touches a table
+        // that already exists, so a SQL Server database that had the table created before the
+        // NVARCHAR(MAX) -> bounded-length fix would otherwise fail with error 1919 forever.
+        // Run the idempotent repair unconditionally here (it no-ops against an already-correct
+        // table) instead of requiring the operator to run manual ALTER TABLE statements.
+        if matches!(database_type, GeneratorType::SqlServer) {
+            self.execute_sql(&SchemaMigrationDdl::sqlserver_repair_ddl()).await?;
+        }
+
+        Ok(())
     }
 
     /// Executes a migration's already-split SQL statements and marks its tracking row
