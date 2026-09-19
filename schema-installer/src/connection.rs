@@ -203,15 +203,29 @@ impl AnyPool {
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
+                // `Client::execute`/`query` send the SQL via the `sp_executesql` RPC, which
+                // SQL Server treats as a nested procedure call: it checks that @@TRANCOUNT on
+                // entry matches @@TRANCOUNT on exit, and raises error 266 ("mismatching number
+                // of BEGIN and COMMIT statements") the instant a statement changes it - which
+                // `BEGIN TRANSACTION` always does (0 -> 1). `simple_query` sends a plain SQL
+                // batch (the same wire format SSMS/sqlcmd use) with no such check, so it's the
+                // only way to issue transaction control statements here.
                 client
-                    .execute("BEGIN TRANSACTION", &[])
+                    .simple_query("BEGIN TRANSACTION")
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                    .into_results()
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
 
                 for statement in statements {
-                    if let Err(e) = client.execute(statement.as_str(), &[]).await {
+                    let result = match client.simple_query(statement.as_str()).await {
+                        Ok(stream) => stream.into_results().await.map(|_| ()),
+                        Err(e) => Err(e),
+                    };
+                    if let Err(e) = result {
                         // Best-effort rollback; report the original statement error either way.
-                        let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                        let _ = client.simple_query("ROLLBACK TRANSACTION").await;
                         return Err(SchemaInstallerError::Execution(e.to_string()));
                     }
                 }
@@ -226,12 +240,12 @@ impl AnyPool {
                 {
                     Ok(result) => result.rows_affected().iter().sum(),
                     Err(e) => {
-                        let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                        let _ = client.simple_query("ROLLBACK TRANSACTION").await;
                         return Err(SchemaInstallerError::Execution(e.to_string()));
                     }
                 };
                 if rows_affected == 0 {
-                    let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+                    let _ = client.simple_query("ROLLBACK TRANSACTION").await;
                     return Err(SchemaInstallerError::Database(format!(
                         "failed to record migration status as 'success': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
                         migration_id
@@ -239,7 +253,10 @@ impl AnyPool {
                 }
 
                 client
-                    .execute("COMMIT TRANSACTION", &[])
+                    .simple_query("COMMIT TRANSACTION")
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                    .into_results()
                     .await
                     .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 Ok(elapsed_ms)
