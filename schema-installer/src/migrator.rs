@@ -45,12 +45,24 @@ async fn wait_for_slot(
     checksum: &str,
     tool_version: &str,
 ) -> Result<Slot, SchemaInstallerError> {
-    match pool
-        .insert_migration(&migration.version, &migration.script_path, checksum, 0, "pending", tool_version)
-        .await
-    {
+    match insert_pending(pool, migration, checksum, tool_version).await {
         Ok(id) => Ok(Slot::Owned(id)),
         Err(SchemaInstallerError::ConcurrentMigrationDetected(version)) => {
+            // The colliding row may belong to a process that already crashed while
+            // holding it rather than one still legitimately running. Purge anything
+            // stale enough to qualify (same threshold `repair` uses) and try again
+            // immediately, so an abandoned lock self-heals right away instead of
+            // wedging every future `migrate` run for `LOCK_MAX_WAIT` at a time until
+            // an operator runs `repair` by hand.
+            pool.delete_stale_pending_migrations(STALE_PENDING_THRESHOLD.as_secs() as i64)
+                .await?;
+
+            match insert_pending(pool, migration, checksum, tool_version).await {
+                Ok(id) => return Ok(Slot::Owned(id)),
+                Err(SchemaInstallerError::ConcurrentMigrationDetected(_)) => {} // not stale; fall through to poll
+                Err(e) => return Err(e),
+            }
+
             let deadline = Instant::now() + LOCK_MAX_WAIT;
             loop {
                 let applied = pool.get_applied_migrations().await?;
@@ -75,6 +87,16 @@ async fn wait_for_slot(
         }
         Err(e) => Err(e),
     }
+}
+
+async fn insert_pending(
+    pool: &AnyPool,
+    migration: &Migration,
+    checksum: &str,
+    tool_version: &str,
+) -> Result<i64, SchemaInstallerError> {
+    pool.insert_migration(&migration.version, &migration.script_path, checksum, 0, "pending", tool_version)
+        .await
 }
 
 pub struct Migrator;

@@ -661,6 +661,59 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
 }
 
 #[tokio::test]
+async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
+    // Simulates the ArgoCD PreSync scenario: a prior `migrate` run crashed mid-migration,
+    // leaving a "pending" row behind with no process left to ever resolve it. A naive
+    // implementation would make every subsequent `migrate` call wait out `LOCK_MAX_WAIT`
+    // and fail with `LockTimeout` forever, requiring an operator to run `repair` by hand.
+    // `migrate` should instead detect that the row is stale and clean it up itself.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_migrate_self_heal.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    let id = pool
+        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .await
+        .expect("insert pending row");
+
+    // Back-date it well past the staleness threshold, simulating the crashed process.
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to backdate row");
+    sqlx::query("UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?")
+        .bind(id)
+        .execute(&check_pool)
+        .await
+        .expect("backdate installed_at");
+
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/sqlite");
+    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("migrate should self-heal the stale pending row instead of timing out");
+
+    let row = sqlx::query("SELECT status FROM schema_migration WHERE version = '1'")
+        .fetch_one(&check_pool)
+        .await
+        .expect("query schema_migration");
+    let status: String = row.get("status");
+    assert_eq!(status, "success", "migrate should have re-applied and succeeded for version 1");
+}
+
+#[tokio::test]
 async fn test_sqlite_repair_keeps_recent_pending_migrations() {
     // A "pending" row inserted moments ago could still belong to a process that's
     // legitimately mid-migration right now; repair must not delete it out from under

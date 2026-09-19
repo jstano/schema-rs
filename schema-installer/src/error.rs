@@ -37,12 +37,12 @@ pub enum SchemaInstallerError {
     MigrationFailed { version: String, error: String },
 
     #[error(
-        "Concurrent migration detected for version {0}: another process has already applied or is currently applying it"
+        "Concurrent migration detected for version {0}: another process has already applied or is currently applying it - wait for it to finish and retry, or if it crashed, run `repair` to clear the stale tracking row"
     )]
     ConcurrentMigrationDetected(String),
 
     #[error(
-        "Timed out waiting for a concurrent process to finish applying migration {0}; it may have crashed while holding it"
+        "Timed out waiting for a concurrent process to finish applying migration {0}; a stale pending row is auto-cleaned after 10 minutes, so this means another process is still within that grace window (or repeatedly failing to complete) - wait and retry, or run `repair` once you're sure no process is actually applying it"
     )]
     LockTimeout(String),
 
