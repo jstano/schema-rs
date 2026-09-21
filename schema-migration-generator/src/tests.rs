@@ -4,12 +4,18 @@ use schema_diff::change_set::ChangeSet;
 use schema_model::builder::column::ColumnBuilder;
 use schema_model::builder::{SchemaBuilder, TableBuilder};
 use schema_model::model::column_type::ColumnType;
+use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::key::{Key, KeyColumn};
 use schema_model::model::relation::Relation;
-use schema_model::model::types::{DatabaseType, KeyType, RelationType};
+use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType};
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 
 use crate::create_generator;
+
+fn default_model() -> DatabaseModel {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+}
 
 #[test]
 fn postgresql_add_table() {
@@ -18,7 +24,7 @@ fn postgresql_add_table() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("CREATE TABLE users"));
 }
@@ -30,7 +36,7 @@ fn postgresql_drop_table() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("DROP TABLE IF EXISTS orders"));
 }
@@ -45,7 +51,7 @@ fn postgresql_add_column() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("ALTER TABLE users ADD COLUMN email"));
     assert!(sql.contains("NOT NULL"));
@@ -58,9 +64,248 @@ fn sqlserver_uses_go_separator() {
 
     let generator = create_generator(DatabaseType::SqlServer);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("GO"));
+}
+
+#[test]
+fn sqlserver_add_column_text_with_length_uses_bounded_nvarchar() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(Some("s"), "location_name", ColumnType::Text)
+            .length(200)
+            .required(true)
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("nvarchar(200)"), "expected bounded nvarchar, got: {}", sql);
+    assert!(!sql.contains("nvarchar(max)"), "expected bounded nvarchar, got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_boolean_respects_boolean_mode() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "users".to_string(),
+        column: ColumnBuilder::new(Some("s"), "active", ColumnType::Boolean).required(true).build(),
+    });
+
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YN, ForeignKeyMode::Relations, vec![schema]);
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("nchar(1)"), "expected nchar(1) for YN boolean mode, got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_enum_sizes_from_enum_values() {
+    use schema_model::model::enum_type::{EnumType, EnumValue};
+
+    let enum_type = EnumType::new(
+        "gender_type",
+        vec![EnumValue::new("MALE", Some("M".to_string())), EnumValue::new("FEMALE", Some("F".to_string()))],
+    );
+    let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "accounts".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "gender", ColumnType::Enum)
+            .enum_type(Some("gender_type".to_string()))
+            .required(true)
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("nchar(1)"), "expected nchar(1) sized from enum codes, got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_column_text_respects_case_sensitive_text() {
+    let schema = SchemaBuilder::new(None::<&str>).case_sensitive_text(false).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "users".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "notes", ColumnType::Text).build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("ADD COLUMN notes citext"), "expected citext for case-insensitive schema, got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_column_enum_uses_native_enum_type_name() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "accounts".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+            .enum_type(Some("StatusType".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("ADD COLUMN status status_type"), "expected native enum type, got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_column_array_uses_element_type() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "widgets".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "tags", ColumnType::Array)
+            .element_type(Some("int".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("ADD COLUMN tags integer[]"), "expected integer[] from elementType, got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_column_boolean_respects_boolean_mode() {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YesNo, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "users".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean).build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("ADD COLUMN active varchar(3)"), "expected varchar(3) for YesNo boolean mode, got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_boolean_default_converts_to_boolean_mode_literal() {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YesNo, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean)
+            .required(true)
+            .default_constraint(Some("false".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("DEFAULT 'No'"), "expected 'No' literal for YesNo mode, got: {}", sql);
+    assert!(!sql.contains("DEFAULT false"), "raw XML value leaked through unconverted: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_boolean_default_native_uses_bit_literal() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean)
+            .required(true)
+            .default_constraint(Some("true".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("DEFAULT 1"), "expected bit literal 1 for native mode, got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_column_boolean_default_converts_to_boolean_mode_literal() {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YN, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean)
+            .required(true)
+            .default_constraint(Some("true".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("DEFAULT 'Y'"), "expected 'Y' literal for YN mode, got: {}", sql);
+}
+
+#[test]
+fn postgresql_modify_column_boolean_default_converts_to_boolean_mode_literal() {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YesNo, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyColumn {
+        table_name: "location".to_string(),
+        old_column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean).required(true).build(),
+        new_column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean)
+            .required(true)
+            .default_constraint(Some("true".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("SET DEFAULT 'Yes'"), "expected 'Yes' literal for YesNo mode, got: {}", sql);
+}
+
+#[test]
+fn sqlite_add_column_boolean_respects_boolean_mode_and_default() {
+    let schema = SchemaBuilder::new(None::<&str>).build();
+    let model = DatabaseModel::new(BooleanMode::YN, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "active", ColumnType::Boolean)
+            .required(true)
+            .default_constraint(Some("false".to_string()))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("char(1)"), "expected char(1) column type for YN mode, got: {}", sql);
+    assert!(sql.contains("DEFAULT 'N'"), "expected 'N' literal for YN mode, got: {}", sql);
 }
 
 #[test]
@@ -73,7 +318,7 @@ fn sqlite_rename_table() {
 
     let generator = create_generator(DatabaseType::Sqlite);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("ALTER TABLE old_users RENAME TO users"));
 }
@@ -89,7 +334,7 @@ fn postgresql_drop_column_with_rename_candidates_emits_todo() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("-- TODO: possible rename?"));
     assert!(sql.contains("RENAME COLUMN first_name TO full_name"));
@@ -107,7 +352,7 @@ fn postgresql_drop_column_no_candidates_no_todo() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(!sql.contains("-- TODO"));
     assert!(sql.contains("DROP COLUMN legacy_field"));
@@ -138,7 +383,7 @@ fn dropping_a_relation_uses_the_create_paths_positional_fk_name() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&change_set, &mut output).unwrap();
+    generator.generate(&change_set, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
 
     let expected_name = foreign_key_name(DatabaseType::Postgresql, "orders", 2);
@@ -169,7 +414,7 @@ fn dropping_a_unique_key_uses_the_create_paths_positional_ak_name() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&change_set, &mut output).unwrap();
+    generator.generate(&change_set, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
 
     let expected_name = unique_key_name(DatabaseType::Postgresql, "users", 2);
@@ -199,7 +444,7 @@ fn dropping_an_index_uses_the_create_paths_positional_ix_name() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&change_set, &mut output).unwrap();
+    generator.generate(&change_set, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
 
     let expected_name = index_name(DatabaseType::Postgresql, "users", 2);
@@ -222,7 +467,7 @@ fn dropping_a_primary_key_uses_the_create_paths_pk_name() {
 
     let generator = create_generator(DatabaseType::Postgresql);
     let mut output = Vec::new();
-    generator.generate(&change_set, &mut output).unwrap();
+    generator.generate(&change_set, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
 
     let expected_name = primary_key_name(DatabaseType::Postgresql, "orders");
@@ -243,7 +488,7 @@ fn sqlserver_drop_column_with_rename_candidates_emits_sp_rename_hint() {
 
     let generator = create_generator(DatabaseType::SqlServer);
     let mut output = Vec::new();
-    generator.generate(&cs, &mut output).unwrap();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("-- TODO: possible rename?"));
     assert!(sql.contains("sp_rename 'orders.old_col', 'new_col', 'COLUMN'"));

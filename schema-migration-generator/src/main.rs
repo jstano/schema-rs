@@ -74,6 +74,14 @@ pub fn main() {
                 .conflicts_with("output-file")
                 .help("Optional description used by --auto-generate-name (e.g. 'add users table')"),
         )
+        .arg(
+            Arg::new("output-dir")
+                .long("output-dir")
+                .value_name("DIR")
+                .requires("auto-generate-name")
+                .conflicts_with("output-file")
+                .help("Overrides the output directory for --auto-generate-name (default: alongside --file); created if missing"),
+        )
         .get_matches();
 
     let file_arg = arguments.get_one::<String>("file");
@@ -107,13 +115,19 @@ pub fn main() {
     let generator = create_generator(database_type);
     let mut output = Vec::new();
     generator
-        .generate(&change_set, &mut output)
+        .generate(&change_set, &new_model, &mut output)
         .expect("failed to generate migration");
 
     if arguments.get_flag("auto-generate-name") {
         let file = file_arg.expect("checked above: --auto-generate-name requires --file");
         let description = arguments.get_one::<String>("description").map(String::as_str);
-        let output_path = generate_migration_path(file, Utc::now(), description);
+        let output_dir = arguments.get_one::<String>("output-dir").map(String::as_str);
+        let output_path = generate_migration_path(file, output_dir, Utc::now(), description);
+        if let Some(parent) = output_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).expect("failed to create output directory");
+        }
         fs::write(&output_path, &output).expect("failed to write output file");
         println!("Wrote migration to {}", output_path.display());
         return;

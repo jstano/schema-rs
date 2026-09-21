@@ -19,3 +19,6 @@ schema-parser.workspace = true
 thiserror = "2"
 clap = "^4.5.50"
 chrono = "0.4"
+
+[dev-dependencies]
+schema-sql-generator.workspace = true

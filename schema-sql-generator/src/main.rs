@@ -45,7 +45,7 @@ pub fn main() {
             .long("boolean-mode")
             .value_name("MODE")
             .value_parser(["native", "yesno", "yn"])
-            .help("Sets the boolean mode"))
+            .help("Overrides the boolean mode (default: the schema file's booleanMode attribute, or native if unset)"))
         .arg(Arg::new("output-mode")
             .long("output-mode")
             .value_name("MODE")
@@ -142,10 +142,18 @@ pub fn main() {
         std::process::exit(1);
     }
 
+    // `--boolean-mode` is an override; absent that flag, the schema file's own `booleanMode`
+    // attribute (defaulting to `Native` when unset - see `schema-parser/convert.rs`) wins,
+    // so the CLI and the schema stay consistent with each other by default.
+    let boolean_mode_value: BooleanMode = match boolean_mode.parse() {
+        Ok(mode) => mode,
+        Err(_) => database_model.boolean_mode(),
+    };
+
     let options = GenerateOptions {
+        boolean_mode: boolean_mode_value,
         database_model: Rc::new(database_model),
         writer: Rc::new(RefCell::new(print_writer)),
-        boolean_mode: boolean_mode.parse().unwrap_or(BooleanMode::Native),
         foreign_key_mode: foreign_key_mode.parse().unwrap_or(ForeignKeyMode::Relations),
         output_mode: output_mode.parse().unwrap_or(OutputMode::All),
         target_postgres_version,
