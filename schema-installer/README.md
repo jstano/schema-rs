@@ -103,12 +103,13 @@ Available for all commands:
 
 ### Migration File Format
 
-Files follow `V{version}__{description}.sql` format:
+Files follow `V{version}__{description}.sql` format; the `__{description}` part is optional, so `V{version}.sql` is valid too:
 
 - Versions use semantic numbering: `1`, `1.1`, `2.0`, `2.0.1`, etc.
 - Versions are sorted numerically (not lexicographically): 1, 1.1, 1.10, 2.0
 - Underscores in description become spaces in the UI label
 - Example: `V1__create_users.sql` → "1 - create users"
+- A description-less file (e.g. `V20240115143022.sql`) is treated as having an empty description — useful with timestamp-based versions where the filename doesn't need a human-readable suffix
 
 ### Migration Tracking
 

@@ -30,7 +30,7 @@ migrations/
 └── V2__create_posts.sql
 ```
 
-File naming format: `V{version}__{description}.sql`
+File naming format: `V{version}__{description}.sql` — the `__{description}` part is optional (`V{version}.sql` is also valid)
 - Versions support semantic numbering (1, 1.1, 2.0, 2.0.1, etc.)
 - Description becomes a human-readable label (underscores become spaces)
 

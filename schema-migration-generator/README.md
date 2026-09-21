@@ -21,6 +21,32 @@ let migration_sql = String::from_utf8(output)?;
 println!("{}", migration_sql);
 ```
 
+## CLI Usage
+
+```bash
+# Diff two schema sources (file paths, or git '<rev>:<path>' references) and print SQL to stdout
+schema-migration-generator \
+  --database-type postgresql --old HEAD:schema.xml --new schema.xml
+
+# Shortcut: diff a file on disk against its own HEAD version
+schema-migration-generator \
+  --database-type postgresql --file schema.xml
+
+# Write to a specific path instead of stdout
+schema-migration-generator \
+  --database-type postgresql --file schema.xml --output-file migrations/V1__create_users.sql
+
+# Auto-name the output as V{timestamp}.sql alongside the schema file (requires --file)
+schema-migration-generator \
+  --database-type postgresql --file schema.xml --auto-generate-name
+
+# Auto-name with a description: V{timestamp}__add_users_table.sql
+schema-migration-generator \
+  --database-type postgresql --file schema.xml --auto-generate-name --description "add users table"
+```
+
+`--auto-generate-name` and `--description` require `--file` (not `--old`/`--new`, since there's no single unambiguous schema-file directory to write into otherwise) and are mutually exclusive with `--output-file`. The generated filename is Flyway-style and compatible with `schema-installer`'s migration parser, whether or not a description is given.
+
 ## Typical Pipeline
 
 1. **Parse** two schema versions: `schema-parser` + `schema-model`

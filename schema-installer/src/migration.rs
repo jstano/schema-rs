@@ -162,8 +162,10 @@ fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaIns
     Ok(())
 }
 
-/// Parses a `V{version}__{description}.sql`-style filename. Returns `Ok(None)` for a
-/// file that isn't a versioned migration at all (its name doesn't start with `V`/`v`) -
+/// Parses a `V{version}__{description}.sql`-style filename; the `__{description}` part
+/// is optional, so `V{version}.sql` is also valid and parses with an empty description.
+/// Returns `Ok(None)` for a file that isn't a versioned migration at all (its name doesn't
+/// start with `V`/`v`) -
 /// e.g. a Flyway-style repeatable (`R__...`) or undo (`U__...`) migration, or any other
 /// file someone dropped into the directory - so the caller can skip it with a warning
 /// instead of aborting the entire directory scan over a file this tool was never going
@@ -187,20 +189,15 @@ fn parse_migration_filename(filename: &str) -> Result<Option<(String, String)>, 
         return Ok(None);
     }
 
+    // The `__description` suffix is optional - a filename with no `__` at all (e.g.
+    // `V20240115143022.sql`, as produced by schema-migration-generator's
+    // --auto-generate-name with no --description) is equivalent to an empty description,
+    // matching the already-legal `V20240115143022__.sql` form.
     let parts: Vec<&str> = name_without_ext.splitn(2, "__").collect();
-
-    if parts.len() != 2 {
-        return Err(SchemaInstallerError::InvalidConfiguration(
-            format!(
-                "Invalid migration filename format (expected V{{version}}__{{description}}.sql): {}",
-                filename
-            ),
-        ));
-    }
 
     let version_part = parts[0].to_lowercase();
     let version = version_part[1..].to_string();
-    let description = parts[1].replace('_', " ");
+    let description = parts.get(1).map(|d| d.replace('_', " ")).unwrap_or_default();
 
     if version.is_empty() {
         return Err(SchemaInstallerError::InvalidConfiguration(
@@ -282,6 +279,21 @@ mod tests {
         let (version, description) = parse_migration_filename("V1_2__add_email_column.sql").unwrap().unwrap();
         assert_eq!(version, "1_2");
         assert_eq!(description, "add email column");
+    }
+
+    #[test]
+    fn test_parse_migration_filename_without_description() {
+        // The `__description` suffix is optional (e.g. produced by
+        // schema-migration-generator's --auto-generate-name with no --description).
+        let (version, description) = parse_migration_filename("V20240115143022.sql").unwrap().unwrap();
+        assert_eq!(version, "20240115143022");
+        assert_eq!(description, "");
+
+        // Already-legal today, and must keep working the same way: an explicit `__`
+        // with nothing after it is likewise an empty description.
+        let (version, description) = parse_migration_filename("V1__.sql").unwrap().unwrap();
+        assert_eq!(version, "1");
+        assert_eq!(description, "");
     }
 
     #[test]
