@@ -26,7 +26,7 @@ fn postgresql_add_table() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("CREATE TABLE users"));
+    assert!(sql.contains("create table users"));
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn postgresql_drop_table() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("DROP TABLE IF EXISTS orders"));
+    assert!(sql.contains("drop table if exists orders"));
 }
 
 #[test]
@@ -53,8 +53,8 @@ fn postgresql_add_column() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ALTER TABLE users ADD COLUMN email"));
-    assert!(sql.contains("NOT NULL"));
+    assert!(sql.contains("alter table users add column email"));
+    assert!(sql.contains("not null"));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn sqlserver_uses_go_separator() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("GO"));
+    assert!(sql.contains("go"));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn sqlserver_add_column_enum_emits_check_constraint_for_allowed_codes() {
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(
-        sql.contains("ADD CONSTRAINT ck_location_status_") && sql.contains("CHECK (status in ('A','I'))"),
+        sql.contains("add constraint ck_location_status_") && sql.contains("check(status in ('A','I'))"),
         "expected a CHECK constraint restricting status to the enum's codes, got: {}",
         sql
     );
@@ -189,7 +189,7 @@ fn sqlite_add_column_enum_inlines_check_constraint() {
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(
-        sql.contains("NOT NULL CHECK (status in ('A','I'))"),
+        sql.contains("not null check(status in ('A','I'))"),
         "expected an inline CHECK constraint restricting status to the enum's codes, got: {}",
         sql
     );
@@ -242,7 +242,7 @@ fn sqlserver_add_column_min_max_emits_check_constraint() {
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(
-        sql.contains("CHECK (price >= 0 and price <= 100)"),
+        sql.contains("check(price >= 0 and price <= 100)"),
         "expected a min/max CHECK constraint, got: {}",
         sql
     );
@@ -263,7 +263,7 @@ fn postgresql_add_column_text_respects_case_sensitive_text() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ADD COLUMN notes citext"), "expected citext for case-insensitive schema, got: {}", sql);
+    assert!(sql.contains("add column notes citext"), "expected citext for case-insensitive schema, got: {}", sql);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn postgresql_add_column_enum_uses_native_enum_type_name() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ADD COLUMN status status_type"), "expected native enum type, got: {}", sql);
+    assert!(sql.contains("add column status status_type"), "expected native enum type, got: {}", sql);
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn postgresql_add_column_array_uses_element_type() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ADD COLUMN tags integer[]"), "expected integer[] from elementType, got: {}", sql);
+    assert!(sql.contains("add column tags integer[]"), "expected integer[] from elementType, got: {}", sql);
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn postgresql_add_column_boolean_respects_boolean_mode() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ADD COLUMN active varchar(3)"), "expected varchar(3) for YesNo boolean mode, got: {}", sql);
+    assert!(sql.contains("add column active varchar(3)"), "expected varchar(3) for YesNo boolean mode, got: {}", sql);
 }
 
 #[test]
@@ -336,8 +336,8 @@ fn sqlserver_add_column_boolean_default_converts_to_boolean_mode_literal() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("DEFAULT 'No'"), "expected 'No' literal for YesNo mode, got: {}", sql);
-    assert!(!sql.contains("DEFAULT false"), "raw XML value leaked through unconverted: {}", sql);
+    assert!(sql.contains("default 'No'"), "expected 'No' literal for YesNo mode, got: {}", sql);
+    assert!(!sql.contains("default false"), "raw XML value leaked through unconverted: {}", sql);
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn sqlserver_add_column_boolean_default_native_uses_bit_literal() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("DEFAULT 1"), "expected bit literal 1 for native mode, got: {}", sql);
+    assert!(sql.contains("default 1"), "expected bit literal 1 for native mode, got: {}", sql);
 }
 
 #[test]
@@ -376,7 +376,7 @@ fn postgresql_add_column_boolean_default_converts_to_boolean_mode_literal() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("DEFAULT 'Y'"), "expected 'Y' literal for YN mode, got: {}", sql);
+    assert!(sql.contains("default 'Y'"), "expected 'Y' literal for YN mode, got: {}", sql);
 }
 
 #[test]
@@ -398,7 +398,7 @@ fn postgresql_modify_column_boolean_default_converts_to_boolean_mode_literal() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("SET DEFAULT 'Yes'"), "expected 'Yes' literal for YesNo mode, got: {}", sql);
+    assert!(sql.contains("set default 'Yes'"), "expected 'Yes' literal for YesNo mode, got: {}", sql);
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn sqlite_add_column_boolean_respects_boolean_mode_and_default() {
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("char(1)"), "expected char(1) column type for YN mode, got: {}", sql);
-    assert!(sql.contains("DEFAULT 'N'"), "expected 'N' literal for YN mode, got: {}", sql);
+    assert!(sql.contains("default 'N'"), "expected 'N' literal for YN mode, got: {}", sql);
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn sqlite_rename_table() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("ALTER TABLE old_users RENAME TO users"));
+    assert!(sql.contains("alter table old_users rename to users"));
 }
 
 #[test]
@@ -452,8 +452,8 @@ fn postgresql_drop_column_with_rename_candidates_emits_todo() {
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("-- TODO: possible rename?"));
-    assert!(sql.contains("RENAME COLUMN first_name TO full_name"));
-    assert!(sql.contains("DROP COLUMN first_name"));
+    assert!(sql.contains("rename column first_name to full_name"));
+    assert!(sql.contains("drop column first_name"));
 }
 
 #[test]
@@ -470,7 +470,7 @@ fn postgresql_drop_column_no_candidates_no_todo() {
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(!sql.contains("-- TODO"));
-    assert!(sql.contains("DROP COLUMN legacy_field"));
+    assert!(sql.contains("drop column legacy_field"));
 }
 
 // Regression tests for H20: a migration's DROP/ADD statements must name the object
@@ -503,8 +503,8 @@ fn dropping_a_relation_uses_the_create_paths_positional_fk_name() {
 
     let expected_name = foreign_key_name(DatabaseType::Postgresql, "orders", 2);
     assert!(
-        sql.contains(&format!("DROP CONSTRAINT {}", expected_name)),
-        "expected DROP CONSTRAINT {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop constraint {}", expected_name)),
+        "expected drop constraint {} in:\n{}", expected_name, sql
     );
 }
 
@@ -534,8 +534,8 @@ fn dropping_a_unique_key_uses_the_create_paths_positional_ak_name() {
 
     let expected_name = unique_key_name(DatabaseType::Postgresql, "users", 2);
     assert!(
-        sql.contains(&format!("DROP INDEX IF EXISTS {}", expected_name)),
-        "expected DROP INDEX IF EXISTS {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop index if exists {}", expected_name)),
+        "expected drop index if exists {} in:\n{}", expected_name, sql
     );
 }
 
@@ -564,8 +564,8 @@ fn dropping_an_index_uses_the_create_paths_positional_ix_name() {
 
     let expected_name = index_name(DatabaseType::Postgresql, "users", 2);
     assert!(
-        sql.contains(&format!("DROP INDEX IF EXISTS {}", expected_name)),
-        "expected DROP INDEX IF EXISTS {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop index if exists {}", expected_name)),
+        "expected drop index if exists {} in:\n{}", expected_name, sql
     );
 }
 
@@ -587,8 +587,8 @@ fn dropping_a_primary_key_uses_the_create_paths_pk_name() {
 
     let expected_name = primary_key_name(DatabaseType::Postgresql, "orders");
     assert!(
-        sql.contains(&format!("DROP CONSTRAINT {}", expected_name)),
-        "expected DROP CONSTRAINT {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop constraint {}", expected_name)),
+        "expected drop constraint {} in:\n{}", expected_name, sql
     );
 }
 
@@ -607,5 +607,5 @@ fn sqlserver_drop_column_with_rename_candidates_emits_sp_rename_hint() {
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("-- TODO: possible rename?"));
     assert!(sql.contains("sp_rename 'orders.old_col', 'new_col', 'COLUMN'"));
-    assert!(sql.contains("DROP COLUMN old_col"));
+    assert!(sql.contains("drop column old_col"));
 }

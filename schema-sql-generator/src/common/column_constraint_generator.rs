@@ -43,7 +43,7 @@ impl DefaultColumnConstraintGenerator {
         constraint_naming::hashed_constraint_name(CK_PREFIX, table_name, column_name)
     }
 
-    fn check_constraint_sql(&self, column: &Column) -> Option<String> {
+    pub fn check_constraint_sql(&self, column: &Column) -> Option<String> {
         if column.column_type() == ColumnType::Boolean {
             self.boolean_check_constraint(column)
         } else if let Some(constraint) = column.check_constraint() {

@@ -10,7 +10,7 @@ impl DatabaseType {
         match self {
             DatabaseType::Postgresql => ";",
             DatabaseType::Sqlite => ";",
-            DatabaseType::SqlServer => "\nGO",
+            DatabaseType::SqlServer => "\ngo",
         }
     }
 

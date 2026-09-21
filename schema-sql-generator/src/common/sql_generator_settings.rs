@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn statement_separator_matches_database_type_per_dialect() {
-        // Postgres and SQLite batch statements with ";"; SQL Server uses "GO" batches.
+        // Postgres and SQLite batch statements with ";"; SQL Server uses "go" batches.
         let schema = SchemaBuilder::new(None::<&str>).build();
         let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
@@ -94,7 +94,7 @@ mod tests {
 
         assert_eq!(postgres_settings.statement_separator(), ";");
         assert_eq!(sqlite_settings.statement_separator(), ";");
-        assert_eq!(sqlserver_settings.statement_separator(), "\nGO");
+        assert_eq!(sqlserver_settings.statement_separator(), "\ngo");
         assert_eq!(sqlserver_settings.statement_separator(), DatabaseType::SqlServer.statement_separator());
     }
 }

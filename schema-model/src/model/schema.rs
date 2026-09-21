@@ -7,7 +7,7 @@ use crate::model::types::{DatabaseType, RelationType};
 use crate::model::view::View;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Schema {
     schema_name: Option<String>,
     case_sensitive_text: bool,

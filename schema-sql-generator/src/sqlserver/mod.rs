@@ -1,7 +1,7 @@
 pub mod sqlserver_generator;
 mod sqlserver_column_constraint_generator;
 mod sqlserver_column_generator;
-mod sqlserver_column_type_generator;
+pub mod sqlserver_column_type_generator;
 mod sqlserver_function_generator;
 mod sqlserver_index_generator;
 mod sqlserver_key_generator;

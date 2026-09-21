@@ -117,6 +117,7 @@ pub fn main() {
     generator
         .generate(&change_set, &new_model, &mut output)
         .expect("failed to generate migration");
+    let output = normalize_trailing_newline(output);
 
     if arguments.get_flag("auto-generate-name") {
         let file = file_arg.expect("checked above: --auto-generate-name requires --file");
@@ -142,6 +143,19 @@ pub fn main() {
             print!("{}", String::from_utf8_lossy(&output));
         }
     }
+}
+
+/// Each `SchemaChange` arm ends its statement with a blank separator line, so the last
+/// change in the set leaves a trailing blank line at the end of the file. Trim all
+/// trailing newlines and add back exactly one, so the output file ends the way a normal
+/// text file does.
+fn normalize_trailing_newline(output: Vec<u8>) -> Vec<u8> {
+    let mut output = output;
+    while output.last() == Some(&b'\n') {
+        output.pop();
+    }
+    output.push(b'\n');
+    output
 }
 
 fn parse_database_type(value: &str) -> DatabaseType {
@@ -193,4 +207,32 @@ fn diff_models(old_model: &DatabaseModel, new_model: &DatabaseModel) -> ChangeSe
 
 fn find_schema<'a>(model: &'a DatabaseModel, schema_name: Option<&str>) -> Option<&'a Schema> {
     model.schemas().iter().find(|s| s.schema_name() == schema_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_trailing_newline;
+
+    #[test]
+    fn collapses_trailing_blank_lines_to_a_single_newline() {
+        let output = b"alter table t add column c integer;\n\n".to_vec();
+        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\n");
+    }
+
+    #[test]
+    fn collapses_multiple_trailing_blank_lines() {
+        let output = b"alter table t add column c integer;\nGO\n\n\n".to_vec();
+        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\nGO\n");
+    }
+
+    #[test]
+    fn adds_a_newline_when_none_is_present() {
+        let output = b"alter table t add column c integer;".to_vec();
+        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\n");
+    }
+
+    #[test]
+    fn leaves_empty_output_as_a_single_newline() {
+        assert_eq!(normalize_trailing_newline(Vec::new()), b"\n");
+    }
 }

@@ -158,7 +158,7 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("/* users */"));
         assert!(output.contains("if object_id('dbo.users', 'U') is not null"));
-        assert!(output.contains("drop table dbo.users\nGO"));
+        assert!(output.contains("drop table dbo.users\ngo"));
         assert!(output.contains("create table dbo.users"));
         assert!(output.contains("id integer identity(1,1)"));
         assert!(output.contains("name nvarchar(50)"));
@@ -230,7 +230,7 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = table)\nGO"));
+        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = table)\ngo"));
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = disable)\nGO"));
+        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = disable)\ngo"));
     }
 
     #[test]
@@ -293,6 +293,6 @@ mod tests {
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table app.orders set (lock_escalation = table)\nGO"));
+        assert!(buffer.contents().contains("alter table app.orders set (lock_escalation = table)\ngo"));
     }
 }

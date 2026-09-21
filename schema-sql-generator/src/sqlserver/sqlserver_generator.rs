@@ -142,7 +142,7 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("if not exists (select 1 from sys.schemas where name = 'app')"));
-        assert!(output.contains("exec('create schema app')\nGO"));
+        assert!(output.contains("exec('create schema app')\ngo"));
     }
 
     #[test]

@@ -3,7 +3,7 @@ use crate::model::schema::Schema;
 use crate::model::table::Table;
 use crate::model::types::{BooleanMode, ForeignKeyMode};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DatabaseModel {
     foreign_key_mode: ForeignKeyMode,
     boolean_mode: BooleanMode,
