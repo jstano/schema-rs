@@ -10,7 +10,7 @@ remote_dir := env_var_or_default("CROSS_BUILD_DIR", "~/schema-rs-build")
 version := `grep -m1 'version = ' Cargo.toml | sed -E 's/.*version = "([^"]+)".*/\1/'`
 
 # Binaries to package
-binaries := "schema-installer schema-diagram-generator schema-sql-generator schema-reverse-engineer"
+binaries := "schema-installer schema-diagram-generator schema-sql-generator schema-reverse-engineer schema-migration-generator"
 
 # Docker Hub repository to publish images to
 docker_repo := env_var_or_default("DOCKER_REPO", "jstano/schema-rs")
