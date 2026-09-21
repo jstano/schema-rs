@@ -10,6 +10,7 @@ use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationType};
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 
+use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
 
@@ -60,6 +61,17 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     )?;
                     writeln!(writer, "GO")?;
                     writeln!(writer)?;
+
+                    if let Some(expr) = check_constraint::check_expr(database_model, column) {
+                        let name = check_constraint::constraint_name(table_name, column.name());
+                        writeln!(
+                            writer,
+                            "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({});",
+                            table_name, name, expr
+                        )?;
+                        writeln!(writer, "GO")?;
+                        writeln!(writer)?;
+                    }
                 }
                 SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
                     if !rename_candidates.is_empty() {

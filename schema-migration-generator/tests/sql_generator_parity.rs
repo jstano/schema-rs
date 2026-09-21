@@ -216,7 +216,11 @@ fn extract_type_token(sql: &str) -> String {
     let rest_lower = &lower[start..];
 
     // Paren-aware: a `,` inside `decimal(10,2)` is part of the type, not a field separator.
-    let boundaries = [" not null", " null", " default", ";", "\n"];
+    // " check" is here because Sqlite's `ADD COLUMN` inlines its CHECK constraint right after
+    // the type (Sqlite has no `ALTER TABLE ... ADD CONSTRAINT`), whereas the real `CREATE
+    // TABLE` generator always puts it on its own `constraint ck_...` line - so it never
+    // appears where this extractor is looking on that side, but needs to be excluded here.
+    let boundaries = [" not null", " null", " default", " check", ";", "\n"];
     let mut depth = 0i32;
     let mut end = rest.len();
     for (i, c) in rest.char_indices() {

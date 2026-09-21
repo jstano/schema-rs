@@ -9,6 +9,7 @@ use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationType};
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 
+use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
 
@@ -51,6 +52,22 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                         default
                     )?;
                     writeln!(writer)?;
+
+                    // Enums are excluded: Postgres represents them as a native enum type
+                    // (see `column_type_sql`'s `ColumnType::Enum` arm), so the value list is
+                    // already enforced by the type itself - unlike the other databases, which
+                    // emulate enums with a plain string column plus a CHECK constraint.
+                    if column.column_type() != ColumnType::Enum
+                        && let Some(expr) = check_constraint::check_expr(database_model, column)
+                    {
+                        let name = check_constraint::constraint_name(table_name, column.name());
+                        writeln!(
+                            writer,
+                            "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({});",
+                            table_name, name, expr
+                        )?;
+                        writeln!(writer)?;
+                    }
                 }
                 SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
                     if !rename_candidates.is_empty() {

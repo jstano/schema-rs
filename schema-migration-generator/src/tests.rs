@@ -134,6 +134,121 @@ fn sqlserver_add_column_enum_sizes_from_enum_values() {
 }
 
 #[test]
+fn sqlserver_add_column_enum_emits_check_constraint_for_allowed_codes() {
+    use schema_model::model::enum_type::{EnumType, EnumValue};
+
+    let enum_type = EnumType::new(
+        "status_type",
+        vec![EnumValue::new("ACTIVE", Some("A".to_string())), EnumValue::new("INACTIVE", Some("I".to_string()))],
+    );
+    let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+            .enum_type(Some("status_type".to_string()))
+            .required(true)
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("ADD CONSTRAINT ck_location_status_") && sql.contains("CHECK (status in ('A','I'))"),
+        "expected a CHECK constraint restricting status to the enum's codes, got: {}",
+        sql
+    );
+}
+
+#[test]
+fn sqlite_add_column_enum_inlines_check_constraint() {
+    use schema_model::model::enum_type::{EnumType, EnumValue};
+
+    let enum_type = EnumType::new(
+        "status_type",
+        vec![EnumValue::new("ACTIVE", Some("A".to_string())), EnumValue::new("INACTIVE", Some("I".to_string()))],
+    );
+    let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+            .enum_type(Some("status_type".to_string()))
+            .required(true)
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("NOT NULL CHECK (status in ('A','I'))"),
+        "expected an inline CHECK constraint restricting status to the enum's codes, got: {}",
+        sql
+    );
+}
+
+#[test]
+fn postgresql_add_column_enum_does_not_emit_check_constraint() {
+    use schema_model::model::enum_type::{EnumType, EnumValue};
+
+    // Postgres represents the enum as a native type, so the value list is already enforced
+    // by the type itself and no CHECK constraint should be added (unlike Sqlite/SqlServer).
+    let enum_type = EnumType::new(
+        "status_type",
+        vec![EnumValue::new("ACTIVE", Some("A".to_string())), EnumValue::new("INACTIVE", Some("I".to_string()))],
+    );
+    let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "location".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+            .enum_type(Some("status_type".to_string()))
+            .required(true)
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(!sql.to_lowercase().contains("check"), "expected no CHECK constraint, got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_min_max_emits_check_constraint() {
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![SchemaBuilder::new(None::<&str>).build()]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "product".to_string(),
+        column: ColumnBuilder::new(None::<&str>, "price", ColumnType::Int)
+            .min_value(Some(0.0))
+            .max_value(Some(100.0))
+            .build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("CHECK (price >= 0 and price <= 100)"),
+        "expected a min/max CHECK constraint, got: {}",
+        sql
+    );
+}
+
+#[test]
 fn postgresql_add_column_text_respects_case_sensitive_text() {
     let schema = SchemaBuilder::new(None::<&str>).case_sensitive_text(false).build();
     let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);

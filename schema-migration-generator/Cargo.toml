@@ -16,9 +16,7 @@ path = "src/main.rs"
 schema-model.workspace = true
 schema-diff.workspace = true
 schema-parser.workspace = true
+schema-sql-generator.workspace = true
 thiserror = "2"
 clap = "^4.5.50"
 chrono = "0.4"
-
-[dev-dependencies]
-schema-sql-generator.workspace = true

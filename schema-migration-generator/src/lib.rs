@@ -1,4 +1,5 @@
 pub mod auto_name;
+pub mod check_constraint;
 pub mod error;
 pub mod migration_generator;
 pub mod generator_factory;

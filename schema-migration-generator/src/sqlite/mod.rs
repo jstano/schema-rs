@@ -9,6 +9,7 @@ use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationType};
 use schema_model::naming::{index_name, unique_key_name};
 
+use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
 
@@ -41,13 +42,20 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     let default = default_sql(database_model, column)
                         .map(|d| format!(" DEFAULT {}", d))
                         .unwrap_or_default();
+                    // SQLite has no `ALTER TABLE ... ADD CONSTRAINT` (see the `AddConstraint`
+                    // arm below), so a new column's CHECK constraint must be declared inline
+                    // in the column definition instead of as a separate statement.
+                    let check = check_constraint::check_expr(database_model, column)
+                        .map(|expr| format!(" CHECK ({})", expr))
+                        .unwrap_or_default();
                     writeln!(
                         writer,
-                        "ALTER TABLE {} ADD COLUMN {}{}{}{};",
+                        "ALTER TABLE {} ADD COLUMN {}{}{}{}{};",
                         table_name,
                         column.name(),
                         type_sql,
                         not_null,
+                        check,
                         default
                     )?;
                     writeln!(writer)?;
