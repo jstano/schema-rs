@@ -8,7 +8,13 @@ version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 
+[[bin]]
+name = "schema-migration-generator"
+path = "src/main.rs"
+
 [dependencies]
 schema-model.workspace = true
 schema-diff.workspace = true
+schema-parser.workspace = true
 thiserror = "2"
+clap = "^4.5.50"

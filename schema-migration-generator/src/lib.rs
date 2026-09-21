@@ -4,6 +4,7 @@ pub mod generator_factory;
 pub mod postgresql;
 pub mod sqlserver;
 pub mod sqlite;
+pub mod source;
 
 pub use error::MigrationGeneratorError;
 pub use generator_factory::create_generator;
