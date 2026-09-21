@@ -157,14 +157,25 @@ github-release: _tag-release
 	gh release create {{version}} release/*.zip --title {{version}} --generate-notes
 	@echo "✓ GitHub release {{version}} published!"
 
-# Publish all workspace crates to crates.io, in dependency order. Pauses briefly between
-# each publish so crates.io has time to index a version before the crate depending on it
-# is published.
+# Publish all workspace crates to crates.io, in dependency order. After each publish,
+# polls crates.io until the new version is indexed before publishing the crate that
+# depends on it (a fixed sleep isn't reliable — index propagation time varies).
 cargo-publish:
 	for crate in {{crates}}; do \
 		echo "Publishing $crate to crates.io..."; \
 		cargo publish -p $crate; \
-		sleep 20; \
+		echo "Waiting for $crate {{version}} to be indexed on crates.io..."; \
+		for i in $(seq 1 24); do \
+			if curl -s -A "schema-rs-justfile (jstano)" "https://crates.io/api/v1/crates/$crate" | grep -q "\"num\":\"{{version}}\""; then \
+				echo "$crate {{version}} is indexed."; \
+				break; \
+			fi; \
+			if [ "$i" = "24" ]; then \
+				echo "Timed out waiting for $crate {{version}} to be indexed."; \
+				exit 1; \
+			fi; \
+			sleep 5; \
+		done; \
 	done
 	@echo "✓ Published all crates to crates.io"
 
