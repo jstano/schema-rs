@@ -56,15 +56,14 @@ pub fn main() {
                 .help("Sets the output SQL migration file path (default: stdout)"),
         )
         .arg(
-            // Deliberately no `.requires("file")` here: clap doesn't enforce a `requires`
-            // relationship when the required arg conflicts with another arg the user did
-            // supply (here, `file` conflicts with `old`/`new`) - it treats the requirement
-            // as vacuously satisfied. This is checked manually below instead.
             Arg::new("auto-generate-name")
                 .long("auto-generate-name")
                 .action(ArgAction::SetTrue)
                 .conflicts_with("output-file")
-                .help("Auto-names the output as V{timestamp}[__{description}].sql alongside the --file schema"),
+                .help(
+                    "Auto-names the output as V{timestamp}[__{description}].sql, alongside the \
+                     --file schema (or in the current directory, with --old/--new, unless --output-dir is set)",
+                ),
         )
         .arg(
             Arg::new("description")
@@ -80,16 +79,14 @@ pub fn main() {
                 .value_name("DIR")
                 .requires("auto-generate-name")
                 .conflicts_with("output-file")
-                .help("Overrides the output directory for --auto-generate-name (default: alongside --file); created if missing"),
+                .help(
+                    "Overrides the output directory for --auto-generate-name (default: alongside --file, \
+                     or the current directory with --old/--new); created if missing",
+                ),
         )
         .get_matches();
 
     let file_arg = arguments.get_one::<String>("file");
-
-    if arguments.get_flag("auto-generate-name") && file_arg.is_none() {
-        eprintln!("Error: --auto-generate-name requires --file");
-        std::process::exit(1);
-    }
 
     let database_type_str = arguments
         .get_one::<String>("database-type")
@@ -120,10 +117,9 @@ pub fn main() {
     let output = normalize_trailing_newline(output);
 
     if arguments.get_flag("auto-generate-name") {
-        let file = file_arg.expect("checked above: --auto-generate-name requires --file");
         let description = arguments.get_one::<String>("description").map(String::as_str);
         let output_dir = arguments.get_one::<String>("output-dir").map(String::as_str);
-        let output_path = generate_migration_path(file, output_dir, Utc::now(), description);
+        let output_path = generate_migration_path(file_arg.map(String::as_str), output_dir, Utc::now(), description);
         if let Some(parent) = output_path.parent()
             && !parent.as_os_str().is_empty()
         {
