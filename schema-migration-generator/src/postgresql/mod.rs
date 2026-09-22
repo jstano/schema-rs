@@ -34,7 +34,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
         for change in change_set.changes() {
             match change {
                 SchemaChange::AddTable { table_name } => {
-                    writeln!(writer, "create table {} ();", table_name)?;
+                    writeln!(writer, "create table if not exists {} ();", table_name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropTable { table_name } => {
@@ -42,7 +42,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::RenameTable { old_name, new_name } => {
-                    writeln!(writer, "alter table {} rename to {};", old_name, new_name)?;
+                    writeln!(writer, "alter table if exists {} rename to {};", old_name, new_name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddColumn { table_name, column } => {
@@ -53,7 +53,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                         .unwrap_or_default();
                     writeln!(
                         writer,
-                        "alter table {} add column {}{}{}{};",
+                        "alter table {} add column if not exists {}{}{}{};",
                         table_name,
                         column.name(),
                         type_sql,
@@ -71,12 +71,12 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                         && let Some(check_sql) = check_constraint::check_constraint_sql(&context, column)
                     {
                         let name = check_constraint::constraint_name(table_name, column.name());
-                        writeln!(
+                        write_guarded_add_constraint(
                             writer,
-                            "alter table {} add constraint {} {};",
-                            table_name, name, check_sql
+                            table_name,
+                            &name,
+                            &format!("alter table {} add constraint {} {};", table_name, name, check_sql),
                         )?;
-                        writeln!(writer)?;
                     }
                 }
                 SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
@@ -86,15 +86,24 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                             writeln!(writer, "--   alter table {} rename column {} to {};", table_name, column_name, candidate)?;
                         }
                     }
-                    writeln!(writer, "alter table {} drop column {};", table_name, column_name)?;
+                    writeln!(writer, "alter table {} drop column if exists {};", table_name, column_name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::RenameColumn { table_name, old_name, new_name } => {
+                    writeln!(writer, "do $$")?;
+                    writeln!(writer, "begin")?;
                     writeln!(
                         writer,
-                        "alter table {} rename column {} to {};",
+                        "  if exists (select 1 from information_schema.columns where table_name = '{}' and column_name = '{}') then",
+                        table_name, old_name
+                    )?;
+                    writeln!(
+                        writer,
+                        "    alter table {} rename column {} to {};",
                         table_name, old_name, new_name
                     )?;
+                    writeln!(writer, "  end if;")?;
+                    writeln!(writer, "end $$;")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::ModifyColumn { table_name, old_column, new_column } => {
@@ -153,19 +162,22 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     write_drop_key(writer, table_name, key, *ordinal)?;
                 }
                 SchemaChange::AddConstraint { table_name, constraint } => {
-                    writeln!(
+                    write_guarded_add_constraint(
                         writer,
-                        "alter table {} add constraint {} check ({});",
                         table_name,
                         constraint.name(),
-                        constraint.sql()
+                        &format!(
+                            "alter table {} add constraint {} check ({});",
+                            table_name,
+                            constraint.name(),
+                            constraint.sql()
+                        ),
                     )?;
-                    writeln!(writer)?;
                 }
                 SchemaChange::DropConstraint { table_name, constraint_name } => {
                     writeln!(
                         writer,
-                        "alter table {} drop constraint {};",
+                        "alter table {} drop constraint if exists {};",
                         table_name, constraint_name
                     )?;
                     writeln!(writer)?;
@@ -177,7 +189,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     let fk_name = foreign_key_name(DatabaseType::Postgresql, relation.from_table_name(), *ordinal);
                     writeln!(
                         writer,
-                        "alter table {} drop constraint {};",
+                        "alter table {} drop constraint if exists {};",
                         relation.from_table_name(),
                         fk_name
                     )?;
@@ -226,30 +238,60 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
     )
 }
 
+/// Postgres has no `ADD CONSTRAINT IF NOT EXISTS` (for CHECK, PRIMARY KEY, or FOREIGN KEY
+/// constraints), so idempotency has to be expressed as a `pg_constraint` existence check
+/// wrapped in a `DO` block instead of a plain clause.
+fn write_guarded_add_constraint(
+    writer: &mut dyn Write,
+    table_name: &str,
+    constraint_name: &str,
+    add_constraint_sql: &str,
+) -> Result<(), MigrationGeneratorError> {
+    writeln!(writer, "do $$")?;
+    writeln!(writer, "begin")?;
+    writeln!(
+        writer,
+        "  if not exists (select 1 from pg_constraint where conname = '{}' and conrelid = '{}'::regclass) then",
+        constraint_name, table_name
+    )?;
+    writeln!(writer, "    {}", add_constraint_sql)?;
+    writeln!(writer, "  end if;")?;
+    writeln!(writer, "end $$;")?;
+    writeln!(writer)?;
+    Ok(())
+}
+
 fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
     let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
     match key.key_type() {
         KeyType::Primary => {
-            writeln!(writer, "alter table {} add primary key ({});", table_name, cols)?;
+            let constraint_name = primary_key_name(DatabaseType::Postgresql, table_name);
+            write_guarded_add_constraint(
+                writer,
+                table_name,
+                &constraint_name,
+                &format!("alter table {} add constraint {} primary key ({});", table_name, constraint_name, cols),
+            )?;
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::Postgresql, table_name, ordinal);
             writeln!(
                 writer,
-                "create unique index {} on {} ({});",
+                "create unique index if not exists {} on {} ({});",
                 constraint_name, table_name, cols
             )?;
+            writeln!(writer)?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Postgresql, table_name, ordinal);
             writeln!(
                 writer,
-                "create index {} on {} ({});",
+                "create index if not exists {} on {} ({});",
                 idx_name, table_name, cols
             )?;
+            writeln!(writer)?;
         }
     }
-    writeln!(writer)?;
     Ok(())
 }
 
@@ -259,7 +301,7 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
             let constraint_name = primary_key_name(DatabaseType::Postgresql, table_name);
             writeln!(
                 writer,
-                "alter table {} drop constraint {};",
+                "alter table {} drop constraint if exists {};",
                 table_name, constraint_name
             )?;
         }
@@ -284,16 +326,19 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
         RelationType::DoNothing => " on delete restrict",
         RelationType::Enforce => "",
     };
-    writeln!(
+    write_guarded_add_constraint(
         writer,
-        "alter table {} add constraint {} foreign key ({}) references {}({}){};",
         relation.from_table_name(),
-        fk_name,
-        relation.from_column_name(),
-        relation.to_table_name(),
-        relation.to_column_name(),
-        on_delete
+        &fk_name,
+        &format!(
+            "alter table {} add constraint {} foreign key ({}) references {}({}){};",
+            relation.from_table_name(),
+            fk_name,
+            relation.from_column_name(),
+            relation.to_table_name(),
+            relation.to_column_name(),
+            on_delete
+        ),
     )?;
-    writeln!(writer)?;
     Ok(())
 }

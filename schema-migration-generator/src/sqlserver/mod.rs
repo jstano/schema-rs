@@ -34,9 +34,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
         for change in change_set.changes() {
             match change {
                 SchemaChange::AddTable { table_name } => {
-                    writeln!(writer, "create table {} ();", table_name)?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
+                    write_guarded(
+                        writer,
+                        &format!("object_id('{}', 'U') is null", table_name),
+                        &format!("create table {} ();", table_name),
+                    )?;
                 }
                 SchemaChange::DropTable { table_name } => {
                     writeln!(
@@ -48,9 +50,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::RenameTable { old_name, new_name } => {
-                    writeln!(writer, "exec sp_rename '{}', '{}';", old_name, new_name)?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
+                    write_guarded(
+                        writer,
+                        &format!("object_id('{}', 'U') is not null and object_id('{}', 'U') is null", old_name, new_name),
+                        &format!("exec sp_rename '{}', '{}';", old_name, new_name),
+                    )?;
                 }
                 SchemaChange::AddColumn { table_name, column } => {
                     let type_sql = format!(" {}", type_generator.column_type_sql(&dummy_table, column));
@@ -58,27 +62,30 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     let default = default_sql(database_model, column)
                         .map(|d| format!(" default {}", d))
                         .unwrap_or_default();
-                    writeln!(
+                    write_guarded(
                         writer,
-                        "alter table {} add {}{}{}{};",
-                        table_name,
-                        column.name(),
-                        type_sql,
-                        not_null,
-                        default
+                        &format!(
+                            "not exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}')",
+                            table_name,
+                            column.name()
+                        ),
+                        &format!(
+                            "alter table {} add {}{}{}{};",
+                            table_name,
+                            column.name(),
+                            type_sql,
+                            not_null,
+                            default
+                        ),
                     )?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
 
                     if let Some(check_sql) = check_constraint::check_constraint_sql(&context, column) {
                         let name = check_constraint::constraint_name(table_name, column.name());
-                        writeln!(
+                        write_guarded(
                             writer,
-                            "alter table {} add constraint {} {};",
-                            table_name, name, check_sql
+                            &format!("not exists (select 1 from sys.check_constraints where name = '{}')", name),
+                            &format!("alter table {} add constraint {} {};", table_name, name, check_sql),
                         )?;
-                        writeln!(writer, "go")?;
-                        writeln!(writer)?;
                     }
                 }
                 SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
@@ -88,18 +95,24 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                             writeln!(writer, "--   exec sp_rename '{}.{}', '{}', 'COLUMN';", table_name, column_name, candidate)?;
                         }
                     }
-                    writeln!(writer, "alter table {} drop column {};", table_name, column_name)?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
+                    write_guarded(
+                        writer,
+                        &format!(
+                            "exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}')",
+                            table_name, column_name
+                        ),
+                        &format!("alter table {} drop column {};", table_name, column_name),
+                    )?;
                 }
                 SchemaChange::RenameColumn { table_name, old_name, new_name } => {
-                    writeln!(
+                    write_guarded(
                         writer,
-                        "exec sp_rename '{}.{}', '{}', 'COLUMN';",
-                        table_name, old_name, new_name
+                        &format!(
+                            "exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}') and not exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}')",
+                            table_name, old_name, table_name, new_name
+                        ),
+                        &format!("exec sp_rename '{}.{}', '{}', 'COLUMN';", table_name, old_name, new_name),
                     )?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
                 }
                 SchemaChange::ModifyColumn { table_name, old_column: _, new_column } => {
                     let type_sql = format!(" {}", type_generator.column_type_sql(&dummy_table, new_column));
@@ -122,38 +135,37 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     write_drop_key(writer, table_name, key, *ordinal)?;
                 }
                 SchemaChange::AddConstraint { table_name, constraint } => {
-                    writeln!(
+                    write_guarded(
                         writer,
-                        "alter table {} add constraint {} check ({});",
-                        table_name,
-                        constraint.name(),
-                        constraint.sql()
+                        &format!("not exists (select 1 from sys.check_constraints where name = '{}')", constraint.name()),
+                        &format!(
+                            "alter table {} add constraint {} check ({});",
+                            table_name,
+                            constraint.name(),
+                            constraint.sql()
+                        ),
                     )?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
                 }
                 SchemaChange::DropConstraint { table_name, constraint_name } => {
-                    writeln!(
+                    write_guarded(
                         writer,
-                        "alter table {} drop constraint {};",
-                        table_name, constraint_name
+                        &format!(
+                            "exists (select 1 from sys.objects where name = '{}' and parent_object_id = object_id('{}'))",
+                            constraint_name, table_name
+                        ),
+                        &format!("alter table {} drop constraint {};", table_name, constraint_name),
                     )?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
                 }
                 SchemaChange::AddRelation { relation, ordinal } => {
                     write_add_relation(writer, relation, *ordinal)?;
                 }
                 SchemaChange::DropRelation { relation, ordinal } => {
                     let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), *ordinal);
-                    writeln!(
+                    write_guarded(
                         writer,
-                        "alter table {} drop constraint {};",
-                        relation.from_table_name(),
-                        fk_name
+                        &format!("exists (select 1 from sys.foreign_keys where name = '{}')", fk_name),
+                        &format!("alter table {} drop constraint {};", relation.from_table_name(), fk_name),
                     )?;
-                    writeln!(writer, "go")?;
-                    writeln!(writer)?;
                 }
                 SchemaChange::AddView { view } => {
                     writeln!(writer, "create or alter view {} as", view.name())?;
@@ -205,31 +217,49 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
     )
 }
 
+/// T-SQL has no `IF [NOT] EXISTS` clause on `ALTER TABLE`/`CREATE TABLE`/`sp_rename`, so
+/// idempotency has to be expressed as an explicit `IF (NOT) EXISTS (...) BEGIN ... END`
+/// guard around the statement, using the relevant `sys.*` catalog view.
+fn write_guarded(writer: &mut dyn Write, condition_sql: &str, body_sql: &str) -> Result<(), MigrationGeneratorError> {
+    writeln!(writer, "if {} begin", condition_sql)?;
+    writeln!(writer, "  {}", body_sql)?;
+    writeln!(writer, "end")?;
+    writeln!(writer, "go")?;
+    writeln!(writer)?;
+    Ok(())
+}
+
 fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
     let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
     match key.key_type() {
         KeyType::Primary => {
-            writeln!(writer, "alter table {} add primary key ({});", table_name, cols)?;
+            let constraint_name = primary_key_name(DatabaseType::SqlServer, table_name);
+            write_guarded(
+                writer,
+                &format!(
+                    "not exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
+                    constraint_name, table_name
+                ),
+                &format!("alter table {} add constraint {} primary key ({});", table_name, constraint_name, cols),
+            )?;
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::SqlServer, table_name, ordinal);
-            writeln!(
+            write_guarded(
                 writer,
-                "create unique index {} on {} ({});",
-                constraint_name, table_name, cols
+                &format!("not exists (select 1 from sys.indexes where name = '{}')", constraint_name),
+                &format!("create unique index {} on {} ({});", constraint_name, table_name, cols),
             )?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
-            writeln!(
+            write_guarded(
                 writer,
-                "create index {} on {} ({});",
-                idx_name, table_name, cols
+                &format!("not exists (select 1 from sys.indexes where name = '{}')", idx_name),
+                &format!("create index {} on {} ({});", idx_name, table_name, cols),
             )?;
         }
     }
-    writeln!(writer, "go")?;
-    writeln!(writer)?;
     Ok(())
 }
 
@@ -237,10 +267,13 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
     match key.key_type() {
         KeyType::Primary => {
             let constraint_name = primary_key_name(DatabaseType::SqlServer, table_name);
-            writeln!(
+            write_guarded(
                 writer,
-                "alter table {} drop constraint {};",
-                table_name, constraint_name
+                &format!(
+                    "exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
+                    constraint_name, table_name
+                ),
+                &format!("alter table {} drop constraint {};", table_name, constraint_name),
             )?;
         }
         KeyType::Unique => {
@@ -250,6 +283,8 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
                 "if exists (select 1 from sys.indexes where name = '{}') drop index {} on {};",
                 constraint_name, constraint_name, table_name
             )?;
+            writeln!(writer, "go")?;
+            writeln!(writer)?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
@@ -258,10 +293,10 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
                 "if exists (select 1 from sys.indexes where name = '{}') drop index {} on {};",
                 idx_name, idx_name, table_name
             )?;
+            writeln!(writer, "go")?;
+            writeln!(writer)?;
         }
     }
-    writeln!(writer, "go")?;
-    writeln!(writer)?;
     Ok(())
 }
 
@@ -273,17 +308,18 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
         RelationType::DoNothing => " on delete no action",
         RelationType::Enforce => "",
     };
-    writeln!(
+    write_guarded(
         writer,
-        "alter table {} add constraint {} foreign key ({}) references {}({}){};",
-        relation.from_table_name(),
-        fk_name,
-        relation.from_column_name(),
-        relation.to_table_name(),
-        relation.to_column_name(),
-        on_delete
+        &format!("not exists (select 1 from sys.foreign_keys where name = '{}')", fk_name),
+        &format!(
+            "alter table {} add constraint {} foreign key ({}) references {}({}){};",
+            relation.from_table_name(),
+            fk_name,
+            relation.from_column_name(),
+            relation.to_table_name(),
+            relation.to_column_name(),
+            on_delete
+        ),
     )?;
-    writeln!(writer, "go")?;
-    writeln!(writer)?;
     Ok(())
 }

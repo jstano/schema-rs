@@ -26,7 +26,7 @@ fn postgresql_add_table() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("create table users"));
+    assert!(sql.contains("create table if not exists users"));
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn postgresql_add_column() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("alter table users add column email"));
+    assert!(sql.contains("alter table users add column if not exists email"));
     assert!(sql.contains("not null"));
 }
 
@@ -263,7 +263,7 @@ fn postgresql_add_column_text_respects_case_sensitive_text() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("add column notes citext"), "expected citext for case-insensitive schema, got: {}", sql);
+    assert!(sql.contains("add column if not exists notes citext"), "expected citext for case-insensitive schema, got: {}", sql);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn postgresql_add_column_enum_uses_native_enum_type_name() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("add column status status_type"), "expected native enum type, got: {}", sql);
+    assert!(sql.contains("add column if not exists status status_type"), "expected native enum type, got: {}", sql);
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn postgresql_add_column_array_uses_element_type() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("add column tags integer[]"), "expected integer[] from elementType, got: {}", sql);
+    assert!(sql.contains("add column if not exists tags integer[]"), "expected integer[] from elementType, got: {}", sql);
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn postgresql_add_column_boolean_respects_boolean_mode() {
     let mut output = Vec::new();
     generator.generate(&cs, &model, &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("add column active varchar(3)"), "expected varchar(3) for YesNo boolean mode, got: {}", sql);
+    assert!(sql.contains("add column if not exists active varchar(3)"), "expected varchar(3) for YesNo boolean mode, got: {}", sql);
 }
 
 #[test]
@@ -453,7 +453,7 @@ fn postgresql_drop_column_with_rename_candidates_emits_todo() {
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("-- TODO: possible rename?"));
     assert!(sql.contains("rename column first_name to full_name"));
-    assert!(sql.contains("drop column first_name"));
+    assert!(sql.contains("drop column if exists first_name"));
 }
 
 #[test]
@@ -470,7 +470,7 @@ fn postgresql_drop_column_no_candidates_no_todo() {
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
     assert!(!sql.contains("-- TODO"));
-    assert!(sql.contains("drop column legacy_field"));
+    assert!(sql.contains("drop column if exists legacy_field"));
 }
 
 // Regression tests for H20: a migration's DROP/ADD statements must name the object
@@ -503,8 +503,8 @@ fn dropping_a_relation_uses_the_create_paths_positional_fk_name() {
 
     let expected_name = foreign_key_name(DatabaseType::Postgresql, "orders", 2);
     assert!(
-        sql.contains(&format!("drop constraint {}", expected_name)),
-        "expected drop constraint {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop constraint if exists {}", expected_name)),
+        "expected drop constraint if exists {} in:\n{}", expected_name, sql
     );
 }
 
@@ -587,8 +587,8 @@ fn dropping_a_primary_key_uses_the_create_paths_pk_name() {
 
     let expected_name = primary_key_name(DatabaseType::Postgresql, "orders");
     assert!(
-        sql.contains(&format!("drop constraint {}", expected_name)),
-        "expected drop constraint {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop constraint if exists {}", expected_name)),
+        "expected drop constraint if exists {} in:\n{}", expected_name, sql
     );
 }
 
@@ -608,4 +608,348 @@ fn sqlserver_drop_column_with_rename_candidates_emits_sp_rename_hint() {
     assert!(sql.contains("-- TODO: possible rename?"));
     assert!(sql.contains("sp_rename 'orders.old_col', 'new_col', 'COLUMN'"));
     assert!(sql.contains("drop column old_col"));
+}
+
+// Idempotency tests: every statement schema-migration-generator emits (outside SQLite's
+// documented plain-SQL limitations) must be safe to re-run against a database that already
+// has the change applied.
+
+#[test]
+fn postgresql_add_primary_key_is_guarded_by_pg_constraint_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "orders".to_string(),
+        key: Key::new(KeyType::Primary, vec![KeyColumn::new("id")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("do $$"), "expected a guarded DO block, got: {}", sql);
+    assert!(sql.contains("from pg_constraint where conname ="), "expected a pg_constraint existence check, got: {}", sql);
+    assert!(sql.contains("add constraint pk_orders primary key (id)"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_unique_key_uses_if_not_exists() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: Key::new(KeyType::Unique, vec![KeyColumn::new("email")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create unique index if not exists"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_index_uses_if_not_exists() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: Key::new(KeyType::Index, vec![KeyColumn::new("status")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create index if not exists"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_constraint_is_guarded_by_pg_constraint_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddConstraint {
+        table_name: "orders".to_string(),
+        constraint: schema_model::model::constraint::Constraint::new("ck_orders_total", "total >= 0", DatabaseType::Postgresql),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("do $$"), "expected a guarded DO block, got: {}", sql);
+    assert!(sql.contains("conname = 'ck_orders_total'"), "got: {}", sql);
+    assert!(sql.contains("add constraint ck_orders_total check (total >= 0)"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_drop_constraint_uses_if_exists() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropConstraint {
+        table_name: "orders".to_string(),
+        constraint_name: "ck_orders_total".to_string(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("drop constraint if exists ck_orders_total"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_relation_is_guarded_by_pg_constraint_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("do $$"), "expected a guarded DO block, got: {}", sql);
+    assert!(sql.contains("foreign key (customer_id) references customers(id)"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_rename_column_is_guarded_by_information_schema_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::RenameColumn {
+        table_name: "users".to_string(),
+        old_name: "first_name".to_string(),
+        new_name: "given_name".to_string(),
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("do $$"), "expected a guarded DO block, got: {}", sql);
+    assert!(sql.contains("from information_schema.columns where table_name = 'users' and column_name = 'first_name'"), "got: {}", sql);
+    assert!(sql.contains("rename column first_name to given_name"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_table_is_guarded_by_object_id_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddTable { table_name: "items".to_string() });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("if object_id('items', 'U') is null begin"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_is_guarded_by_sys_columns_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "users".to_string(),
+        column: ColumnBuilder::new(Some("s"), "email", ColumnType::Varchar).required(true).build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("if not exists (select 1 from sys.columns where object_id = object_id('users') and name = 'email') begin"),
+        "got: {}", sql
+    );
+}
+
+#[test]
+fn sqlserver_drop_column_is_guarded_by_sys_columns_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropColumn {
+        table_name: "users".to_string(),
+        column_name: "legacy".to_string(),
+        rename_candidates: vec![],
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("if exists (select 1 from sys.columns where object_id = object_id('users') and name = 'legacy') begin"),
+        "got: {}", sql
+    );
+}
+
+#[test]
+fn sqlserver_add_primary_key_is_guarded_by_sys_key_constraints_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "orders".to_string(),
+        key: Key::new(KeyType::Primary, vec![KeyColumn::new("id")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("from sys.key_constraints where name = 'pk_orders'"), "got: {}", sql);
+    assert!(sql.contains("add constraint pk_orders primary key (id)"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_unique_key_is_guarded_by_sys_indexes_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: Key::new(KeyType::Unique, vec![KeyColumn::new("email")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("not exists (select 1 from sys.indexes where name ="), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_drop_primary_key_is_guarded_by_sys_key_constraints_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropKey {
+        table_name: "orders".to_string(),
+        key: Key::new(KeyType::Primary, vec![KeyColumn::new("id")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("exists (select 1 from sys.key_constraints where name = 'pk_orders'"), "got: {}", sql);
+    assert!(sql.contains("drop constraint pk_orders"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_constraint_is_guarded_by_sys_check_constraints_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddConstraint {
+        table_name: "orders".to_string(),
+        constraint: schema_model::model::constraint::Constraint::new("ck_orders_total", "total >= 0", DatabaseType::SqlServer),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("from sys.check_constraints where name = 'ck_orders_total'"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_drop_constraint_is_guarded_by_sys_objects_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropConstraint {
+        table_name: "orders".to_string(),
+        constraint_name: "ck_orders_total".to_string(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("from sys.objects where name = 'ck_orders_total' and parent_object_id = object_id('orders')"),
+        "got: {}", sql
+    );
+}
+
+#[test]
+fn sqlserver_add_relation_is_guarded_by_sys_foreign_keys_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("not exists (select 1 from sys.foreign_keys where name ="), "got: {}", sql);
+    assert!(sql.contains("foreign key (customer_id) references customers(id)"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_drop_relation_is_guarded_by_sys_foreign_keys_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropRelation {
+        relation: Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("exists (select 1 from sys.foreign_keys where name ="), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_rename_table_is_guarded_by_object_id_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::RenameTable {
+        old_name: "orders".to_string(),
+        new_name: "sales_orders".to_string(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("if object_id('orders', 'U') is not null and object_id('sales_orders', 'U') is null begin"),
+        "got: {}", sql
+    );
+}
+
+#[test]
+fn sqlserver_rename_column_is_guarded_by_sys_columns_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::RenameColumn {
+        table_name: "users".to_string(),
+        old_name: "first_name".to_string(),
+        new_name: "given_name".to_string(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("name = 'first_name') and not exists"), "got: {}", sql);
+    assert!(sql.contains("sp_rename 'users.first_name', 'given_name', 'COLUMN'"), "got: {}", sql);
+}
+
+#[test]
+fn sqlite_add_key_and_relation_and_constraint_changes_are_already_safe_or_documented() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: Key::new(KeyType::Index, vec![KeyColumn::new("status")]),
+        ordinal: 1,
+    });
+    cs.add_change(SchemaChange::AddConstraint {
+        table_name: "orders".to_string(),
+        constraint: schema_model::model::constraint::Constraint::new("ck_orders_total", "total >= 0", DatabaseType::Sqlite),
+    });
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create index if not exists"), "got: {}", sql);
+    assert!(sql.contains("-- SQLite does not support adding constraint"), "got: {}", sql);
+    assert!(sql.contains("-- SQLite foreign keys must be declared at table creation time."), "got: {}", sql);
 }

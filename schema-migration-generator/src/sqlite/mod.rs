@@ -41,6 +41,10 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "drop table if exists {};", table_name)?;
                     writeln!(writer)?;
                 }
+                // SQLite has no `IF EXISTS`/conditional-DDL form for `RENAME TO` and no
+                // procedural `IF`/`DO` block at the plain-SQL level, so this cannot be made
+                // idempotent: re-running it after `old_name` has already been renamed away
+                // will error.
                 SchemaChange::RenameTable { old_name, new_name } => {
                     writeln!(writer, "alter table {} rename to {};", old_name, new_name)?;
                     writeln!(writer)?;
@@ -57,6 +61,9 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     let check = check_constraint::check_constraint_sql(&context, column)
                         .map(|check_sql| format!(" {}", check_sql))
                         .unwrap_or_default();
+                    // SQLite's `ALTER TABLE ... ADD COLUMN` has no `IF NOT EXISTS` form and
+                    // there is no procedural guard available in plain SQL, so this cannot be
+                    // made idempotent: re-running it after the column already exists will error.
                     writeln!(
                         writer,
                         "alter table {} add column {}{}{}{}{};",
@@ -86,6 +93,8 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "-- For older SQLite: manually recreate the table without this column.")?;
                     writeln!(writer)?;
                 }
+                // SQLite has no conditional-DDL syntax to guard this at the plain-SQL level,
+                // so re-running it after the column has already been renamed will error.
                 SchemaChange::RenameColumn { table_name, old_name, new_name } => {
                     writeln!(
                         writer,
