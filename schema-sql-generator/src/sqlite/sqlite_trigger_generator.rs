@@ -1,5 +1,6 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::trigger_generator::{DefaultTriggerGenerator, TriggerGenerator};
+use schema_model::model::table::Table;
 
 pub struct SqliteTriggerGenerator {
     trigger_generator: DefaultTriggerGenerator,
@@ -16,6 +17,10 @@ impl SqliteTriggerGenerator {
 impl TriggerGenerator for SqliteTriggerGenerator {
     fn output_triggers(&self) {
         self.trigger_generator.output_triggers();
+    }
+
+    fn output_triggers_for_table(&self, table: &Table) {
+        self.trigger_generator.output_triggers_for_table(table);
     }
 }
 

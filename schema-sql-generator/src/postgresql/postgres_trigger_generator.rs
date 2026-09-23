@@ -46,16 +46,21 @@ impl PostgresTriggerGenerator {
 impl TriggerGenerator for PostgresTriggerGenerator {
     fn output_triggers(&self) {
         let database_model = self.context.settings().database_model();
-        let separator = self.context.settings().statement_separator();
 
         for table in database_model.all_tables() {
-            if self.should_output_delete_trigger(table) && table.primary_key().is_some() {
-                self.output_delete_trigger(table, separator);
-            }
+            self.output_triggers_for_table(table);
+        }
+    }
 
-            if self.should_output_update_trigger(table) {
-                self.output_update_trigger(table, separator);
-            }
+    fn output_triggers_for_table(&self, table: &Table) {
+        let separator = self.context.settings().statement_separator();
+
+        if self.should_output_delete_trigger(table) && table.primary_key().is_some() {
+            self.output_delete_trigger(table, separator);
+        }
+
+        if self.should_output_update_trigger(table) {
+            self.output_update_trigger(table, separator);
         }
     }
 }

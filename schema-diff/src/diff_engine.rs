@@ -1,8 +1,14 @@
 use schema_model::model::column::Column;
 use schema_model::model::constraint::Constraint;
+use schema_model::model::enum_type::EnumType;
+use schema_model::model::function::Function;
+use schema_model::model::initial_data::InitialData;
 use schema_model::model::key::Key;
+use schema_model::model::other_sql::OtherSql;
+use schema_model::model::procedure::Procedure;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
+use schema_model::model::trigger::Trigger;
 use schema_model::model::types::KeyType;
 use schema_model::model::view::View;
 
@@ -22,8 +28,21 @@ impl SchemaDiffEngine {
         diff_drop_constraints(old, new, &mut change_set);
         diff_drop_columns(old, new, &mut change_set);
         diff_drop_tables(old, new, &mut change_set);
+        diff_drop_triggers(old, new, &mut change_set);
+        diff_drop_functions(old, new, &mut change_set);
+        diff_drop_procedures(old, new, &mut change_set);
+        diff_drop_other_sql(old, new, &mut change_set);
+        diff_drop_initial_data(old, new, &mut change_set);
+        // Last: Postgres can't DROP TYPE while a column still references it.
+        diff_drop_enum_types(old, new, &mut change_set);
 
         // Add phase (order matters: tables → columns → modify columns → keys → constraints → relations → views)
+        // Enum types/functions/procedures/other_sql go first - columns and tables may depend on them.
+        // Also detects modified enum types (same name, different value list).
+        diff_add_enum_types(old, new, &mut change_set);
+        diff_add_functions(old, new, &mut change_set);
+        diff_add_procedures(old, new, &mut change_set);
+        diff_add_other_sql(old, new, &mut change_set);
         diff_add_tables(old, new, &mut change_set);
         diff_add_columns(old, new, &mut change_set);
         diff_modify_columns(old, new, &mut change_set);
@@ -31,6 +50,9 @@ impl SchemaDiffEngine {
         diff_add_constraints(old, new, &mut change_set);
         diff_add_relations(old, new, &mut change_set);
         diff_add_views(old, new, &mut change_set);
+        diff_add_triggers(old, new, &mut change_set);
+        // Last: initial data rows reference columns/keys that must already exist.
+        diff_add_initial_data(old, new, &mut change_set);
 
         change_set
     }
@@ -326,4 +348,206 @@ fn view_exists_in(view: &View, views: &[View]) -> bool {
 
 fn views_equal(a: &View, b: &View) -> bool {
     a.name().eq_ignore_ascii_case(b.name()) && a.sql().trim() == b.sql().trim()
+}
+
+fn diff_add_enum_types(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_enum in new.enum_types() {
+        match find_enum_type(old, new_enum.name()) {
+            None => cs.add_change(SchemaChange::AddEnumType { enum_type: new_enum.clone() }),
+            Some(old_enum) if !enum_types_equal(old_enum, new_enum) => {
+                cs.add_change(SchemaChange::ModifyEnumType {
+                    old_enum_type: old_enum.clone(),
+                    new_enum_type: new_enum.clone(),
+                });
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+fn diff_drop_enum_types(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_enum in old.enum_types() {
+        if find_enum_type(new, old_enum.name()).is_none() {
+            cs.add_change(SchemaChange::DropEnumType {
+                enum_type_name: old_enum.name().to_string(),
+            });
+        }
+    }
+}
+
+fn find_enum_type<'a>(schema: &'a Schema, name: &str) -> Option<&'a EnumType> {
+    schema.enum_types().find(|e| e.name().eq_ignore_ascii_case(name))
+}
+
+fn enum_types_equal(a: &EnumType, b: &EnumType) -> bool {
+    a.name().eq_ignore_ascii_case(b.name())
+        && a.values().len() == b.values().len()
+        && a.values()
+            .iter()
+            .zip(b.values().iter())
+            .all(|(av, bv)| av.name() == bv.name() && av.code() == bv.code())
+}
+
+fn diff_add_functions(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_fn in new.functions() {
+        if !functions_contains(old.functions(), new_fn) {
+            cs.add_change(SchemaChange::AddFunction { function: new_fn.clone() });
+        }
+    }
+}
+
+fn diff_drop_functions(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_fn in old.functions() {
+        if !functions_contains(new.functions(), old_fn) {
+            cs.add_change(SchemaChange::DropFunction {
+                function_name: old_fn.name().to_string(),
+                database_type: old_fn.database_type(),
+            });
+        }
+    }
+}
+
+fn functions_contains(functions: &[Function], target: &Function) -> bool {
+    functions.iter().any(|f| functions_equal(f, target))
+}
+
+fn functions_equal(a: &Function, b: &Function) -> bool {
+    a.name().eq_ignore_ascii_case(b.name())
+        && a.database_type() == b.database_type()
+        && a.sql().trim() == b.sql().trim()
+}
+
+fn diff_add_procedures(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_proc in new.procedures() {
+        if !procedures_contains(old.procedures(), new_proc) {
+            cs.add_change(SchemaChange::AddProcedure { procedure: new_proc.clone() });
+        }
+    }
+}
+
+fn diff_drop_procedures(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_proc in old.procedures() {
+        if !procedures_contains(new.procedures(), old_proc) {
+            cs.add_change(SchemaChange::DropProcedure {
+                procedure_name: old_proc.name().to_string(),
+                database_type: old_proc.database_type(),
+            });
+        }
+    }
+}
+
+fn procedures_contains(procedures: &[Procedure], target: &Procedure) -> bool {
+    procedures.iter().any(|p| procedures_equal(p, target))
+}
+
+fn procedures_equal(a: &Procedure, b: &Procedure) -> bool {
+    a.name().eq_ignore_ascii_case(b.name())
+        && a.database_type() == b.database_type()
+        && a.sql().trim() == b.sql().trim()
+}
+
+fn diff_add_other_sql(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_sql in new.other_sql() {
+        if !other_sql_contains(old.other_sql(), new_sql) {
+            cs.add_change(SchemaChange::AddOtherSql { other_sql: new_sql.clone() });
+        }
+    }
+}
+
+fn diff_drop_other_sql(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_sql in old.other_sql() {
+        if !other_sql_contains(new.other_sql(), old_sql) {
+            cs.add_change(SchemaChange::DropOtherSql { other_sql: old_sql.clone() });
+        }
+    }
+}
+
+fn other_sql_contains(entries: &[OtherSql], target: &OtherSql) -> bool {
+    entries.iter().any(|o| other_sql_equal(o, target))
+}
+
+fn other_sql_equal(a: &OtherSql, b: &OtherSql) -> bool {
+    a.database_type() == b.database_type() && a.order() == b.order() && a.sql().trim() == b.sql().trim()
+}
+
+// Triggers and initial data are table-scoped, and - like `diff_add_columns`/`diff_drop_columns`
+// - only diffed for tables present in both old and new. A brand-new table's columns aren't
+// emitted as `AddColumn`s either (see those functions), so a brand-new table's triggers/initial
+// data have the same pre-existing gap; not fixed here.
+fn diff_add_triggers(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_table in new.tables() {
+        if let Some(old_table) = old.get_optional_table(new_table.name()) {
+            for new_trigger in new_table.triggers() {
+                if !triggers_contains(old_table.triggers(), new_trigger) {
+                    cs.add_change(SchemaChange::AddTrigger {
+                        table_name: new_table.name().to_string(),
+                        trigger: new_trigger.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn diff_drop_triggers(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_table in old.tables() {
+        if let Some(new_table) = new.get_optional_table(old_table.name()) {
+            for old_trigger in old_table.triggers() {
+                if !triggers_contains(new_table.triggers(), old_trigger) {
+                    cs.add_change(SchemaChange::DropTrigger {
+                        table_name: old_table.name().to_string(),
+                        trigger: old_trigger.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn triggers_contains(triggers: &[Trigger], target: &Trigger) -> bool {
+    triggers.iter().any(|t| triggers_equal(t, target))
+}
+
+fn triggers_equal(a: &Trigger, b: &Trigger) -> bool {
+    a.trigger_text().trim() == b.trigger_text().trim()
+        && a.trigger_type() == b.trigger_type()
+        && a.database_type() == b.database_type()
+}
+
+fn diff_add_initial_data(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for new_table in new.tables() {
+        if let Some(old_table) = old.get_optional_table(new_table.name()) {
+            for new_data in new_table.initial_data() {
+                if !initial_data_contains(old_table.initial_data(), new_data) {
+                    cs.add_change(SchemaChange::AddInitialData {
+                        table_name: new_table.name().to_string(),
+                        initial_data: new_data.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn diff_drop_initial_data(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
+    for old_table in old.tables() {
+        if let Some(new_table) = new.get_optional_table(old_table.name()) {
+            for old_data in old_table.initial_data() {
+                if !initial_data_contains(new_table.initial_data(), old_data) {
+                    cs.add_change(SchemaChange::DropInitialData {
+                        table_name: old_table.name().to_string(),
+                        initial_data: old_data.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn initial_data_contains(entries: &[InitialData], target: &InitialData) -> bool {
+    entries.iter().any(|d| initial_data_equal(d, target))
+}
+
+fn initial_data_equal(a: &InitialData, b: &InitialData) -> bool {
+    a.sql().trim() == b.sql().trim() && a.database_type() == b.database_type()
 }

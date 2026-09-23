@@ -253,6 +253,7 @@ mod tests {
     struct FakeTriggerGenerator(CallLog);
     impl TriggerGenerator for FakeTriggerGenerator {
         fn output_triggers(&self) { self.0.record("triggers"); }
+        fn output_triggers_for_table(&self, _table: &schema_model::model::table::Table) {}
     }
 
     struct FakeOtherSqlGenerator(CallLog);

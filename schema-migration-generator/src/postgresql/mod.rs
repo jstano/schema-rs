@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Write;
 use std::rc::Rc;
 
@@ -12,7 +13,11 @@ use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationTyp
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 use schema_sql_generator::common::column_type_generator::ColumnTypeGenerator;
 use schema_sql_generator::common::generator_context::GeneratorContext;
+use schema_sql_generator::common::sql_string::escape_sql_literal;
+use schema_sql_generator::common::trigger_generator::TriggerGenerator;
 use schema_sql_generator::postgresql::postgres_column_type_generator::PostgresColumnTypeGenerator;
+use schema_sql_generator::postgresql::postgres_trigger_generator::PostgresTriggerGenerator;
+use schema_sql_generator::postgresql::postgres_util::to_snake_case;
 
 use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
@@ -29,7 +34,11 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
     ) -> Result<(), MigrationGeneratorError> {
         let context = GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::Postgresql);
         let type_generator = PostgresColumnTypeGenerator::new(context.clone());
+        let (trigger_context, trigger_buffer) =
+            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::Postgresql);
+        let trigger_generator = PostgresTriggerGenerator::new(trigger_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
+        let mut triggers_regenerated: HashSet<String> = HashSet::new();
 
         for change in change_set.changes() {
             match change {
@@ -204,10 +213,182 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer, "drop view if exists {};", view_name)?;
                     writeln!(writer)?;
                 }
+                SchemaChange::AddEnumType { enum_type } => {
+                    write_add_enum_type(writer, enum_type)?;
+                }
+                SchemaChange::DropEnumType { enum_type_name } => {
+                    let name = to_snake_case(enum_type_name);
+                    writeln!(writer, "drop type if exists {} cascade;", name)?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::ModifyEnumType { old_enum_type, new_enum_type } => {
+                    write_modify_enum_type(writer, old_enum_type, new_enum_type)?;
+                }
+                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::Postgresql => {
+                    writeln!(writer, "{};", function.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddFunction { .. } => {}
+                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::Postgresql => {
+                    writeln!(writer, "-- NOTE: add argument types below if '{}' is overloaded.", function_name)?;
+                    writeln!(writer, "drop function if exists {};", function_name)?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropFunction { .. } => {}
+                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::Postgresql => {
+                    writeln!(writer, "{};", procedure.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddProcedure { .. } => {}
+                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::Postgresql => {
+                    writeln!(writer, "-- NOTE: add argument types below if '{}' is overloaded.", procedure_name)?;
+                    writeln!(writer, "drop procedure if exists {};", procedure_name)?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropProcedure { .. } => {}
+                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Postgresql => {
+                    writeln!(writer, "{};", other_sql.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddOtherSql { .. } => {}
+                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Postgresql => {
+                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropOtherSql { .. } => {}
+                SchemaChange::AddTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::Postgresql => {
+                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                }
+                SchemaChange::AddTrigger { .. } => {}
+                SchemaChange::DropTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::Postgresql => {
+                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                }
+                SchemaChange::DropTrigger { .. } => {}
+                SchemaChange::AddInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
+                {
+                    writeln!(writer, "{};", initial_data.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddInitialData { .. } => {}
+                SchemaChange::DropInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
+                {
+                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropInitialData { .. } => {}
             }
         }
+
         Ok(())
     }
+}
+
+/// The Postgres full-schema generator writes trigger SQL through `GeneratorContext`'s own
+/// internal buffer (`SqlWriter`), not a `dyn Write` directly - so regenerating a table's
+/// triggers here means asking the generator to render into a dedicated `BufferSink`
+/// (`trigger_buffer`), then draining and copying that text into `writer` right away, so it
+/// lands in the right place relative to the rest of the migration's output. `regenerated`
+/// prevents re-rendering the same table twice when both an `AddTrigger` and a `DropTrigger`
+/// land on it in one run.
+fn regenerate_triggers(
+    trigger_generator: &PostgresTriggerGenerator,
+    trigger_buffer: &schema_sql_generator::common::generator_context::BufferSink,
+    database_model: &DatabaseModel,
+    table_name: &str,
+    regenerated: &mut HashSet<String>,
+    writer: &mut dyn Write,
+) -> Result<(), MigrationGeneratorError> {
+    if !regenerated.insert(table_name.to_string()) {
+        return Ok(());
+    }
+    if let Some(table) = database_model.all_tables().into_iter().find(|t| t.name().eq_ignore_ascii_case(table_name)) {
+        trigger_generator.output_triggers_for_table(table);
+        write!(writer, "{}", trigger_buffer.take())?;
+    }
+    Ok(())
+}
+
+/// Guarded so re-running the migration after the type already exists is a no-op, matching
+/// `write_guarded_add_constraint`'s `pg_constraint` pattern but against `pg_type`.
+fn write_add_enum_type(writer: &mut dyn Write, enum_type: &schema_model::model::enum_type::EnumType) -> Result<(), MigrationGeneratorError> {
+    let name = to_snake_case(enum_type.name());
+    let values = enum_type
+        .values()
+        .iter()
+        .map(|v| format!("'{}'", escape_sql_literal(v.code())))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    writeln!(writer, "do $$")?;
+    writeln!(writer, "begin")?;
+    writeln!(writer, "  if not exists (select 1 from pg_type where typname = '{}') then", name)?;
+    writeln!(writer, "    create type {} as enum ({});", name, values)?;
+    writeln!(writer, "  end if;")?;
+    writeln!(writer, "end $$;")?;
+    writeln!(writer)?;
+    Ok(())
+}
+
+/// Postgres has no `ALTER TYPE ... DROP VALUE`, so a removed value can't be enforced
+/// automatically - existing rows may still hold it. Rather than a comment a developer could
+/// miss, a removed value gets a statement that unconditionally fails the migration (`raise
+/// exception`, always executed, not just when data happens to violate anything) until the
+/// developer either confirms no rows use the value (deletes the block) or adds `update`
+/// statements above it to migrate them first.
+fn write_modify_enum_type(
+    writer: &mut dyn Write,
+    old_enum_type: &schema_model::model::enum_type::EnumType,
+    new_enum_type: &schema_model::model::enum_type::EnumType,
+) -> Result<(), MigrationGeneratorError> {
+    let name = to_snake_case(new_enum_type.name());
+
+    for value in new_enum_type.values() {
+        if !old_enum_type.values().iter().any(|v| v.name() == value.name()) {
+            writeln!(
+                writer,
+                "alter type {} add value if not exists '{}';",
+                name,
+                escape_sql_literal(value.code())
+            )?;
+        }
+    }
+    writeln!(writer)?;
+
+    for value in old_enum_type.values() {
+        if !new_enum_type.values().iter().any(|v| v.name() == value.name()) {
+            writeln!(
+                writer,
+                "-- WARNING: enum value '{}' was removed from '{}'. Postgres has no ALTER TYPE ... DROP VALUE,",
+                value.name(),
+                name
+            )?;
+            writeln!(writer, "-- so this migration cannot enforce the new value list automatically. Before it can run:")?;
+            writeln!(
+                writer,
+                "--   1. If rows still use '{}', add UPDATE statements above this line to migrate them to a valid value, then delete the block below, OR",
+                value.name()
+            )?;
+            writeln!(
+                writer,
+                "--   2. If no rows use '{}', delete the block below to confirm that.",
+                value.name()
+            )?;
+            writeln!(writer, "do $$")?;
+            writeln!(writer, "begin")?;
+            writeln!(
+                writer,
+                "  raise exception 'Migration halted: enum value ''{}'' was removed from {} - see comment above.';",
+                escape_sql_literal(value.name()),
+                name
+            )?;
+            writeln!(writer, "end $$;")?;
+            writeln!(writer)?;
+        }
+    }
+
+    Ok(())
 }
 
 /// The `default` XML attribute is free-text SQL for every column type except `Boolean`,

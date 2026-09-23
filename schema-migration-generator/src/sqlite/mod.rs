@@ -162,10 +162,94 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "drop view if exists {};", view_name)?;
                     writeln!(writer)?;
                 }
+                // SQLite has no native enum type (enums are emulated as a CHECK constraint
+                // per column) - nothing to do at the type level.
+                SchemaChange::AddEnumType { .. } | SchemaChange::DropEnumType { .. } => {}
+                SchemaChange::ModifyEnumType { new_enum_type, .. } => {
+                    let affected = columns_using_enum(database_model, new_enum_type.name());
+                    if !affected.is_empty() {
+                        writeln!(
+                            writer,
+                            "-- SQLite does not support altering a CHECK constraint in-place; enum '{}' changed.",
+                            new_enum_type.name()
+                        )?;
+                        writeln!(writer, "-- Manually recreate the following tables with the updated value list:")?;
+                        for (table_name, column) in affected {
+                            writeln!(writer, "--   {}.{}", table_name, column.name())?;
+                        }
+                        writeln!(writer)?;
+                    }
+                }
+                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::Sqlite => {
+                    writeln!(writer, "{};", function.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddFunction { .. } => {}
+                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::Sqlite => {
+                    writeln!(writer, "-- SQLite has no generic DROP FUNCTION; function '{}' removed - review manually.", function_name)?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropFunction { .. } => {}
+                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::Sqlite => {
+                    writeln!(writer, "{};", procedure.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddProcedure { .. } => {}
+                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::Sqlite => {
+                    writeln!(writer, "-- SQLite has no generic DROP PROCEDURE; procedure '{}' removed - review manually.", procedure_name)?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropProcedure { .. } => {}
+                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Sqlite => {
+                    writeln!(writer, "{};", other_sql.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddOtherSql { .. } => {}
+                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Sqlite => {
+                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropOtherSql { .. } => {}
+                // SQLite trigger generation is a no-op in schema-sql-generator (see
+                // `SqliteTriggerGenerator`); nothing to regenerate here either.
+                SchemaChange::AddTrigger { .. } | SchemaChange::DropTrigger { .. } => {}
+                SchemaChange::AddInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
+                {
+                    writeln!(writer, "{};", initial_data.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddInitialData { .. } => {}
+                SchemaChange::DropInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
+                {
+                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropInitialData { .. } => {}
             }
         }
         Ok(())
     }
+}
+
+/// Columns across every table in the model whose `enumType` matches `enum_name`
+/// (case-insensitive) - used by `ModifyEnumType` to list which CHECK constraints need a
+/// manual rebuild (SQLite emulates enums as `varchar` + `CHECK (col IN (...))`, same as SQL
+/// Server, but can't alter a CHECK constraint in place - see the `AddConstraint`/
+/// `DropConstraint` arms above).
+fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) -> Vec<(String, &'a Column)> {
+    database_model
+        .all_tables()
+        .into_iter()
+        .flat_map(|table| {
+            table
+                .columns()
+                .iter()
+                .filter(|c| c.enum_type().is_some_and(|t| t.eq_ignore_ascii_case(enum_name)))
+                .map(|c| (table.name().to_string(), c))
+        })
+        .collect()
 }
 
 /// The `default` XML attribute is free-text SQL for every column type except `Boolean`,

@@ -5,6 +5,7 @@ use schema_model::builder::column::ColumnBuilder;
 use schema_model::builder::{SchemaBuilder, TableBuilder};
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::database_model::DatabaseModel;
+use schema_model::model::enum_type::{EnumType, EnumValue};
 use schema_model::model::key::{Key, KeyColumn};
 use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType};
@@ -952,4 +953,177 @@ fn sqlite_add_key_and_relation_and_constraint_changes_are_already_safe_or_docume
     assert!(sql.contains("create index if not exists"), "got: {}", sql);
     assert!(sql.contains("-- SQLite does not support adding constraint"), "got: {}", sql);
     assert!(sql.contains("-- SQLite foreign keys must be declared at table creation time."), "got: {}", sql);
+}
+
+fn old_and_new_date_range_enum() -> (EnumType, EnumType) {
+    let old = EnumType::new(
+        "tip_pool_date_range_type",
+        vec![EnumValue::new("DAILY", None::<String>), EnumValue::new("WEEKLY", None::<String>)],
+    );
+    let new = EnumType::new(
+        "tip_pool_date_range_type",
+        vec![
+            EnumValue::new("DAILY", None::<String>),
+            EnumValue::new("WEEKLY", None::<String>),
+            EnumValue::new("PAY_PERIOD", None::<String>),
+        ],
+    );
+    (old, new)
+}
+
+#[test]
+fn postgresql_modify_enum_type_adds_new_value() {
+    // The original repro from this session: adding PAY_PERIOD to an enum must produce a
+    // real `ALTER TYPE ... ADD VALUE`, not an empty migration.
+    let (old_enum_type, new_enum_type) = old_and_new_date_range_enum();
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("alter type tip_pool_date_range_type add value if not exists 'PAY_PERIOD';"),
+        "got: {}",
+        sql
+    );
+}
+
+#[test]
+fn postgresql_modify_enum_type_warns_on_removed_value() {
+    let (new_enum_type, old_enum_type) = old_and_new_date_range_enum(); // swapped: PAY_PERIOD removed
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("-- WARNING"), "got: {}", sql);
+    assert!(sql.contains("PAY_PERIOD"), "got: {}", sql);
+    assert!(!sql.contains("add value"), "got: {}", sql);
+    // Must not be a passive comment only - an unconditional failure forces the developer to
+    // act instead of letting the migration silently succeed with a possibly-stale enum.
+    assert!(sql.contains("raise exception"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_and_drop_enum_type() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddEnumType {
+        enum_type: EnumType::new("status_type", vec![EnumValue::new("ACTIVE", None::<String>)]),
+    });
+    cs.add_change(SchemaChange::DropEnumType { enum_type_name: "old_status_type".to_string() });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create type status_type as enum ('ACTIVE');"), "got: {}", sql);
+    assert!(sql.contains("drop type if exists old_status_type cascade;"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_modify_enum_type_regenerates_check_constraint_on_referencing_columns() {
+    let (old_enum_type, new_enum_type) = old_and_new_date_range_enum();
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type: new_enum_type.clone() });
+
+    let table = TableBuilder::new(None::<&str>, "tip_pool")
+        .add_column(
+            ColumnBuilder::new(None::<&str>, "date_range_type", ColumnType::Enum)
+                .enum_type(Some("tip_pool_date_range_type".to_string()))
+                .required(true)
+                .build(),
+        )
+        .build();
+    let schema = SchemaBuilder::new(None::<&str>).add_table(table).add_enum_type(new_enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("alter table tip_pool drop constraint"), "got: {}", sql);
+    assert!(sql.contains("alter table tip_pool add constraint"), "got: {}", sql);
+    assert!(sql.contains("'PAY_PERIOD'"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_modify_enum_type_forces_failure_when_a_value_is_removed() {
+    let (new_enum_type, old_enum_type) = old_and_new_date_range_enum(); // swapped: PAY_PERIOD removed
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type: new_enum_type.clone() });
+
+    let table = TableBuilder::new(None::<&str>, "tip_pool")
+        .add_column(
+            ColumnBuilder::new(None::<&str>, "date_range_type", ColumnType::Enum)
+                .enum_type(Some("tip_pool_date_range_type".to_string()))
+                .required(true)
+                .build(),
+        )
+        .build();
+    let schema = SchemaBuilder::new(None::<&str>).add_table(table).add_enum_type(new_enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    // Unconditional failure - not a passive comment - so the migration can't succeed silently
+    // even when no current row happens to violate the shrunk constraint.
+    assert!(sql.contains("throw 50000"), "got: {}", sql);
+    assert!(sql.contains("PAY_PERIOD"), "got: {}", sql);
+    // The guard must precede the drop/add constraint statements, so the script halts before
+    // any of them run.
+    let throw_pos = sql.find("throw 50000").unwrap();
+    let drop_pos = sql.find("alter table tip_pool drop constraint").unwrap();
+    assert!(throw_pos < drop_pos, "expected the throw guard before the drop constraint, got: {}", sql);
+}
+
+#[test]
+fn sqlite_modify_enum_type_emits_manual_rebuild_comment() {
+    let (old_enum_type, new_enum_type) = old_and_new_date_range_enum();
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type });
+
+    let table = TableBuilder::new(None::<&str>, "tip_pool")
+        .add_column(
+            ColumnBuilder::new(None::<&str>, "date_range_type", ColumnType::Enum)
+                .enum_type(Some("tip_pool_date_range_type".to_string()))
+                .required(true)
+                .build(),
+        )
+        .build();
+    let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("-- SQLite does not support altering a CHECK constraint in-place"), "got: {}", sql);
+    assert!(sql.contains("tip_pool.date_range_type"), "got: {}", sql);
+}
+
+#[test]
+fn postgresql_add_and_drop_function_and_procedure() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddFunction {
+        function: schema_model::model::function::Function::new(
+            None::<&str>,
+            "f1",
+            DatabaseType::Postgresql,
+            "create function f1() returns int as $$ select 1 $$ language sql",
+        ),
+    });
+    cs.add_change(SchemaChange::DropProcedure { procedure_name: "old_proc".to_string(), database_type: DatabaseType::Postgresql });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create function f1()"), "got: {}", sql);
+    assert!(sql.contains("drop procedure if exists old_proc;"), "got: {}", sql);
 }

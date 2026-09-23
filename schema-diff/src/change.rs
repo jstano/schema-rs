@@ -1,7 +1,14 @@
 use schema_model::model::column::Column;
 use schema_model::model::constraint::Constraint;
+use schema_model::model::enum_type::EnumType;
+use schema_model::model::function::Function;
+use schema_model::model::initial_data::InitialData;
 use schema_model::model::key::Key;
+use schema_model::model::other_sql::OtherSql;
+use schema_model::model::procedure::Procedure;
 use schema_model::model::relation::Relation;
+use schema_model::model::trigger::Trigger;
+use schema_model::model::types::DatabaseType;
 use schema_model::model::view::View;
 
 #[derive(Debug, Clone)]
@@ -74,5 +81,51 @@ pub enum SchemaChange {
     },
     DropView {
         view_name: String,
+    },
+    AddEnumType {
+        enum_type: EnumType,
+    },
+    DropEnumType {
+        enum_type_name: String,
+    },
+    ModifyEnumType {
+        old_enum_type: EnumType,
+        new_enum_type: EnumType,
+    },
+    AddFunction {
+        function: Function,
+    },
+    DropFunction {
+        function_name: String,
+        database_type: DatabaseType,
+    },
+    AddProcedure {
+        procedure: Procedure,
+    },
+    DropProcedure {
+        procedure_name: String,
+        database_type: DatabaseType,
+    },
+    AddOtherSql {
+        other_sql: OtherSql,
+    },
+    DropOtherSql {
+        other_sql: OtherSql,
+    },
+    AddTrigger {
+        table_name: String,
+        trigger: Trigger,
+    },
+    DropTrigger {
+        table_name: String,
+        trigger: Trigger,
+    },
+    AddInitialData {
+        table_name: String,
+        initial_data: InitialData,
+    },
+    DropInitialData {
+        table_name: String,
+        initial_data: InitialData,
     },
 }

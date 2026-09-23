@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Write;
 use std::rc::Rc;
 
@@ -12,7 +13,9 @@ use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationTyp
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 use schema_sql_generator::common::column_type_generator::ColumnTypeGenerator;
 use schema_sql_generator::common::generator_context::GeneratorContext;
+use schema_sql_generator::common::trigger_generator::TriggerGenerator;
 use schema_sql_generator::sqlserver::sqlserver_column_type_generator::SqlServerColumnTypeGenerator;
+use schema_sql_generator::sqlserver::sqlserver_trigger_generator::SqlServerTriggerGenerator;
 
 use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
@@ -29,7 +32,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
     ) -> Result<(), MigrationGeneratorError> {
         let context = GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::SqlServer);
         let type_generator = SqlServerColumnTypeGenerator::new(context.clone());
+        let (trigger_context, trigger_buffer) =
+            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::SqlServer);
+        let trigger_generator = SqlServerTriggerGenerator::new(trigger_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
+        let mut triggers_regenerated: HashSet<String> = HashSet::new();
 
         for change in change_set.changes() {
             match change {
@@ -182,10 +189,149 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
+                // SQL Server has no native enum type (enums are emulated as a CHECK
+                // constraint per column, same as SQLite) - nothing to do at the type level.
+                SchemaChange::AddEnumType { .. } | SchemaChange::DropEnumType { .. } => {}
+                SchemaChange::ModifyEnumType { old_enum_type, new_enum_type } => {
+                    write_removed_enum_value_guards(writer, old_enum_type, new_enum_type)?;
+                    for (table_name, column) in columns_using_enum(database_model, new_enum_type.name()) {
+                        let name = check_constraint::constraint_name(&table_name, column.name());
+                        write_guarded(
+                            writer,
+                            &format!("exists (select 1 from sys.check_constraints where name = '{}')", name),
+                            &format!("alter table {} drop constraint {};", table_name, name),
+                        )?;
+                        if let Some(check_sql) = check_constraint::check_constraint_sql(&context, column) {
+                            write_guarded(
+                                writer,
+                                &format!("not exists (select 1 from sys.check_constraints where name = '{}')", name),
+                                &format!("alter table {} add constraint {} {};", table_name, name, check_sql),
+                            )?;
+                        }
+                    }
+                }
+                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::SqlServer => {
+                    writeln!(writer, "{}", function.sql())?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddFunction { .. } => {}
+                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::SqlServer => {
+                    writeln!(writer, "drop function if exists {};", function_name)?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropFunction { .. } => {}
+                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::SqlServer => {
+                    writeln!(writer, "{}", procedure.sql())?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddProcedure { .. } => {}
+                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::SqlServer => {
+                    writeln!(writer, "drop procedure if exists {};", procedure_name)?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropProcedure { .. } => {}
+                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::SqlServer => {
+                    writeln!(writer, "{}", other_sql.sql())?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddOtherSql { .. } => {}
+                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::SqlServer => {
+                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropOtherSql { .. } => {}
+                SchemaChange::AddTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::SqlServer => {
+                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                }
+                SchemaChange::AddTrigger { .. } => {}
+                SchemaChange::DropTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::SqlServer => {
+                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                }
+                SchemaChange::DropTrigger { .. } => {}
+                SchemaChange::AddInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
+                {
+                    writeln!(writer, "{}", initial_data.sql())?;
+                    writeln!(writer, "go")?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::AddInitialData { .. } => {}
+                SchemaChange::DropInitialData { initial_data, .. }
+                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
+                {
+                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(writer)?;
+                }
+                SchemaChange::DropInitialData { .. } => {}
             }
         }
         Ok(())
     }
+}
+
+/// Columns across every table in the model whose `enumType` matches `enum_name`
+/// (case-insensitive) - used by `ModifyEnumType` to find every CHECK constraint that needs
+/// regenerating for SQLite and SQL Server, which emulate enums as `varchar` + `CHECK (col IN
+/// (...))` rather than a native type (see `DefaultColumnConstraintGenerator::enum_check_constraint_sql`).
+fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) -> Vec<(String, &'a Column)> {
+    database_model
+        .all_tables()
+        .into_iter()
+        .flat_map(|table| {
+            table
+                .columns()
+                .iter()
+                .filter(|c| c.enum_type().is_some_and(|t| t.eq_ignore_ascii_case(enum_name)))
+                .map(|c| (table.name().to_string(), c))
+        })
+        .collect()
+}
+
+/// Unlike Postgres, SQL Server's `ADD CONSTRAINT` already validates existing data by default
+/// and would fail on its own if a row still held a removed value - but only when such a row
+/// actually exists, and only with a generic constraint-violation error. A removed value is a
+/// deliberate schema decision that deserves an explicit stop and explanation every time, not a
+/// silent pass-through when no violating row happens to exist yet - so this emits an
+/// unconditional `throw` before any of `ModifyEnumType`'s drop/add constraint statements run,
+/// forcing the developer to either confirm the value is unused (delete the block) or add
+/// `update` statements above it first.
+fn write_removed_enum_value_guards(
+    writer: &mut dyn Write,
+    old_enum_type: &schema_model::model::enum_type::EnumType,
+    new_enum_type: &schema_model::model::enum_type::EnumType,
+) -> Result<(), MigrationGeneratorError> {
+    let name = new_enum_type.name();
+
+    for value in old_enum_type.values() {
+        if !new_enum_type.values().iter().any(|v| v.name() == value.name()) {
+            writeln!(writer, "-- WARNING: enum value '{}' was removed from '{}'.", value.name(), name)?;
+            writeln!(
+                writer,
+                "--   1. If rows still use '{}', add UPDATE statements above this line to migrate them to a valid value, then delete the block below, OR",
+                value.name()
+            )?;
+            writeln!(
+                writer,
+                "--   2. If no rows use '{}', delete the block below to confirm that.",
+                value.name()
+            )?;
+            writeln!(
+                writer,
+                "throw 50000, 'Migration halted: enum value ''{}'' was removed from {} - see comment above.', 1;",
+                value.name().replace('\'', "''"),
+                name
+            )?;
+            writeln!(writer, "go")?;
+            writeln!(writer)?;
+        }
+    }
+
+    Ok(())
 }
 
 /// The `default` XML attribute is free-text SQL for every column type except `Boolean`,
@@ -321,5 +467,26 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
             on_delete
         ),
     )?;
+    Ok(())
+}
+
+/// See the identical helper in `postgresql/mod.rs` - same reasoning: the trigger generator
+/// writes through a dedicated `BufferSink`, drained into `writer` right away so it lands in
+/// the right place relative to the rest of the migration's output.
+fn regenerate_triggers(
+    trigger_generator: &SqlServerTriggerGenerator,
+    trigger_buffer: &schema_sql_generator::common::generator_context::BufferSink,
+    database_model: &DatabaseModel,
+    table_name: &str,
+    regenerated: &mut HashSet<String>,
+    writer: &mut dyn Write,
+) -> Result<(), MigrationGeneratorError> {
+    if !regenerated.insert(table_name.to_string()) {
+        return Ok(());
+    }
+    if let Some(table) = database_model.all_tables().into_iter().find(|t| t.name().eq_ignore_ascii_case(table_name)) {
+        trigger_generator.output_triggers_for_table(table);
+        write!(writer, "{}", trigger_buffer.take())?;
+    }
     Ok(())
 }
