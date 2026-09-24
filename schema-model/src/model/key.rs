@@ -23,6 +23,7 @@ pub struct Key {
     compress: bool,
     unique: bool,
     include: Option<String>,
+    filter: Option<String>,
 }
 
 impl Key {
@@ -34,6 +35,7 @@ impl Key {
             compress: false,
             unique: false,
             include: None,
+            filter: None,
         }
     }
 
@@ -52,6 +54,28 @@ impl Key {
             compress,
             unique,
             include: include.map(|s| s.into()),
+            filter: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_full_with_filter<S: Into<String>, F: Into<String>>(
+        key_type: KeyType,
+        columns: Vec<KeyColumn>,
+        cluster: bool,
+        compress: bool,
+        unique: bool,
+        include: Option<S>,
+        filter: Option<F>,
+    ) -> Self {
+        Self {
+            key_type,
+            columns,
+            cluster,
+            compress,
+            unique,
+            include: include.map(|s| s.into()),
+            filter: filter.map(|s| s.into()),
         }
     }
 
@@ -77,6 +101,10 @@ impl Key {
 
     pub fn include(&self) -> Option<&str> {
         self.include.as_deref()
+    }
+
+    pub fn filter(&self) -> Option<&str> {
+        self.filter.as_deref()
     }
 
     pub fn is_index(&self) -> bool {
@@ -120,6 +148,19 @@ mod tests {
         assert!(k2.is_compress());
         assert!(k2.is_unique());
         assert_eq!(k2.include(), Some("inc"));
+        assert_eq!(k2.filter(), None);
+
+        let k3 = Key::new_full_with_filter(
+            KeyType::Index,
+            vec![KeyColumn::new("id")],
+            false,
+            false,
+            true,
+            None::<String>,
+            Some("id is not null"),
+        );
+        assert_eq!(k3.filter(), Some("id is not null"));
+        assert!(k3.is_unique());
     }
 
     #[test]

@@ -302,4 +302,105 @@ mod tests {
         assert!(err.contains("Widget"));
         assert!(err.contains("Name"));
     }
+
+    #[test]
+    fn primary_key_with_where_predicate_returns_error() {
+        let xml = wrap(
+            r#"
+            <table name="Widget">
+                <columns>
+                    <column name="Id" type="int" required="true"/>
+                </columns>
+                <keys>
+                    <primary where="1=1">
+                        <column name="Id"/>
+                    </primary>
+                </keys>
+            </table>
+            "#,
+        );
+
+        let result = parse_database_xml(&xml);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("primary"));
+    }
+
+    #[test]
+    fn clustered_unique_key_with_where_predicate_returns_error() {
+        let xml = wrap(
+            r#"
+            <table name="Widget">
+                <columns>
+                    <column name="ParentId" type="int"/>
+                </columns>
+                <keys>
+                    <unique cluster="true" where="ParentId is not null">
+                        <column name="ParentId"/>
+                    </unique>
+                </keys>
+            </table>
+            "#,
+        );
+
+        let result = parse_database_xml(&xml);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("clustered"));
+    }
+
+    #[test]
+    fn unique_key_with_where_predicate_is_promoted_to_a_filtered_unique_index() {
+        let xml = wrap(
+            r#"
+            <table name="Widget">
+                <columns>
+                    <column name="ParentId" type="int"/>
+                </columns>
+                <keys>
+                    <unique where="ParentId is not null">
+                        <column name="ParentId"/>
+                    </unique>
+                </keys>
+            </table>
+            "#,
+        );
+
+        let database = parse_database_xml(&xml).expect("parse ok");
+        let schema = &database.schemas()[0];
+        let table = schema.get_table("Widget");
+
+        assert!(table.keys().is_empty());
+        assert_eq!(table.indexes().len(), 1);
+        let index = &table.indexes()[0];
+        assert!(index.is_unique());
+        assert_eq!(index.filter(), Some("ParentId is not null"));
+    }
+
+    #[test]
+    fn index_where_predicate_is_parsed() {
+        let xml = wrap(
+            r#"
+            <table name="Widget">
+                <columns>
+                    <column name="ParentId" type="int"/>
+                </columns>
+                <keys>
+                    <index unique="true" where="ParentId is not null">
+                        <column name="ParentId"/>
+                    </index>
+                </keys>
+            </table>
+            "#,
+        );
+
+        let database = parse_database_xml(&xml).expect("parse ok");
+        let schema = &database.schemas()[0];
+        let table = schema.get_table("Widget");
+
+        assert_eq!(table.indexes().len(), 1);
+        let index = &table.indexes()[0];
+        assert!(index.is_unique());
+        assert_eq!(index.filter(), Some("ParentId is not null"));
+    }
 }

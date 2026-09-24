@@ -40,6 +40,9 @@ impl IndexGenerator for SqlServerIndexGenerator {
         if let Some(columns) = key.include() {
             options.push(format!("include ({})", format_column_list(columns)));
         }
+        if let Some(filter) = key.filter() {
+            options.push(format!("where {}", filter));
+        }
         if key.is_compress() {
             // `compress` is a plain bool in the XML with no PAGE/ROW distinction; PAGE is
             // the higher-compression, generally-recommended default.
@@ -160,6 +163,36 @@ mod tests {
         let output = buffer.contents();
         assert!(
             output.contains("create index ix_t11 on dbo.t1 (id) include (code) with (data_compression = page)"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn output_indexes_for_table_renders_where_between_include_and_compression() {
+        let index = Key::new_full_with_filter(
+            KeyType::Index,
+            vec![KeyColumn::new("id")],
+            false,
+            true,
+            false,
+            Some("code"),
+            Some("parent_id is not null"),
+        );
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
+
+        let generator = SqlServerIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains(
+                "create index ix_t11 on dbo.t1 (id) include (code) where parent_id is not null with (data_compression = page)"
+            ),
             "unexpected output: {output}"
         );
     }

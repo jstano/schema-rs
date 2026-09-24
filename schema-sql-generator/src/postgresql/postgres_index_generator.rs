@@ -45,7 +45,15 @@ impl IndexGenerator for PostgresIndexGenerator {
             );
         }
 
-        key.include().map(|columns| format!("include ({})", format_column_list(columns)))
+        let mut options = Vec::new();
+        if let Some(columns) = key.include() {
+            options.push(format!("include ({})", format_column_list(columns)));
+        }
+        if let Some(filter) = key.filter() {
+            options.push(format!("where {}", filter));
+        }
+
+        if options.is_empty() { None } else { Some(options.join(" ")) }
     }
 }
 
@@ -115,6 +123,34 @@ mod tests {
         let output = buffer.contents();
         assert!(
             output.contains("create index ix_t11 on public.t1 (id) include (name, code);"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn output_indexes_for_table_renders_where_after_include() {
+        let index = Key::new_full_with_filter(
+            KeyType::Index,
+            vec![KeyColumn::new("parent_id")],
+            false,
+            false,
+            true,
+            Some("code"),
+            Some("parent_id is not null"),
+        );
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = PostgresIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("create unique index ix_t11 on public.t1 (parent_id) include (code) where parent_id is not null;"),
             "unexpected output: {output}"
         );
     }

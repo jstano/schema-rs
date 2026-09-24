@@ -189,7 +189,8 @@ fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
         });
     }
     let cluster = attr_bool(node, "cluster")?;
-    Ok(KeyColumnsXml { columns, cluster })
+    let where_clause = attr_string(node, "where");
+    Ok(KeyColumnsXml { columns, cluster, where_clause })
 }
 
 fn parse_index_node(node: Node) -> Result<IndexXml, String> {
@@ -202,6 +203,7 @@ fn parse_index_node(node: Node) -> Result<IndexXml, String> {
         include: attr_string(node, "include"),
         compress: attr_bool(node, "compress")?,
         unique: attr_bool(node, "unique")?,
+        where_clause: attr_string(node, "where"),
     })
 }
 

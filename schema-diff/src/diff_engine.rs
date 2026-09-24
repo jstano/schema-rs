@@ -231,6 +231,7 @@ fn keys_equal(a: &Key, b: &Key) -> bool {
         && a.is_unique() == b.is_unique()
         && a.is_cluster() == b.is_cluster()
         && a.include() == b.include()
+        && a.filter() == b.filter()
         && a.columns().len() == b.columns().len()
         && a.columns().iter().zip(b.columns().iter()).all(|(ac, bc)| {
             ac.name().eq_ignore_ascii_case(bc.name())

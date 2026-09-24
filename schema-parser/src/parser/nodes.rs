@@ -156,6 +156,8 @@ pub struct KeyColumnsXml {
     pub columns: Vec<KeyColumnXml>,
     #[serde(rename = "@cluster")]
     pub cluster: Option<bool>,
+    #[serde(rename = "@where")]
+    pub where_clause: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -168,6 +170,8 @@ pub struct IndexXml {
     pub compress: Option<bool>,
     #[serde(rename = "@unique")]
     pub unique: Option<bool>,
+    #[serde(rename = "@where")]
+    pub where_clause: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

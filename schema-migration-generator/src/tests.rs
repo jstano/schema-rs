@@ -1202,3 +1202,66 @@ fn postgresql_add_and_drop_function_and_procedure() {
     assert!(sql.contains("create function f1()"), "got: {}", sql);
     assert!(sql.contains("drop procedure if exists old_proc;"), "got: {}", sql);
 }
+
+fn unique_filtered_index_key() -> Key {
+    Key::new_full_with_filter(
+        KeyType::Index,
+        vec![KeyColumn::new("parent_labor_structure_id")],
+        false,
+        false,
+        true,
+        None::<String>,
+        Some("parent_labor_structure_id is null"),
+    )
+}
+
+#[test]
+fn postgresql_add_key_unique_filtered_index_renders_unique_and_where() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: unique_filtered_index_key(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create unique index if not exists"), "got: {}", sql);
+    assert!(sql.contains("where parent_labor_structure_id is null"), "got: {}", sql);
+}
+
+#[test]
+fn sqlite_add_key_unique_filtered_index_renders_unique_and_where() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: unique_filtered_index_key(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create unique index if not exists"), "got: {}", sql);
+    assert!(sql.contains("where parent_labor_structure_id is null"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_key_unique_filtered_index_renders_unique_and_where() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddKey {
+        table_name: "users".to_string(),
+        key: unique_filtered_index_key(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("create unique index"), "got: {}", sql);
+    assert!(sql.contains("where parent_labor_structure_id is null"), "got: {}", sql);
+}

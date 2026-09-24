@@ -323,6 +323,32 @@ fn detects_key_uniqueness_change() {
 }
 
 #[test]
+fn detects_key_filter_change() {
+    let make = |filter: Option<&str>| {
+        let mut builder = KeyBuilder::new(KeyType::Index)
+            .add_column("email")
+            .unique(true);
+        if let Some(f) = filter {
+            builder = builder.filter(f);
+        }
+        SchemaBuilder::new(Some("s"))
+            .add_table(
+                TableBuilder::new(Some("s"), "users")
+                    .add_column(ColumnBuilder::new(Some("s"), "email", ColumnType::Varchar).build())
+                    .add_index(builder.build())
+                    .build(),
+            )
+            .build()
+    };
+    let old = make(None);
+    let new = make(Some("deleted_at is null"));
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropKey { .. })));
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddKey { .. })));
+}
+
+#[test]
 fn detects_check_constraint_body_change() {
     let make = |sql: &str| {
         SchemaBuilder::new(Some("s"))

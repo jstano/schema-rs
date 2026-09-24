@@ -50,7 +50,7 @@ impl IndexGenerator for SqliteIndexGenerator {
             );
         }
 
-        None
+        key.filter().map(|filter| format!("where {}", filter))
     }
 }
 
@@ -113,5 +113,33 @@ mod tests {
 
         let output = buffer.contents();
         assert_eq!(output.trim(), "create index ix_t11 on t1 (id);");
+    }
+
+    #[test]
+    fn output_indexes_for_table_renders_where_clause() {
+        let index = Key::new_full_with_filter(
+            KeyType::Index,
+            vec![KeyColumn::new("parent_id")],
+            false,
+            false,
+            true,
+            None::<String>,
+            Some("parent_id is not null"),
+        );
+        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
+
+        let generator = SqliteIndexGenerator::new(ctx.clone());
+        ctx.with_writer(|writer| {
+            generator.output_indexes_for_table(writer, &table);
+        });
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("create unique index ix_t11 on t1 (parent_id) where parent_id is not null;"),
+            "unexpected output: {output}"
+        );
     }
 }

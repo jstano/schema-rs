@@ -399,10 +399,12 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
+            let unique = if key.is_unique() { "unique " } else { "" };
+            let where_clause = key.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
             write_guarded(
                 writer,
                 &format!("not exists (select 1 from sys.indexes where name = '{}')", idx_name),
-                &format!("create index {} on {} ({});", idx_name, table_name, cols),
+                &format!("create {}index {} on {} ({}){};", unique, idx_name, table_name, cols, where_clause),
             )?;
         }
     }

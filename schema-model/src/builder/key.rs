@@ -10,6 +10,7 @@ pub struct KeyBuilder {
     compress: bool,
     unique: bool,
     include: Option<String>,
+    filter: Option<String>,
 }
 
 impl KeyBuilder {
@@ -21,6 +22,7 @@ impl KeyBuilder {
             compress: false,
             unique: false,
             include: None,
+            filter: None,
         }
     }
     pub fn add_column<S: Into<String>>(mut self, name: S) -> Self {
@@ -43,9 +45,23 @@ impl KeyBuilder {
         self.include = Some(s.into());
         self
     }
+    pub fn filter<S: Into<String>>(mut self, s: S) -> Self {
+        self.filter = Some(s.into());
+        self
+    }
 
     pub fn build(self) -> Key {
-        if self.cluster || self.compress || self.unique || self.include.is_some() {
+        if self.filter.is_some() {
+            Key::new_full_with_filter(
+                self.key_type,
+                self.columns,
+                self.cluster,
+                self.compress,
+                self.unique,
+                self.include,
+                self.filter,
+            )
+        } else if self.cluster || self.compress || self.unique || self.include.is_some() {
             Key::new_full(
                 self.key_type,
                 self.columns,
@@ -75,5 +91,16 @@ mod tests {
         assert_eq!(k.columns().len(), 2);
         assert!(k.is_compress());
         assert_eq!(k.include(), Some("x"));
+    }
+
+    #[test]
+    fn build_index_with_filter() {
+        let k = KeyBuilder::new(KeyType::Index)
+            .add_column("a")
+            .unique(true)
+            .filter("a is not null")
+            .build();
+        assert!(k.is_unique());
+        assert_eq!(k.filter(), Some("a is not null"));
     }
 }

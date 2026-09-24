@@ -465,10 +465,12 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Postgresql, table_name, ordinal);
+            let unique = if key.is_unique() { "unique " } else { "" };
+            let where_clause = key.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
             writeln!(
                 writer,
-                "create index if not exists {} on {} ({});",
-                idx_name, table_name, cols
+                "create {}index if not exists {} on {} ({}){};",
+                unique, idx_name, table_name, cols, where_clause
             )?;
             writeln!(writer)?;
         }

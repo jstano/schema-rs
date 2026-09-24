@@ -16,7 +16,7 @@ use schema_model::model::types::{KeyType, LockEscalation, RelationType, TableOpt
 
 pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Table, String> {
     let columns = parse_columns(table_xml, schema_name)?;
-    let keys = parse_keys(table_xml);
+    let keys = parse_keys(table_xml)?;
     let indexes = parse_indexes(table_xml);
     let relations = parse_relations(table_xml)?;
     let triggers = parse_triggers(table_xml)?;
@@ -83,11 +83,17 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<
     Ok(columns)
 }
 
-fn parse_keys(table_xml: &TableXml) -> Vec<Key> {
+fn parse_keys(table_xml: &TableXml) -> Result<Vec<Key>, String> {
     let mut keys = Vec::new();
 
     if let Some(keys_xml) = &table_xml.keys {
         if let Some(primary_key_xml) = &keys_xml.primary {
+            if primary_key_xml.where_clause.is_some() {
+                return Err(format!(
+                    "table '{}': <primary> does not support a 'where' predicate",
+                    table_xml.name
+                ));
+            }
             let mut kb = KeyBuilder::new(KeyType::Primary);
             for kc in primary_key_xml.columns.iter() {
                 kb = kb.add_column(&kc.name);
@@ -98,6 +104,15 @@ fn parse_keys(table_xml: &TableXml) -> Vec<Key> {
             keys.push(kb.build());
         }
         for unique_key_xml in keys_xml.uniques.iter() {
+            if unique_key_xml.where_clause.is_some() {
+                if unique_key_xml.cluster == Some(true) {
+                    return Err(format!(
+                        "table '{}': a filtered/partial unique index cannot be clustered",
+                        table_xml.name
+                    ));
+                }
+                continue;
+            }
             let mut kb = KeyBuilder::new(KeyType::Unique);
             for kc in unique_key_xml.columns.iter() {
                 kb = kb.add_column(&kc.name);
@@ -109,7 +124,7 @@ fn parse_keys(table_xml: &TableXml) -> Vec<Key> {
         }
     }
 
-    keys
+    Ok(keys)
 }
 
 fn parse_indexes(table_xml: &TableXml) -> Vec<Key> {
@@ -129,6 +144,21 @@ fn parse_indexes(table_xml: &TableXml) -> Vec<Key> {
             }
             if let Some(v) = index_xml.unique {
                 key_builder = key_builder.unique(v);
+            }
+            if let Some(s) = &index_xml.where_clause {
+                key_builder = key_builder.filter(s);
+            }
+            indexes.push(key_builder.build());
+        }
+
+        for unique_key_xml in keys_xml.uniques.iter().filter(|u| u.where_clause.is_some()) {
+            let mut key_builder = KeyBuilder::new(KeyType::Index);
+            for kc in unique_key_xml.columns.iter() {
+                key_builder = key_builder.add_column(&kc.name);
+            }
+            key_builder = key_builder.unique(true);
+            if let Some(s) = &unique_key_xml.where_clause {
+                key_builder = key_builder.filter(s);
             }
             indexes.push(key_builder.build());
         }

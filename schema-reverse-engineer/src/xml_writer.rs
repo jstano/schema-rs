@@ -198,6 +198,9 @@ fn write_index(out: &mut String, index: &Key, indent: usize) {
     if let Some(include) = index.include() {
         let _ = write!(out, " include=\"{}\"", xml_escape(include));
     }
+    if let Some(filter) = index.filter() {
+        let _ = write!(out, " where=\"{}\"", xml_escape(filter));
+    }
     out.push_str(">\n");
     for column in index.columns() {
         push_indent(out, indent + 1);
