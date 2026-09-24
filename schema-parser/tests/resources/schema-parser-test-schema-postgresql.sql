@@ -43,6 +43,19 @@ other top sql for pgsql 1;
 
 other top sql for pgsql 2;
 
+/* public.Assignment */
+drop table if exists public.Assignment cascade;
+
+create table public.Assignment
+(
+   ID serial not null,
+   PropertyID integer not null,
+   ParentAssignmentID integer,
+   Name text not null,
+   constraint pk_assignment primary key (ID),
+   constraint ak_assignment1 unique (ID,PropertyID)
+);
+
 /* public.ChildTable */
 drop table if exists public.ChildTable cascade;
 
@@ -198,6 +211,8 @@ create table test.Unit
 );
 
 /* relations */
+alter table public.Assignment add constraint fk_assignment1 foreign key (PropertyID) references public.Property(ID) on delete cascade;
+alter table public.Assignment add constraint fk_assignment2 foreign key (ParentAssignmentID, PropertyID) references public.Assignment(ID, PropertyID) on delete cascade;
 alter table public.ChildTable add constraint fk_childtable1 foreign key (ParentID) references public.ParentTable(ID) on delete cascade;
 alter table public.KBI add constraint fk_kbi1 foreign key (PropertyID) references public.Property(ID) on delete cascade;
 alter table public.KBI add constraint fk_kbi2 foreign key (UnitID) references test.Unit(ID) on delete set null;

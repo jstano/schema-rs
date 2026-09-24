@@ -207,16 +207,37 @@ fn parse_index_node(node: Node) -> Result<IndexXml, String> {
 
 fn parse_relations_node(node: Node) -> Result<RelationsXml, String> {
     let mut rels = Vec::new();
-    for r in node.children().filter(|n| n.has_tag_name((NS, "relation"))) {
-        rels.push(RelationXml {
-            src: attr_string_required(r, "src")?,
-            table: attr_string_required(r, "table")?,
-            column: attr_string_required(r, "column")?,
-            r#type: attr_string_required(r, "type")?,
-            disable_usage_checking: attr_bool(r, "disableUsageChecking")?,
+    let mut composite_rels = Vec::new();
+    for r in node.children().filter(|n| n.is_element()) {
+        if r.has_tag_name((NS, "relation")) {
+            rels.push(RelationXml {
+                src: attr_string_required(r, "src")?,
+                table: attr_string_required(r, "table")?,
+                column: attr_string_required(r, "column")?,
+                r#type: attr_string_required(r, "type")?,
+                disable_usage_checking: attr_bool(r, "disableUsageChecking")?,
+            });
+        } else if r.has_tag_name((NS, "compositeRelation")) {
+            composite_rels.push(parse_composite_relation_node(r)?);
+        }
+    }
+    Ok(RelationsXml { relation: rels, composite_relation: composite_rels })
+}
+
+fn parse_composite_relation_node(node: Node) -> Result<CompositeRelationXml, String> {
+    let mut columns = Vec::new();
+    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
+        columns.push(CompositeRelationColumnXml {
+            src: attr_string_required(c, "src")?,
+            name: attr_string_required(c, "name")?,
         });
     }
-    Ok(RelationsXml { relation: rels })
+    Ok(CompositeRelationXml {
+        table: attr_string_required(node, "table")?,
+        r#type: attr_string_required(node, "type")?,
+        disable_usage_checking: attr_bool(node, "disableUsageChecking")?,
+        column: columns,
+    })
 }
 
 fn parse_view_node(node: Node) -> Result<ViewXml, String> {

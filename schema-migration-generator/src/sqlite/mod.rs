@@ -144,11 +144,12 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     write_add_relation(writer, relation)?;
                 }
                 SchemaChange::DropRelation { relation, .. } => {
+                    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
                     writeln!(
                         writer,
-                        "-- SQLite does not support dropping foreign key on '{}.{}'.",
+                        "-- SQLite does not support dropping foreign key on '{}.({})'.",
                         relation.from_table_name(),
-                        relation.from_column_name()
+                        from_columns
                     )?;
                     writeln!(writer, "-- Manually recreate the table without this foreign key.")?;
                     writeln!(writer)?;
@@ -342,6 +343,8 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(),
         RelationType::DoNothing => " on delete restrict",
         RelationType::Enforce => "",
     };
+    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
+    let to_columns = relation.column_pairs().iter().map(|(_, to)| to.as_str()).collect::<Vec<_>>().join(", ");
     writeln!(
         writer,
         "-- SQLite foreign keys must be declared at table creation time."
@@ -349,9 +352,9 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(),
     writeln!(
         writer,
         "-- Ensure foreign key ({}) references {}({}){} is in the create table statement for '{}'.",
-        relation.from_column_name(),
+        from_columns,
         relation.to_table_name(),
-        relation.to_column_name(),
+        to_columns,
         on_delete,
         relation.from_table_name()
     )?;

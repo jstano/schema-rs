@@ -301,10 +301,19 @@ fn reverse_relations(database_model: &mut DatabaseModel) -> Result<(), String> {
             // lives in a non-default schema.
             let qualified_from_table_name = qualify_table_name(table.schema_name(), relation.from_table_name());
 
-            updates.push((
-                parent_table_parts.0,
-                parent_table_parts.1.to_string(),
-                qualified_from_table_name.clone(),
+            let reverse_relation = if relation.is_composite() {
+                Relation::new_composite(
+                    relation.to_table_name(),
+                    qualified_from_table_name.as_str(),
+                    relation
+                        .column_pairs()
+                        .iter()
+                        .map(|(from, to)| (from.as_str(), to.as_str()))
+                        .collect(),
+                    relation.relation_type(),
+                    false,
+                )?
+            } else {
                 Relation::new(
                     relation.to_table_name(),
                     relation.to_column_name(),
@@ -312,7 +321,14 @@ fn reverse_relations(database_model: &mut DatabaseModel) -> Result<(), String> {
                     relation.from_column_name(),
                     relation.relation_type(),
                     false,
-                ),
+                )
+            };
+
+            updates.push((
+                parent_table_parts.0,
+                parent_table_parts.1.to_string(),
+                qualified_from_table_name.clone(),
+                reverse_relation,
             ));
         }
     }

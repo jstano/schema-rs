@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "schema-diagram-generator"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "clap",
  "schema-model",
@@ -1889,7 +1889,7 @@ dependencies = [
 
 [[package]]
 name = "schema-diff"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "schema-model",
  "thiserror 2.0.18",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "schema-installer"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "chrono",
  "clap",
@@ -1919,7 +1919,7 @@ dependencies = [
 
 [[package]]
 name = "schema-migration-generator"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "chrono",
  "clap",
@@ -1932,14 +1932,14 @@ dependencies = [
 
 [[package]]
 name = "schema-model"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "url",
 ]
 
 [[package]]
 name = "schema-parser"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "quick-xml",
  "roxmltree",
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "schema-reverse-engineer"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "clap",
  "schema-model",
@@ -1965,7 +1965,7 @@ dependencies = [
 
 [[package]]
 name = "schema-sql-generator"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "clap",
  "schema-model",
@@ -1974,9 +1974,9 @@ dependencies = [
 
 [[package]]
 name = "schema-xsd"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb989f2b2f7ef9b627a1ba5cc2836b02f616cd21e9c8c7728add080d39dd7908"
+checksum = "dfa388794bd7f21c8c1732012dd9ed5e92c04ef92193f40779f64d4c252ab51a"
 
 [[package]]
 name = "schemars"

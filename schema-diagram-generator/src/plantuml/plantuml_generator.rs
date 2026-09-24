@@ -121,10 +121,15 @@ impl DiagramGenerator for PlantUMLERDiagramGenerator {
                     RelationType::Enforce | RelationType::Cascade => "}o--||",
                     RelationType::SetNull | RelationType::DoNothing => "}o--o|",
                 };
-                let from_col = sanitize_token(relation.from_column_name());
+                let from_cols = relation
+                    .column_pairs()
+                    .iter()
+                    .map(|(from, _)| sanitize_token(from))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 output.push_str(&format!(
                     "{} {} {} : {}\n",
-                    from_table, cardinality, to_table, from_col
+                    from_table, cardinality, to_table, from_cols
                 ));
             }
         }
@@ -234,6 +239,43 @@ mod tests {
         let generator = PlantUMLERDiagramGenerator::new(model);
         let output = generator.generate();
         assert!(output.contains("ORDER }o--|| CUSTOMER : customer_id"));
+    }
+
+    #[test]
+    fn composite_relation_lists_all_from_columns() {
+        let parent_table = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").add_column("tenant_id").build())
+            .build();
+
+        let child_table = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
+            .add_relation(
+                Relation::new_composite(
+                    "parent",
+                    "child",
+                    vec![("parent_id", "id"), ("tenant_id", "tenant_id")],
+                    RelationType::Cascade,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent_table)
+            .add_table(child_table)
+            .build();
+        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+
+        let generator = PlantUMLERDiagramGenerator::new(model);
+        let output = generator.generate();
+
+        assert!(output.contains("CHILD }o--|| PARENT : parent_id, tenant_id"), "{output}");
     }
 
     #[test]

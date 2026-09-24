@@ -1,8 +1,18 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::trigger_generator::TriggerGenerator;
 use crate::sql_println;
+use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::{DatabaseType, ForeignKeyMode, RelationType, TriggerType};
+
+fn old_match_where_clause(relation: &Relation) -> String {
+    relation
+        .column_pairs()
+        .iter()
+        .map(|(from_col, to_col)| format!("{} = OLD.{}", from_col, to_col))
+        .collect::<Vec<_>>()
+        .join(" and ")
+}
 
 pub struct PostgresTriggerGenerator {
     context: GeneratorContext,
@@ -96,15 +106,15 @@ impl PostgresTriggerGenerator {
                 // `to_table_name` - using `to_table_name` here would resolve back to this
                 // same table and generate a trigger that deletes/updates/checks itself.
                 for relation in table.reverse_relations() {
+                    let where_clause = old_match_where_clause(relation);
                     match relation.relation_type() {
                         RelationType::Enforce => {
                             let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
                             sql_println!(
                                 writer,
-                                "   if (select count(*) from {} where {} = OLD.{}) > 0 then",
+                                "   if (select count(*) from {} where {}) > 0 then",
                                 child_table.fully_qualified_table_name(database_type),
-                                relation.from_column_name(),
-                                relation.to_column_name()
+                                where_clause
                             );
                             sql_println!(
                                 writer,
@@ -116,23 +126,27 @@ impl PostgresTriggerGenerator {
                         }
                         RelationType::SetNull => {
                             let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
+                            let set_clause = relation
+                                .column_pairs()
+                                .iter()
+                                .map(|(from_col, _)| format!("{} = null", from_col))
+                                .collect::<Vec<_>>()
+                                .join(", ");
                             sql_println!(
                                 writer,
-                                "   update {} set {} = null where {} = OLD.{};",
+                                "   update {} set {} where {};",
                                 child_table.fully_qualified_table_name(database_type),
-                                relation.from_column_name(),
-                                relation.from_column_name(),
-                                relation.to_column_name()
+                                set_clause,
+                                where_clause
                             );
                         }
                         RelationType::Cascade => {
                             let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
                             sql_println!(
                                 writer,
-                                "   delete from {} where {} = OLD.{};",
+                                "   delete from {} where {};",
                                 child_table.fully_qualified_table_name(database_type),
-                                relation.from_column_name(),
-                                relation.to_column_name()
+                                where_clause
                             );
                         }
                         RelationType::DoNothing => {}
@@ -191,22 +205,35 @@ impl PostgresTriggerGenerator {
                     match relation.relation_type() {
                         RelationType::Enforce | RelationType::SetNull | RelationType::Cascade => {
                             let to_table = self.database_model().find_table_by_qualified_name(relation.to_table_name());
+                            let not_null_clause = relation
+                                .column_pairs()
+                                .iter()
+                                .map(|(from_col, _)| format!("new.{} is not null", from_col))
+                                .collect::<Vec<_>>()
+                                .join(" and ");
+                            let new_match_clause = relation
+                                .column_pairs()
+                                .iter()
+                                .map(|(from_col, to_col)| format!("{} = new.{}", to_col, from_col))
+                                .collect::<Vec<_>>()
+                                .join(" and ");
+                            let column_list = relation
+                                .column_pairs()
+                                .iter()
+                                .map(|(from_col, _)| from_col.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            sql_println!(writer, "   if {} then", not_null_clause);
                             sql_println!(
                                 writer,
-                                "   if new.{} is not null then",
-                                relation.from_column_name()
-                            );
-                            sql_println!(
-                                writer,
-                                "      if (select count(*) from {} where {} = new.{}) = 0 then",
+                                "      if (select count(*) from {} where {}) = 0 then",
                                 to_table.fully_qualified_table_name(database_type),
-                                relation.to_column_name(),
-                                relation.from_column_name()
+                                new_match_clause
                             );
                             sql_println!(
                                 writer,
                                 "         raise exception 'The value of {} was not found in the {} table.';",
-                                relation.from_column_name(),
+                                column_list,
                                 to_table.fully_qualified_table_name(database_type)
                             );
                             sql_println!(writer, "      end if;");
@@ -416,6 +443,103 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("delete from app.child where parent_id = OLD.id;"));
+    }
+
+    fn build_model_with_composite_reverse_relation(relation_type: RelationType) -> DatabaseModel {
+        let mut parent = TableBuilder::new(Some("app"), "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_key(schema_model::builder::KeyBuilder::new(schema_model::model::types::KeyType::Primary).add_column("id").build())
+            .build();
+        parent.add_reverse_relation(
+            Relation::new_composite(
+                "app.parent",
+                "app.child",
+                vec![("child_id", "id"), ("child_tenant_id", "tenant_id")],
+                relation_type,
+                false,
+            )
+            .unwrap(),
+        );
+
+        let child = TableBuilder::new(Some("app"), "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "child_id", ColumnType::Int).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "child_tenant_id", ColumnType::Int).build())
+            .add_relation(
+                Relation::new_composite(
+                    "app.parent",
+                    "child",
+                    vec![("child_id", "id"), ("child_tenant_id", "tenant_id")],
+                    relation_type,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("app"))
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+    }
+
+    #[test]
+    fn output_delete_trigger_enforce_composite_checks_all_column_pairs() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::Postgresql, ForeignKeyMode::Triggers);
+
+        let generator = PostgresTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "if (select count(*) from app.child where child_id = OLD.id and child_tenant_id = OLD.tenant_id) > 0 then"
+        ));
+    }
+
+    #[test]
+    fn output_delete_trigger_setnull_composite_nulls_all_from_columns() {
+        let model = build_model_with_composite_reverse_relation(RelationType::SetNull);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::Postgresql, ForeignKeyMode::Triggers);
+
+        let generator = PostgresTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "update app.child set child_id = null, child_tenant_id = null where child_id = OLD.id and child_tenant_id = OLD.tenant_id;"
+        ));
+    }
+
+    #[test]
+    fn output_delete_trigger_cascade_composite_matches_all_column_pairs() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Cascade);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::Postgresql, ForeignKeyMode::Triggers);
+
+        let generator = PostgresTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "delete from app.child where child_id = OLD.id and child_tenant_id = OLD.tenant_id;"
+        ));
+    }
+
+    #[test]
+    fn output_update_trigger_composite_checks_all_columns_not_null_then_matches_all_pairs() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::Postgresql, ForeignKeyMode::Triggers);
+
+        let generator = PostgresTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains("if new.child_id is not null and new.child_tenant_id is not null then"));
+        assert!(output.contains(
+            "if (select count(*) from app.parent where id = new.child_id and tenant_id = new.child_tenant_id) = 0 then"
+        ));
+        assert!(output.contains("was not found in the app.parent table"));
+        assert!(output.contains("child_id, child_tenant_id"));
     }
 }
 

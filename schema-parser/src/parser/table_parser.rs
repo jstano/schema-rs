@@ -137,23 +137,25 @@ fn parse_indexes(table_xml: &TableXml) -> Vec<Key> {
     indexes
 }
 
+fn parse_relation_type(table_xml: &TableXml, target_table: &str, type_str: &str) -> Result<RelationType, String> {
+    match type_str.to_ascii_lowercase().as_str() {
+        "cascade" => Ok(RelationType::Cascade),
+        "enforce" => Ok(RelationType::Enforce),
+        "setnull" => Ok(RelationType::SetNull),
+        "donothing" => Ok(RelationType::DoNothing),
+        other => Err(format!(
+            "table '{}': relation to '{}' has an unrecognized type '{}' (expected cascade, enforce, setnull, or donothing)",
+            table_xml.name, target_table, other
+        )),
+    }
+}
+
 fn parse_relations(table_xml: &TableXml) -> Result<Vec<Relation>, String> {
     let mut relations = Vec::new();
 
     if let Some(relations_xml) = &table_xml.relations {
         for relation_xml in relations_xml.relation.iter() {
-            let relation_type = match relation_xml.r#type.to_ascii_lowercase().as_str() {
-                "cascade" => RelationType::Cascade,
-                "enforce" => RelationType::Enforce,
-                "setnull" => RelationType::SetNull,
-                "donothing" => RelationType::DoNothing,
-                other => {
-                    return Err(format!(
-                        "table '{}': relation to '{}' has an unrecognized type '{}' (expected cascade, enforce, setnull, or donothing)",
-                        table_xml.name, relation_xml.table, other
-                    ));
-                }
-            };
+            let relation_type = parse_relation_type(table_xml, &relation_xml.table, &relation_xml.r#type)?;
             relations.push(Relation::new(
                 relation_xml.table.clone(),
                 relation_xml.column.clone(),
@@ -162,6 +164,26 @@ fn parse_relations(table_xml: &TableXml) -> Result<Vec<Relation>, String> {
                 relation_type,
                 relation_xml.disable_usage_checking.unwrap_or(false),
             ));
+        }
+
+        for composite_relation_xml in relations_xml.composite_relation.iter() {
+            let relation_type = parse_relation_type(
+                table_xml,
+                &composite_relation_xml.table,
+                &composite_relation_xml.r#type,
+            )?;
+            let column_pairs: Vec<(String, String)> = composite_relation_xml
+                .column
+                .iter()
+                .map(|c| (c.src.clone(), c.name.clone()))
+                .collect();
+            relations.push(Relation::new_composite(
+                composite_relation_xml.table.clone(),
+                table_xml.name.clone(),
+                column_pairs,
+                relation_type,
+                composite_relation_xml.disable_usage_checking.unwrap_or(false),
+            )?);
         }
     }
 

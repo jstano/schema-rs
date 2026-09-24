@@ -36,13 +36,25 @@ impl SqliteRelationGenerator {
                 let constraint_name = self.relation_generator.relation_constraint_name(table, relation_index);
                 let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
                 let operation = self.relation_generator.relation_operation_type(relation.relation_type());
+                let from_columns = relation
+                    .column_pairs()
+                    .iter()
+                    .map(|(from, _)| from.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let to_columns = relation
+                    .column_pairs()
+                    .iter()
+                    .map(|(_, to)| to.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
                 format!(
                     "   constraint {} foreign key ({}) references {}({}) on delete {}",
                     constraint_name,
-                    relation.from_column_name(),
+                    from_columns,
                     to_table.fully_qualified_table_name(database_type),
-                    relation.to_column_name(),
+                    to_columns,
                     operation
                 )
             })
@@ -107,6 +119,41 @@ mod tests {
         assert!(clauses[0].contains("foreign key (parent_id) references parent(id)"));
         assert!(clauses[0].contains("on delete cascade"));
         assert!(!clauses[0].contains("alter table"));
+    }
+
+    #[test]
+    fn inline_foreign_key_constraints_renders_composite_clause_for_relation() {
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_relation(
+                Relation::new_composite(
+                    "parent",
+                    "child",
+                    vec![("parent_id", "id"), ("tenant_id", "tenant_id")],
+                    RelationType::Cascade,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child.clone())
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
+        let generator = SqliteRelationGenerator::new(ctx);
+
+        let clauses = generator.inline_foreign_key_constraints(&child);
+
+        assert_eq!(clauses.len(), 1);
+        assert!(clauses[0].contains("foreign key (parent_id, tenant_id) references parent(id, tenant_id)"));
+        assert!(clauses[0].contains("on delete cascade"));
     }
 
     #[test]

@@ -1,57 +1,73 @@
 if not exists (select 1 from sys.schemas where name = 'test')
    exec('create schema test')
-GO
+go
 
 other top sql for mssql 1
-GO
+go
 
 other top sql for mssql 2
-GO
+go
+
+/* Assignment */
+if object_id('dbo.Assignment', 'U') is not null
+drop table dbo.Assignment
+go
 
 /* ChildTable */
 if object_id('dbo.ChildTable', 'U') is not null
 drop table dbo.ChildTable
-GO
+go
 
 /* ColumnTesterTable */
 if object_id('dbo.ColumnTesterTable', 'U') is not null
 drop table dbo.ColumnTesterTable
-GO
+go
 
 /* KBI */
 if object_id('dbo.KBI', 'U') is not null
 drop table dbo.KBI
-GO
+go
 
 /* LongSequenceTesterTable */
 if object_id('dbo.LongSequenceTesterTable', 'U') is not null
 drop table dbo.LongSequenceTesterTable
-GO
+go
 
 /* ParentTable */
 if object_id('dbo.ParentTable', 'U') is not null
 drop table dbo.ParentTable
-GO
+go
 
 /* Unit */
 if object_id('test.Unit', 'U') is not null
 drop table test.Unit
-GO
+go
 
 /* MasterKBICode */
 if object_id('dbo.MasterKBICode', 'U') is not null
 drop table dbo.MasterKBICode
-GO
+go
 
 /* Property */
 if object_id('dbo.Property', 'U') is not null
 drop table dbo.Property
-GO
+go
 
 /* Region */
 if object_id('dbo.Region', 'U') is not null
 drop table dbo.Region
-GO
+go
+
+create table dbo.Assignment
+(
+   ID integer identity(1,1) not null,
+   PropertyID integer not null,
+   ParentAssignmentID integer,
+   Name nvarchar(50) not null,
+   constraint pk_assignment primary key (ID),
+   constraint ak_assignment1 unique (ID,PropertyID)
+)
+go
 
 create table dbo.ChildTable
 (
@@ -61,7 +77,7 @@ create table dbo.ChildTable
    constraint pk_childtable primary key (ID),
    constraint ak_childtable1 unique (ParentID,Name)
 )
-GO
+go
 
 create table dbo.ColumnTesterTable
 (
@@ -90,10 +106,10 @@ create table dbo.ColumnTesterTable
    constraint ck_columntes_varcharwi_353F3BCB check(varcharWithCheck = 'ABC123'),
    constraint ck_columntes_enum_BF2E7C27 check(enum in ('1','2'))
 )
-GO
+go
 
 alter table dbo.ColumnTesterTable set (lock_escalation = disable)
-GO
+go
 
 create table dbo.KBI
 (
@@ -109,16 +125,16 @@ create table dbo.KBI
    constraint ak_kbi2 unique (PropertyID,Code),
    constraint ck_kbi_showinmod_B47F96FB check(ShowInModule in ('A','B','L'))
 )
-GO
+go
 
 create index ix_kbi1 on dbo.KBI (MasterKBICodeID)
-GO
+go
 
 create table dbo.LongSequenceTesterTable
 (
    longsequence bigint identity(1,1) not null
 )
-GO
+go
 
 create table dbo.MasterKBICode
 (
@@ -131,7 +147,7 @@ create table dbo.MasterKBICode
    constraint pk_masterkbicode primary key (ID),
    constraint ak_masterkbicode1 unique (Code)
 )
-GO
+go
 
 create table dbo.ParentTable
 (
@@ -143,19 +159,19 @@ create table dbo.ParentTable
    constraint ak_parenttable1 unique clustered (Name,Extra),
    constraint ck_parenttab_gender_E250C9FC check(Gender in ('M','F'))
 )
-GO
+go
 
 create index ix_parenttable1 on dbo.ParentTable (Extra, Name) with (data_compression = page)
-GO
+go
 create index ix_parenttable2 on dbo.ParentTable (ID, Name, Extra)
-GO
+go
 
 insert into ParentTable (Name,Extra,Gender) values ('AAA','Extra AAA','M')
-GO
+go
 insert into ParentTable (Name,Extra,Gender) values ('BBB','Extra BBB','F')
-GO
+go
 insert into ParentTable (Name,Extra,Gender) values ('MSSQL','Extra MSSQL','F')
-GO
+go
 
 create table dbo.Property
 (
@@ -172,7 +188,7 @@ create table dbo.Property
    constraint ak_property3 unique (AltCode),
    constraint ck_property_numberroo_90DF89E5 check(NumberRooms >= 0 and NumberRooms <= 20000)
 )
-GO
+go
 
 create table dbo.Region
 (
@@ -185,7 +201,7 @@ create table dbo.Region
    constraint ak_region1 unique (Name),
    constraint ak_region2 unique (Code)
 )
-GO
+go
 
 create table test.Unit
 (
@@ -199,91 +215,95 @@ create table test.Unit
    constraint ak_unit1 unique (PropertyID,Name),
    constraint ak_unit2 unique (PropertyID,SingularName)
 )
-GO
+go
 
 /* relations */
+alter table dbo.Assignment add constraint fk_assignment1 foreign key (PropertyID) references dbo.Property(ID) on delete cascade
+go
+alter table dbo.Assignment add constraint fk_assignment2 foreign key (ParentAssignmentID, PropertyID) references dbo.Assignment(ID, PropertyID) on delete cascade
+go
 alter table dbo.ChildTable add constraint fk_childtable1 foreign key (ParentID) references dbo.ParentTable(ID) on delete cascade
-GO
+go
 alter table dbo.KBI add constraint fk_kbi1 foreign key (PropertyID) references dbo.Property(ID) on delete cascade
-GO
+go
 alter table dbo.KBI add constraint fk_kbi2 foreign key (UnitID) references test.Unit(ID) on delete set null
-GO
+go
 alter table dbo.KBI add constraint fk_kbi3 foreign key (MasterKBICodeID) references dbo.MasterKBICode(ID) on delete set null
-GO
+go
 alter table dbo.Property add constraint fk_property1 foreign key (RegionID) references dbo.Region(ID) on delete set null
-GO
+go
 alter table test.Unit add constraint fk_unit1 foreign key (PropertyID) references dbo.Property(ID) on delete cascade
-GO
+go
 
 /* parenttable_delete */
 if object_id('dbo.parenttable_delete', 'TR') is not null
    drop trigger dbo.parenttable_delete
-GO
+go
 
 create trigger parenttable_delete on dbo.ParentTable for delete as
 if (select count(*) from deleted) > 0
 BEGIN
 delete from mssql
 END
-GO
+go
 
 /* parenttable_update */
 if object_id('dbo.parenttable_update', 'TR') is not null
    drop trigger dbo.parenttable_update
-GO
+go
 
 create trigger parenttable_update on dbo.ParentTable for insert, update as
 if (select count(*) from inserted) > 0
 BEGIN
 update mssql
 END
-GO
+go
 
 if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[customFunction1]') and objectproperty(id, N'IsScalarFunction') = 1)
 drop function dbo.customFunction1
-GO
+go
 custom function sql for mssql 1
-GO
+go
 
 if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[customFunction2]') and objectproperty(id, N'IsScalarFunction') = 1)
 drop function dbo.customFunction2
-GO
+go
 custom function sql for mssql 2
-GO
+go
 
 /* dbo.TestView1 */
 if object_id('dbo.TestView1', 'V') is not null
    drop view dbo.TestView1
-GO
+go
 create view dbo.TestView1 as
    select * from ParentTable
-GO
+go
 
 /* dbo.TestView2 */
 if object_id('dbo.TestView2', 'V') is not null
    drop view dbo.TestView2
-GO
+go
 create view dbo.TestView2 as
    select * from mssql
-GO
+go
 
 /* test.TestView1 */
 if object_id('test.TestView1', 'V') is not null
    drop view test.TestView1
-GO
+go
 create view test.TestView1 as
    select * from ParentTable
-GO
+go
 
 if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[customProcedure1]') and objectproperty(id, N'IsProcedure') = 1)
 drop procedure dbo.customProcedure1
-GO
+go
 custom procedure sql for mssql 1
-GO
+go
 
 other bottom sql for mssql 1
-GO
+go
 
 other bottom sql for mssql 2
-GO
+go
 

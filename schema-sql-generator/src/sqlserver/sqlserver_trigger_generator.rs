@@ -2,8 +2,18 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::sql_string::escape_sql_literal;
 use crate::common::trigger_generator::TriggerGenerator;
 use crate::sql_println;
+use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::{DatabaseType, ForeignKeyMode, RelationType, TriggerType};
+
+fn join_condition(relation: &Relation, left_alias: &str, right_alias: &str) -> String {
+    relation
+        .column_pairs()
+        .iter()
+        .map(|(from_col, to_col)| format!("{}.{} = {}.{}", left_alias, from_col, right_alias, to_col))
+        .collect::<Vec<_>>()
+        .join(" and ")
+}
 
 pub struct SqlServerTriggerGenerator {
     context: GeneratorContext,
@@ -102,55 +112,104 @@ impl SqlServerTriggerGenerator {
                             first_enforce = false;
                         }
                         let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
-                        sql_println!(
-                            writer,
-                            "   if (select count(*) from {} where {} in (select {} from deleted)) > 0",
-                            child_table.fully_qualified_table_name(database_type),
-                            relation.from_column_name(),
-                            relation.to_column_name()
-                        );
-                        sql_println!(writer, "   begin");
-                        sql_println!(
-                            writer,
-                            "      select @msg = 'The {} ' + (select top 1 convert(varchar, {}) from deleted where {} in (select {} from {})) + ' cannot be deleted. It is being used by a row in the {} table.'",
-                            fully_qualified_table,
-                            relation.to_column_name(),
-                            relation.to_column_name(),
-                            relation.from_column_name(),
-                            child_table.fully_qualified_table_name(database_type),
-                            child_table.fully_qualified_table_name(database_type)
-                        );
-                        sql_println!(writer, "      rollback transaction");
-                        sql_println!(writer, "      raiserror (@msg, 16, 1)");
-                        sql_println!(writer, "      return");
-                        sql_println!(writer, "   end;");
+                        if relation.is_composite() {
+                            sql_println!(
+                                writer,
+                                "   if exists (select 1 from {} c inner join deleted d on {})",
+                                child_table.fully_qualified_table_name(database_type),
+                                join_condition(relation, "c", "d")
+                            );
+                            sql_println!(writer, "   begin");
+                            sql_println!(
+                                writer,
+                                "      select @msg = 'The row in {} cannot be deleted. It is being used by a row in the {} table.'",
+                                fully_qualified_table,
+                                child_table.fully_qualified_table_name(database_type)
+                            );
+                            sql_println!(writer, "      rollback transaction");
+                            sql_println!(writer, "      raiserror (@msg, 16, 1)");
+                            sql_println!(writer, "      return");
+                            sql_println!(writer, "   end;");
+                        } else {
+                            sql_println!(
+                                writer,
+                                "   if (select count(*) from {} where {} in (select {} from deleted)) > 0",
+                                child_table.fully_qualified_table_name(database_type),
+                                relation.from_column_name(),
+                                relation.to_column_name()
+                            );
+                            sql_println!(writer, "   begin");
+                            sql_println!(
+                                writer,
+                                "      select @msg = 'The {} ' + (select top 1 convert(varchar, {}) from deleted where {} in (select {} from {})) + ' cannot be deleted. It is being used by a row in the {} table.'",
+                                fully_qualified_table,
+                                relation.to_column_name(),
+                                relation.to_column_name(),
+                                relation.from_column_name(),
+                                child_table.fully_qualified_table_name(database_type),
+                                child_table.fully_qualified_table_name(database_type)
+                            );
+                            sql_println!(writer, "      rollback transaction");
+                            sql_println!(writer, "      raiserror (@msg, 16, 1)");
+                            sql_println!(writer, "      return");
+                            sql_println!(writer, "   end;");
+                        }
                     }
                 }
 
                 for relation in table.reverse_relations() {
                     if matches!(relation.relation_type(), RelationType::SetNull) {
                         let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
-                        sql_println!(
-                            writer,
-                            "   update {} set {} = null where {} in (select {} from deleted);",
-                            child_table.fully_qualified_table_name(database_type),
-                            relation.from_column_name(),
-                            relation.from_column_name(),
-                            relation.to_column_name()
-                        );
+                        if relation.is_composite() {
+                            let set_clause = relation
+                                .column_pairs()
+                                .iter()
+                                .map(|(from_col, _)| format!("{} = null", from_col))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let child = child_table.fully_qualified_table_name(database_type);
+                            sql_println!(
+                                writer,
+                                "   update {} set {} from {} inner join deleted on {};",
+                                child,
+                                set_clause,
+                                child,
+                                join_condition(relation, &child, "deleted")
+                            );
+                        } else {
+                            sql_println!(
+                                writer,
+                                "   update {} set {} = null where {} in (select {} from deleted);",
+                                child_table.fully_qualified_table_name(database_type),
+                                relation.from_column_name(),
+                                relation.from_column_name(),
+                                relation.to_column_name()
+                            );
+                        }
                     }
                 }
 
                 for relation in table.reverse_relations() {
                     if matches!(relation.relation_type(), RelationType::Cascade) {
                         let child_table = self.database_model().find_table_by_qualified_name(relation.from_table_name());
-                        sql_println!(
-                            writer,
-                            "   delete from {} where {} in (select {} from deleted);",
-                            child_table.fully_qualified_table_name(database_type),
-                            relation.from_column_name(),
-                            relation.to_column_name()
-                        );
+                        if relation.is_composite() {
+                            let child = child_table.fully_qualified_table_name(database_type);
+                            sql_println!(
+                                writer,
+                                "   delete {} from {} inner join deleted on {};",
+                                child,
+                                child,
+                                join_condition(relation, &child, "deleted")
+                            );
+                        } else {
+                            sql_println!(
+                                writer,
+                                "   delete from {} where {} in (select {} from deleted);",
+                                child_table.fully_qualified_table_name(database_type),
+                                relation.from_column_name(),
+                                relation.to_column_name()
+                            );
+                        }
                     }
                 }
             }
@@ -192,24 +251,62 @@ impl SqlServerTriggerGenerator {
                     match relation.relation_type() {
                         RelationType::Enforce | RelationType::SetNull | RelationType::Cascade => {
                             let to_table = self.database_model().find_table_by_qualified_name(relation.to_table_name());
-                            sql_println!(
-                                writer,
-                                "   if (select count(*) from inserted where {} is not null and {} not in (select {} from {})) > 0",
-                                relation.from_column_name(),
-                                relation.from_column_name(),
-                                relation.to_column_name(),
-                                to_table.fully_qualified_table_name(database_type)
-                            );
-                            sql_println!(writer, "   begin");
-                            sql_println!(
-                                writer,
-                                "      raiserror ('The value of {} was not found in the {} table.', 16, 1)",
-                                relation.from_column_name(),
-                                to_table.fully_qualified_table_name(database_type)
-                            );
-                            sql_println!(writer, "      rollback transaction");
-                            sql_println!(writer, "      return");
-                            sql_println!(writer, "   end;");
+                            if relation.is_composite() {
+                                let not_null_clause = relation
+                                    .column_pairs()
+                                    .iter()
+                                    .map(|(from_col, _)| format!("i.{} is not null", from_col))
+                                    .collect::<Vec<_>>()
+                                    .join(" and ");
+                                let match_clause = relation
+                                    .column_pairs()
+                                    .iter()
+                                    .map(|(from_col, to_col)| format!("p.{} = i.{}", to_col, from_col))
+                                    .collect::<Vec<_>>()
+                                    .join(" and ");
+                                let column_list = relation
+                                    .column_pairs()
+                                    .iter()
+                                    .map(|(from_col, _)| from_col.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                sql_println!(
+                                    writer,
+                                    "   if exists (select 1 from inserted i where {} and not exists (select 1 from {} p where {}))",
+                                    not_null_clause,
+                                    to_table.fully_qualified_table_name(database_type),
+                                    match_clause
+                                );
+                                sql_println!(writer, "   begin");
+                                sql_println!(
+                                    writer,
+                                    "      raiserror ('The value of {} was not found in the {} table.', 16, 1)",
+                                    column_list,
+                                    to_table.fully_qualified_table_name(database_type)
+                                );
+                                sql_println!(writer, "      rollback transaction");
+                                sql_println!(writer, "      return");
+                                sql_println!(writer, "   end;");
+                            } else {
+                                sql_println!(
+                                    writer,
+                                    "   if (select count(*) from inserted where {} is not null and {} not in (select {} from {})) > 0",
+                                    relation.from_column_name(),
+                                    relation.from_column_name(),
+                                    relation.to_column_name(),
+                                    to_table.fully_qualified_table_name(database_type)
+                                );
+                                sql_println!(writer, "   begin");
+                                sql_println!(
+                                    writer,
+                                    "      raiserror ('The value of {} was not found in the {} table.', 16, 1)",
+                                    relation.from_column_name(),
+                                    to_table.fully_qualified_table_name(database_type)
+                                );
+                                sql_println!(writer, "      rollback transaction");
+                                sql_println!(writer, "      return");
+                                sql_println!(writer, "   end;");
+                            }
                         }
                         RelationType::DoNothing => {}
                     }
@@ -436,5 +533,102 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("delete from app.child where parent_id in (select id from deleted);"));
+    }
+
+    fn build_model_with_composite_reverse_relation(relation_type: RelationType) -> DatabaseModel {
+        let mut parent = TableBuilder::new(Some("app"), "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_key(schema_model::builder::KeyBuilder::new(schema_model::model::types::KeyType::Primary).add_column("id").build())
+            .build();
+        parent.add_reverse_relation(
+            Relation::new_composite(
+                "app.parent",
+                "app.child",
+                vec![("child_id", "id"), ("child_tenant_id", "tenant_id")],
+                relation_type,
+                false,
+            )
+            .unwrap(),
+        );
+
+        let child = TableBuilder::new(Some("app"), "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "child_id", ColumnType::Int).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "child_tenant_id", ColumnType::Int).build())
+            .add_relation(
+                Relation::new_composite(
+                    "app.parent",
+                    "child",
+                    vec![("child_id", "id"), ("child_tenant_id", "tenant_id")],
+                    relation_type,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("app"))
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
+    }
+
+    #[test]
+    fn output_delete_trigger_enforce_composite_uses_a_join_instead_of_in() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "if exists (select 1 from app.child c inner join deleted d on c.child_id = d.id and c.child_tenant_id = d.tenant_id)"
+        ));
+        assert!(output.contains("cannot be deleted. It is being used by a row in the app.child table"));
+    }
+
+    #[test]
+    fn output_delete_trigger_setnull_composite_nulls_all_from_columns() {
+        let model = build_model_with_composite_reverse_relation(RelationType::SetNull);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "update app.child set child_id = null, child_tenant_id = null from app.child inner join deleted on app.child.child_id = deleted.id and app.child.child_tenant_id = deleted.tenant_id;"
+        ));
+    }
+
+    #[test]
+    fn output_delete_trigger_cascade_composite_uses_a_join() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Cascade);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "delete app.child from app.child inner join deleted on app.child.child_id = deleted.id and app.child.child_tenant_id = deleted.tenant_id;"
+        ));
+    }
+
+    #[test]
+    fn output_update_trigger_composite_checks_all_columns_not_null_then_matches_all_pairs() {
+        let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+
+        let generator = SqlServerTriggerGenerator::new(ctx);
+        generator.output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains(
+            "if exists (select 1 from inserted i where i.child_id is not null and i.child_tenant_id is not null and not exists (select 1 from app.parent p where p.id = i.child_id and p.tenant_id = i.child_tenant_id))"
+        ));
+        assert!(output.contains("was not found in the app.parent table"));
+        assert!(output.contains("child_id, child_tenant_id"));
     }
 }

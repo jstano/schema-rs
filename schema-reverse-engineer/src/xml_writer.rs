@@ -214,15 +214,36 @@ fn write_relations(out: &mut String, relations: &[Relation], indent: usize) {
     push_indent(out, indent);
     out.push_str("<relations>\n");
     for relation in relations {
-        push_indent(out, indent + 1);
-        let _ = writeln!(
-            out,
-            "<relation src=\"{}\" table=\"{}\" column=\"{}\" type=\"{}\"/>",
-            xml_escape(relation.from_column_name()),
-            xml_escape(relation.to_table_name()),
-            xml_escape(relation.to_column_name()),
-            relation_type_str(relation.relation_type())
-        );
+        if relation.is_composite() {
+            push_indent(out, indent + 1);
+            let _ = writeln!(
+                out,
+                "<compositeRelation table=\"{}\" type=\"{}\">",
+                xml_escape(relation.to_table_name()),
+                relation_type_str(relation.relation_type())
+            );
+            for (from_column, to_column) in relation.column_pairs() {
+                push_indent(out, indent + 2);
+                let _ = writeln!(
+                    out,
+                    "<column src=\"{}\" name=\"{}\"/>",
+                    xml_escape(from_column),
+                    xml_escape(to_column)
+                );
+            }
+            push_indent(out, indent + 1);
+            out.push_str("</compositeRelation>\n");
+        } else {
+            push_indent(out, indent + 1);
+            let _ = writeln!(
+                out,
+                "<relation src=\"{}\" table=\"{}\" column=\"{}\" type=\"{}\"/>",
+                xml_escape(relation.from_column_name()),
+                xml_escape(relation.to_table_name()),
+                xml_escape(relation.to_column_name()),
+                relation_type_str(relation.relation_type())
+            );
+        }
     }
     push_indent(out, indent);
     out.push_str("</relations>\n");
@@ -445,6 +466,51 @@ mod tests {
 
         let err = write_database_xml(&model).unwrap_err();
         assert!(matches!(err, SchemaReverseEngineerError::PkLessTableHasKeys(name) if name == "t"));
+    }
+
+    #[test]
+    fn writes_and_round_trips_a_composite_relation() {
+        let parent = TableBuilder::new(None::<&str>, "Property")
+            .add_column(ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence).required(true).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("ID").build())
+            .build();
+
+        let child = TableBuilder::new(None::<&str>, "Assignment")
+            .add_column(ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "PropertyID", ColumnType::Int).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "ParentAssignmentID", ColumnType::Int).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("ID").build())
+            .add_relation(
+                Relation::new_composite(
+                    "Assignment",
+                    "Assignment",
+                    vec![("ParentAssignmentID", "ID"), ("PropertyID", "PropertyID")],
+                    RelationType::Cascade,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+
+        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model).unwrap();
+
+        assert!(xml.contains("<compositeRelation table=\"Assignment\" type=\"cascade\">"));
+        assert!(xml.contains("<column src=\"ParentAssignmentID\" name=\"ID\"/>"));
+        assert!(xml.contains("<column src=\"PropertyID\" name=\"PropertyID\"/>"));
+
+        let reparsed = schema_parser::parse_database_xml(&xml).expect("round-tripped composite relation XML must be well-formed");
+        let reparsed_table = reparsed.default_schema().get_table("Assignment");
+        let relation = &reparsed_table.relations()[0];
+        assert!(relation.is_composite());
+        assert_eq!(
+            relation.column_pairs(),
+            &[
+                ("ParentAssignmentID".to_string(), "ID".to_string()),
+                ("PropertyID".to_string(), "PropertyID".to_string()),
+            ]
+        );
     }
 
     #[test]

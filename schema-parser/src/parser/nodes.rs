@@ -180,6 +180,8 @@ pub struct KeyColumnXml {
 pub struct RelationsXml {
     #[serde(rename = "relation")]
     pub relation: Vec<RelationXml>,
+    #[serde(rename = "compositeRelation")]
+    pub composite_relation: Vec<CompositeRelationXml>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -194,6 +196,26 @@ pub struct RelationXml {
     pub r#type: String,
     #[serde(rename = "@disableUsageChecking")]
     pub disable_usage_checking: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CompositeRelationXml {
+    #[serde(rename = "@table")]
+    pub table: String,
+    #[serde(rename = "@type")]
+    pub r#type: String,
+    #[serde(rename = "@disableUsageChecking")]
+    pub disable_usage_checking: Option<bool>,
+    #[serde(rename = "column")]
+    pub column: Vec<CompositeRelationColumnXml>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CompositeRelationColumnXml {
+    #[serde(rename = "@src")]
+    pub src: String,
+    #[serde(rename = "@name")]
+    pub name: String,
 }
 
 // Minimal stubs to satisfy the top-level shapes; not converted yet

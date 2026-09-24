@@ -241,6 +241,63 @@ fn no_relation_change_when_type_matches() {
 }
 
 #[test]
+fn no_composite_relation_change_when_column_pairs_match() {
+    let make = || {
+        SchemaBuilder::new(Some("s"))
+            .add_table(
+                TableBuilder::new(Some("s"), "assignment")
+                    .add_column(ColumnBuilder::new(Some("s"), "parent_id", ColumnType::Int).build())
+                    .add_column(ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build())
+                    .add_relation(
+                        Relation::new_composite(
+                            "assignment",
+                            "assignment",
+                            vec![("parent_id", "id"), ("property_id", "property_id")],
+                            RelationType::Cascade,
+                            false,
+                        )
+                        .unwrap(),
+                    )
+                    .build(),
+            )
+            .build()
+    };
+
+    let cs = SchemaDiffEngine::diff(&make(), &make());
+    assert!(cs.is_empty());
+}
+
+#[test]
+fn detects_composite_relation_column_order_change() {
+    let make = |pairs: Vec<(&str, &str)>| {
+        SchemaBuilder::new(Some("s"))
+            .add_table(
+                TableBuilder::new(Some("s"), "assignment")
+                    .add_column(ColumnBuilder::new(Some("s"), "parent_id", ColumnType::Int).build())
+                    .add_column(ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build())
+                    .add_relation(
+                        Relation::new_composite(
+                            "assignment",
+                            "assignment",
+                            pairs,
+                            RelationType::Cascade,
+                            false,
+                        )
+                        .unwrap(),
+                    )
+                    .build(),
+            )
+            .build()
+    };
+    let old = make(vec![("parent_id", "id"), ("property_id", "property_id")]);
+    let new = make(vec![("property_id", "property_id"), ("parent_id", "id")]);
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropRelation { .. })));
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddRelation { .. })));
+}
+
+#[test]
 fn detects_key_uniqueness_change() {
     let make = |unique: bool| {
         SchemaBuilder::new(Some("s"))

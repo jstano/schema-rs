@@ -215,6 +215,31 @@
     </keys>
   </table>
 
+  <table name="Assignment">
+    <columns>
+      <column name="ID" type="sequence" required="true"/>
+      <column name="PropertyID" type="int" required="true"/>
+      <column name="ParentAssignmentID" type="int"/>
+      <column name="Name" type="varchar" length="50" required="true"/>
+    </columns>
+    <keys>
+      <primary>
+        <column name="ID"/>
+      </primary>
+      <unique>
+        <column name="ID"/>
+        <column name="PropertyID"/>
+      </unique>
+    </keys>
+    <relations>
+      <relation src="PropertyID" table="Property" column="ID" type="cascade"/>
+      <compositeRelation table="Assignment" type="cascade">
+        <column src="ParentAssignmentID" name="ID"/>
+        <column src="PropertyID" name="PropertyID"/>
+      </compositeRelation>
+    </relations>
+  </table>
+
   <function name="TestFunction1">
     <sql databaseType="postgresql">sql-function-1</sql>
   </function>

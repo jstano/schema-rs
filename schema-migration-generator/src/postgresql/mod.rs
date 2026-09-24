@@ -507,6 +507,8 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
         RelationType::DoNothing => " on delete restrict",
         RelationType::Enforce => "",
     };
+    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
+    let to_columns = relation.column_pairs().iter().map(|(_, to)| to.as_str()).collect::<Vec<_>>().join(", ");
     write_guarded_add_constraint(
         writer,
         relation.from_table_name(),
@@ -515,9 +517,9 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
             "alter table {} add constraint {} foreign key ({}) references {}({}){};",
             relation.from_table_name(),
             fk_name,
-            relation.from_column_name(),
+            from_columns,
             relation.to_table_name(),
-            relation.to_column_name(),
+            to_columns,
             on_delete
         ),
     )?;

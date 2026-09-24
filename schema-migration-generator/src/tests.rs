@@ -714,6 +714,31 @@ fn postgresql_add_relation_is_guarded_by_pg_constraint_check() {
 }
 
 #[test]
+fn postgresql_add_composite_relation_lists_all_column_pairs() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new_composite(
+            "customers",
+            "orders",
+            vec![("customer_id", "id"), ("region_id", "region_id")],
+            RelationType::Cascade,
+            false,
+        )
+        .unwrap(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("foreign key (customer_id, region_id) references customers(id, region_id)"),
+        "got: {}", sql
+    );
+}
+
+#[test]
 fn postgresql_rename_column_is_guarded_by_information_schema_check() {
     let mut cs = ChangeSet::new();
     cs.add_change(SchemaChange::RenameColumn {
@@ -880,6 +905,31 @@ fn sqlserver_add_relation_is_guarded_by_sys_foreign_keys_check() {
 }
 
 #[test]
+fn sqlserver_add_composite_relation_lists_all_column_pairs() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new_composite(
+            "customers",
+            "orders",
+            vec![("customer_id", "id"), ("region_id", "region_id")],
+            RelationType::Cascade,
+            false,
+        )
+        .unwrap(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("foreign key (customer_id, region_id) references customers(id, region_id)"),
+        "got: {}", sql
+    );
+}
+
+#[test]
 fn sqlserver_drop_relation_is_guarded_by_sys_foreign_keys_check() {
     let mut cs = ChangeSet::new();
     cs.add_change(SchemaChange::DropRelation {
@@ -953,6 +1003,31 @@ fn sqlite_add_key_and_relation_and_constraint_changes_are_already_safe_or_docume
     assert!(sql.contains("create index if not exists"), "got: {}", sql);
     assert!(sql.contains("-- SQLite does not support adding constraint"), "got: {}", sql);
     assert!(sql.contains("-- SQLite foreign keys must be declared at table creation time."), "got: {}", sql);
+}
+
+#[test]
+fn sqlite_add_composite_relation_comment_lists_all_column_pairs() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddRelation {
+        relation: Relation::new_composite(
+            "customers",
+            "orders",
+            vec![("customer_id", "id"), ("region_id", "region_id")],
+            RelationType::Cascade,
+            false,
+        )
+        .unwrap(),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(
+        sql.contains("Ensure foreign key (customer_id, region_id) references customers(id, region_id)"),
+        "got: {}", sql
+    );
 }
 
 fn old_and_new_date_range_enum() -> (EnumType, EnumType) {

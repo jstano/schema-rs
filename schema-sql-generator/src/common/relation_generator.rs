@@ -51,15 +51,28 @@ impl DefaultRelationGenerator {
         let database_type = self.context.settings().database_type();
         let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
 
+        let from_columns = relation
+            .column_pairs()
+            .iter()
+            .map(|(from, _)| from.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let to_columns = relation
+            .column_pairs()
+            .iter()
+            .map(|(_, to)| to.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+
         writer.print(format!("alter table {}", table.fully_qualified_table_name(database_type)).as_str());
         writer.print(" add constraint ");
         writer.print(relation_name);
         writer.print(" foreign key (");
-        writer.print(relation.from_column_name());
+        writer.print(from_columns.as_str());
         writer.print(") references ");
         writer.print(to_table.fully_qualified_table_name(database_type).as_str());
         writer.print("(");
-        writer.print(relation.to_column_name());
+        writer.print(to_columns.as_str());
         writer.print(") on delete ");
         writer.print(operation);
         writer.println(self.context().settings().statement_separator());
@@ -152,6 +165,43 @@ mod tests {
         // nvarchar), not a byte budget, so compare char count, not `str::len()` (bytes)
         // - which would always be inflated for multi-byte UTF-8 like "语".
         assert!(name.chars().count() <= 32);
+    }
+
+    #[test]
+    fn output_relations_renders_composite_foreign_key_constraint() {
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_relation(
+                Relation::new_composite(
+                    "parent",
+                    "child",
+                    vec![("parent_id", "id"), ("tenant_id", "tenant_id")],
+                    RelationType::Cascade,
+                    false,
+                )
+                .unwrap(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = DefaultRelationGenerator::new(ctx);
+        generator.output_relations();
+
+        let output = buffer.contents();
+        assert!(
+            output.contains("foreign key (parent_id, tenant_id) references public.parent(id, tenant_id)"),
+            "unexpected output: {output}"
+        );
     }
 
     #[test]

@@ -1,3 +1,5 @@
+drop table if exists Assignment;
+/* Assignment */
 drop table if exists ChildTable;
 /* ChildTable */
 drop table if exists ColumnTesterTable;
@@ -16,6 +18,17 @@ drop table if exists Property;
 /* Property */
 drop table if exists Region;
 /* Region */
+create table Assignment
+(
+   ID integer primary key autoincrement,
+   PropertyID integer not null,
+   ParentAssignmentID integer,
+   Name varchar(50) not null,
+   constraint ak_assignment1 unique (ID,PropertyID),
+   constraint fk_assignment1 foreign key (PropertyID) references Property(ID) on delete cascade,
+   constraint fk_assignment2 foreign key (ParentAssignmentID, PropertyID) references Assignment(ID, PropertyID) on delete cascade
+);
+
 create table ChildTable
 (
    ID integer primary key autoincrement,

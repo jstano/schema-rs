@@ -316,10 +316,16 @@ fn relation_exists_in(rel: &Relation, relations: &[Relation]) -> bool {
 
 fn relations_equal(a: &Relation, b: &Relation) -> bool {
     a.from_table_name().eq_ignore_ascii_case(b.from_table_name())
-        && a.from_column_name().eq_ignore_ascii_case(b.from_column_name())
         && a.to_table_name().eq_ignore_ascii_case(b.to_table_name())
-        && a.to_column_name().eq_ignore_ascii_case(b.to_column_name())
         && a.relation_type() == b.relation_type()
+        && column_pairs_equal(a.column_pairs(), b.column_pairs())
+}
+
+fn column_pairs_equal(a: &[(String, String)], b: &[(String, String)]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b.iter()).all(|((af, at), (bf, bt))| {
+            af.eq_ignore_ascii_case(bf) && at.eq_ignore_ascii_case(bt)
+        })
 }
 
 fn diff_drop_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
