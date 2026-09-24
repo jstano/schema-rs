@@ -828,6 +828,55 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
         .expect("info should succeed and list both the applied and pending migration");
 }
 
+#[tokio::test]
+async fn test_sqlite_info_succeeds_with_out_of_order_pending_migration() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_info_out_of_order.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    // V2 applies first, as if V1 didn't exist yet at the time.
+    let migration_two = Migration {
+        version: "2".to_string(),
+        description: "add widget color".to_string(),
+        script_path: "V2__add_widget_color.sql".to_string(),
+        sql: "create table widgets (id integer primary key, color text);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_two.clone()],
+    });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("V2 should apply cleanly on its own");
+
+    // V1 shows up afterward, unapplied, and a normal V3 is also pending. `info` must
+    // list both without erroring - unlike `migrate`/`validate`, it never rejects the
+    // out-of-order migration, it should just label it "Ignored" rather than "Pending"
+    // (see Migrator::info) since `migrate` would refuse to apply it.
+    let migration_one = Migration {
+        version: "1".to_string(),
+        description: "create widgets base".to_string(),
+        script_path: "V1__create_widgets_base.sql".to_string(),
+        sql: "select 1;".to_string(),
+    };
+    let migration_three = Migration {
+        version: "3".to_string(),
+        description: "add widget size".to_string(),
+        script_path: "V3__add_widget_size.sql".to_string(),
+        sql: "alter table widgets add column size text;".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one, migration_two, migration_three],
+    });
+    Migrator::info(&config, source)
+        .await
+        .expect("info should succeed and list the out-of-order migration alongside the others");
+}
+
 fn simple_schema_file() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/simple-test-schema.xml")
 }

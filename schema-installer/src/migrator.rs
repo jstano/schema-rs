@@ -254,6 +254,16 @@ impl Migrator {
 
         all_versions.sort_by(|a, b| compare_versions(a, b));
 
+        // Same condition `migrate` rejects with `OutOfOrderMigration` and `validate` reports
+        // as an issue: a source migration older than the highest successfully-applied one
+        // that was never applied. `info` can't apply it either, so it's mislabeled as
+        // ordinary "Pending" otherwise - matching Flyway's own "Ignored" state in `info`.
+        let highest_applied = applied
+            .iter()
+            .filter(|m| m.status == "success")
+            .map(|m| m.version.clone())
+            .max_by(|a, b| compare_versions(a, b));
+
         for version in all_versions {
             if let Some(applied_mig) = applied.iter().find(|m| m.version == version) {
                 println!(
@@ -265,13 +275,17 @@ impl Migrator {
                     applied_mig.execution_time_ms
                 );
             } else if let Some(source_mig) = source_migrations.iter().find(|m| m.version == version) {
+                let status = match &highest_applied {
+                    Some(highest)
+                        if compare_versions(&version, highest) == std::cmp::Ordering::Less =>
+                    {
+                        "Ignored"
+                    }
+                    _ => "Pending",
+                };
                 println!(
                     "{:<10} {:<30} {:<10} {:<30} {:<15}",
-                    version,
-                    source_mig.description,
-                    "Pending",
-                    "-",
-                    "-"
+                    version, source_mig.description, status, "-", "-"
                 );
             }
         }
