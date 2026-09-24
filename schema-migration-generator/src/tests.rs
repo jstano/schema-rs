@@ -535,8 +535,8 @@ fn dropping_a_unique_key_uses_the_create_paths_positional_ak_name() {
 
     let expected_name = unique_key_name(DatabaseType::Postgresql, "users", 2);
     assert!(
-        sql.contains(&format!("drop index if exists {}", expected_name)),
-        "expected drop index if exists {} in:\n{}", expected_name, sql
+        sql.contains(&format!("drop constraint if exists {}", expected_name)),
+        "expected drop constraint if exists {} in:\n{}", expected_name, sql
     );
 }
 
@@ -634,7 +634,7 @@ fn postgresql_add_primary_key_is_guarded_by_pg_constraint_check() {
 }
 
 #[test]
-fn postgresql_add_unique_key_uses_if_not_exists() {
+fn postgresql_add_unique_key_is_guarded_by_pg_constraint_check() {
     let mut cs = ChangeSet::new();
     cs.add_change(SchemaChange::AddKey {
         table_name: "users".to_string(),
@@ -646,7 +646,9 @@ fn postgresql_add_unique_key_uses_if_not_exists() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("create unique index if not exists"), "got: {}", sql);
+    assert!(sql.contains("do $$"), "expected a guarded DO block, got: {}", sql);
+    assert!(sql.contains("from pg_constraint where conname ="), "expected a pg_constraint existence check, got: {}", sql);
+    assert!(sql.contains("add constraint ak_users1 unique (email)"), "got: {}", sql);
 }
 
 #[test]
@@ -823,7 +825,7 @@ fn sqlserver_add_primary_key_is_guarded_by_sys_key_constraints_check() {
 }
 
 #[test]
-fn sqlserver_add_unique_key_is_guarded_by_sys_indexes_check() {
+fn sqlserver_add_unique_key_is_guarded_by_sys_key_constraints_check() {
     let mut cs = ChangeSet::new();
     cs.add_change(SchemaChange::AddKey {
         table_name: "users".to_string(),
@@ -835,7 +837,8 @@ fn sqlserver_add_unique_key_is_guarded_by_sys_indexes_check() {
     let mut output = Vec::new();
     generator.generate(&cs, &default_model(), &mut output).unwrap();
     let sql = String::from_utf8(output).unwrap();
-    assert!(sql.contains("not exists (select 1 from sys.indexes where name ="), "got: {}", sql);
+    assert!(sql.contains("from sys.key_constraints where name = 'ak_users1'"), "got: {}", sql);
+    assert!(sql.contains("add constraint ak_users1 unique (email)"), "got: {}", sql);
 }
 
 #[test]
@@ -853,6 +856,23 @@ fn sqlserver_drop_primary_key_is_guarded_by_sys_key_constraints_check() {
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("exists (select 1 from sys.key_constraints where name = 'pk_orders'"), "got: {}", sql);
     assert!(sql.contains("drop constraint pk_orders"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_drop_unique_key_is_guarded_by_sys_key_constraints_check() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropKey {
+        table_name: "users".to_string(),
+        key: Key::new(KeyType::Unique, vec![KeyColumn::new("email")]),
+        ordinal: 1,
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("exists (select 1 from sys.key_constraints where name = 'ak_users1'"), "got: {}", sql);
+    assert!(sql.contains("drop constraint ak_users1"), "got: {}", sql);
 }
 
 #[test]

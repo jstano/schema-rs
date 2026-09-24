@@ -393,8 +393,11 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
             let constraint_name = unique_key_name(DatabaseType::SqlServer, table_name, ordinal);
             write_guarded(
                 writer,
-                &format!("not exists (select 1 from sys.indexes where name = '{}')", constraint_name),
-                &format!("create unique index {} on {} ({});", constraint_name, table_name, cols),
+                &format!(
+                    "not exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
+                    constraint_name, table_name
+                ),
+                &format!("alter table {} add constraint {} unique ({});", table_name, constraint_name, cols),
             )?;
         }
         KeyType::Index => {
@@ -428,8 +431,8 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
             let constraint_name = unique_key_name(DatabaseType::SqlServer, table_name, ordinal);
             writeln!(
                 writer,
-                "if exists (select 1 from sys.indexes where name = '{}') drop index {} on {};",
-                constraint_name, constraint_name, table_name
+                "if exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}')) alter table {} drop constraint {};",
+                constraint_name, table_name, table_name, constraint_name
             )?;
             writeln!(writer, "go")?;
             writeln!(writer)?;

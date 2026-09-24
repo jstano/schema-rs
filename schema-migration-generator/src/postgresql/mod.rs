@@ -456,12 +456,12 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::Postgresql, table_name, ordinal);
-            writeln!(
+            write_guarded_add_constraint(
                 writer,
-                "create unique index if not exists {} on {} ({});",
-                constraint_name, table_name, cols
+                table_name,
+                &constraint_name,
+                &format!("alter table {} add constraint {} unique ({});", table_name, constraint_name, cols),
             )?;
-            writeln!(writer)?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Postgresql, table_name, ordinal);
@@ -490,7 +490,11 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::Postgresql, table_name, ordinal);
-            writeln!(writer, "drop index if exists {};", constraint_name)?;
+            writeln!(
+                writer,
+                "alter table {} drop constraint if exists {};",
+                table_name, constraint_name
+            )?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Postgresql, table_name, ordinal);
