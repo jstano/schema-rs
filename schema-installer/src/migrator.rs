@@ -1,5 +1,7 @@
 use schema_sql_generator::common::generator_type::GeneratorType;
 use std::collections::HashSet;
+use std::fmt::Write as _;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::config::SchemaInstallerConfig;
@@ -106,11 +108,122 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
+        Self::migrate_to_target(config, source, None).await
+    }
+
+    /// Like `migrate`, but when `target` is given, only applies migrations with a
+    /// version <= `target` even if later ones exist in `source` - Flyway's `-target`.
+    /// Lets a rollout intentionally stop at a known-good version instead of always
+    /// applying everything pending.
+    pub async fn migrate_to_target(
+        config: &SchemaInstallerConfig,
+        source: Box<dyn MigrationSource>,
+        target: Option<&str>,
+    ) -> Result<(), SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
 
         pool.ensure_migration_table(&config.database_type)
             .await?;
 
+        let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
+
+        if migrations.is_empty() {
+            println!("No pending migrations to apply");
+            return Ok(());
+        }
+
+        let tool_version = env!("CARGO_PKG_VERSION");
+
+        for migration in migrations {
+            let checksum = compute_checksum(&migration.sql);
+            let migration_id = match wait_for_slot(&pool, &migration, &checksum, tool_version).await? {
+                Slot::Owned(id) => id,
+                Slot::AlreadyApplied => {
+                    println!(
+                        "Migration {} - {} was already applied by another process; skipping",
+                        migration.version, migration.description
+                    );
+                    continue;
+                }
+            };
+
+            let start = Instant::now();
+            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql).await {
+                Ok(_) => {
+                    println!(
+                        "Applied migration: {} - {}",
+                        migration.version, migration.description
+                    );
+                }
+                Err(e) => {
+                    let elapsed_ms = start.elapsed().as_millis() as i64;
+                    pool.update_migration_status(migration_id, "failed", elapsed_ms)
+                        .await?;
+                    return Err(SchemaInstallerError::MigrationFailed {
+                        version: migration.version,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Like `migrate_to_target`, but instead of executing anything, writes the SQL of
+    /// every migration that *would* be applied - in order, unexecuted - to
+    /// `output_path` (Flyway's `-dryRun`). Nothing is recorded in `schema_migration`
+    /// and no statement is ever sent to the database's execution path, so this is safe
+    /// to run against a production connection for review before a real `migrate`.
+    pub async fn dry_run(
+        config: &SchemaInstallerConfig,
+        source: Box<dyn MigrationSource>,
+        target: Option<&str>,
+        output_path: &Path,
+    ) -> Result<(), SchemaInstallerError> {
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+
+        pool.ensure_migration_table(&config.database_type)
+            .await?;
+
+        let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
+
+        let mut output = String::new();
+        if migrations.is_empty() {
+            writeln!(output, "-- No pending migrations.").ok();
+        } else {
+            for migration in &migrations {
+                writeln!(
+                    output,
+                    "-- Migration {} - {} ({})",
+                    migration.version, migration.description, migration.script_path
+                )
+                .ok();
+                output.push_str(migration.sql.trim_end());
+                output.push_str("\n\n");
+            }
+        }
+
+        std::fs::write(output_path, output).map_err(SchemaInstallerError::Io)?;
+
+        println!(
+            "Wrote dry-run SQL for {} pending migration(s) to {}",
+            migrations.len(),
+            output_path.display()
+        );
+
+        Ok(())
+    }
+
+    /// Shared by `migrate_to_target` and `dry_run`: resolves the set of migrations that
+    /// would be applied by a real `migrate` run - already-applied migrations filtered
+    /// out, checksums validated against tracked history, `target` applied, and the
+    /// out-of-order check enforced - without executing any of them.
+    async fn resolve_pending_migrations(
+        pool: &AnyPool,
+        source: Box<dyn MigrationSource>,
+        target: Option<&str>,
+    ) -> Result<Vec<Migration>, SchemaInstallerError> {
         let applied = pool.get_applied_migrations().await?;
         let applied_versions: HashSet<String> = applied
             .iter()
@@ -163,9 +276,12 @@ impl Migrator {
         let mut migrations = source_migrations;
         migrations.retain(|m| !applied_versions.contains(&m.version));
 
+        if let Some(target) = target {
+            migrations.retain(|m| compare_versions(&m.version, target) != std::cmp::Ordering::Greater);
+        }
+
         if migrations.is_empty() {
-            println!("No pending migrations to apply");
-            return Ok(());
+            return Ok(migrations);
         }
 
         // Refuse to apply a migration older than the highest version already applied,
@@ -185,42 +301,7 @@ impl Migrator {
             });
         }
 
-        let tool_version = env!("CARGO_PKG_VERSION");
-
-        for migration in migrations {
-            let checksum = compute_checksum(&migration.sql);
-            let migration_id = match wait_for_slot(&pool, &migration, &checksum, tool_version).await? {
-                Slot::Owned(id) => id,
-                Slot::AlreadyApplied => {
-                    println!(
-                        "Migration {} - {} was already applied by another process; skipping",
-                        migration.version, migration.description
-                    );
-                    continue;
-                }
-            };
-
-            let start = Instant::now();
-            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql).await {
-                Ok(_) => {
-                    println!(
-                        "Applied migration: {} - {}",
-                        migration.version, migration.description
-                    );
-                }
-                Err(e) => {
-                    let elapsed_ms = start.elapsed().as_millis() as i64;
-                    pool.update_migration_status(migration_id, "failed", elapsed_ms)
-                        .await?;
-                    return Err(SchemaInstallerError::MigrationFailed {
-                        version: migration.version,
-                        error: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
+        Ok(migrations)
     }
 
     pub async fn info(

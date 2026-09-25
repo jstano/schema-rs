@@ -1,7 +1,7 @@
 use schema_installer::connection::AnyPool;
 use schema_installer::{
-    DirectoryMigrationSource, EmbeddedMigrationSource, Migration, Migrator, SchemaInstaller,
-    SchemaInstallerConfigBuilder, SchemaInstallerError,
+    Baseline, DirectoryMigrationSource, EmbeddedMigrationSource, Migration, Migrator,
+    SchemaInstaller, SchemaInstallerConfigBuilder, SchemaInstallerError,
 };
 use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::Row;
@@ -1036,4 +1036,330 @@ async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gon
         result.is_err(),
         "update_migration_status should error when its tracking row no longer exists"
     );
+}
+
+#[tokio::test]
+async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
+    // A fresh `install` generates the whole schema from XML in one shot, so the
+    // resulting database already reflects everything through some migration version
+    // even though `migrate` has never run. `--baseline-version` should record that,
+    // so a later `migrate` skips replaying already-present SQL and only applies
+    // migrations past the baseline (L20).
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_baseline.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    let migrations = vec![
+        Migration {
+            version: "1".to_string(),
+            description: "create widgets".to_string(),
+            script_path: "V1__create_widgets.sql".to_string(),
+            sql: "create table widgets (id integer primary key);".to_string(),
+        },
+        Migration {
+            version: "2".to_string(),
+            description: "create gadgets".to_string(),
+            script_path: "V2__create_gadgets.sql".to_string(),
+            sql: "create table gadgets (id integer primary key);".to_string(),
+        },
+    ];
+    let source = EmbeddedMigrationSource { migrations: migrations.clone() };
+
+    SchemaInstaller::install_with_baseline(&config, Some(Baseline { version: "1", source: &source }))
+        .await
+        .expect("install with baseline should succeed");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify baseline rows");
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT version, status FROM schema_migration ORDER BY version",
+    )
+    .fetch_all(&check_pool)
+    .await
+    .expect("query schema_migration");
+    assert_eq!(
+        rows,
+        vec![
+            ("0".to_string(), "success".to_string()),
+            ("1".to_string(), "success".to_string()),
+        ],
+        "install should record its own V0 row plus every baselined migration, but not V2 (past the baseline)"
+    );
+
+    // `widgets` was never actually created (only baselined), but `migrate` must not
+    // try to create it - it was already covered by the schema `install` generated.
+    let source = Box::new(EmbeddedMigrationSource { migrations });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("migrate should only apply V2, the migration past the baseline");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'gadgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 1, "migrate should have applied V2 (gadgets), the migration past the baseline");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    let count: i64 = row.get("count");
+    assert_eq!(count, 0, "migrate must not replay V1 (widgets) - it was baselined, not applied");
+}
+
+#[tokio::test]
+async fn test_sqlite_install_with_baseline_rejects_reserved_version() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_baseline_reserved.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    let source = EmbeddedMigrationSource { migrations: vec![] };
+    let result = SchemaInstaller::install_with_baseline(&config, Some(Baseline { version: "0", source: &source })).await;
+
+    assert!(
+        matches!(result, Err(SchemaInstallerError::InvalidConfiguration(_))),
+        "baseline version '0' is reserved for install's own tracking row and must be rejected"
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_migrate_target.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migrations = vec![
+        Migration {
+            version: "1".to_string(),
+            description: "create widgets".to_string(),
+            script_path: "V1__create_widgets.sql".to_string(),
+            sql: "create table widgets (id integer primary key);".to_string(),
+        },
+        Migration {
+            version: "2".to_string(),
+            description: "create gadgets".to_string(),
+            script_path: "V2__create_gadgets.sql".to_string(),
+            sql: "create table gadgets (id integer primary key);".to_string(),
+        },
+    ];
+    let source = Box::new(EmbeddedMigrationSource { migrations: migrations.clone() });
+
+    Migrator::migrate_to_target(&config, source, Some("1"))
+        .await
+        .expect("migrate_to_target should succeed");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify target was respected");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 1, "V1 (widgets) is at the target and should be applied");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'gadgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 0, "V2 (gadgets) is past the target and must not be applied");
+
+    // Running migrate without a target afterward should pick up exactly the migration
+    // the target held back, not re-attempt V1.
+    let source = Box::new(EmbeddedMigrationSource { migrations });
+    Migrator::migrate(&config, source)
+        .await
+        .expect("a later unrestricted migrate should apply the remaining migration");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'gadgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 1, "V2 (gadgets) should now be applied with no target restricting it");
+}
+
+#[tokio::test]
+async fn test_sqlite_migrate_to_target_below_all_pending_is_a_noop() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_migrate_target_noop.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migration = Migration {
+        version: "5".to_string(),
+        description: "create widgets".to_string(),
+        script_path: "V5__create_widgets.sql".to_string(),
+        sql: "create table widgets (id integer primary key);".to_string(),
+    };
+    let source = Box::new(EmbeddedMigrationSource { migrations: vec![migration] });
+
+    Migrator::migrate_to_target(&config, source, Some("1"))
+        .await
+        .expect("migrate_to_target with no migrations at or below the target should be a no-op, not an error");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify nothing was applied");
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 0, "V5 is past the target and must not be applied");
+}
+
+#[tokio::test]
+async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_dry_run.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migrations = vec![
+        Migration {
+            version: "1".to_string(),
+            description: "create widgets".to_string(),
+            script_path: "V1__create_widgets.sql".to_string(),
+            sql: "create table widgets (id integer primary key);".to_string(),
+        },
+        Migration {
+            version: "2".to_string(),
+            description: "create gadgets".to_string(),
+            script_path: "V2__create_gadgets.sql".to_string(),
+            sql: "create table gadgets (id integer primary key);".to_string(),
+        },
+    ];
+    let source = Box::new(EmbeddedMigrationSource { migrations: migrations.clone() });
+    let output_path = temp_dir.path().join("dry-run.sql");
+
+    Migrator::dry_run(&config, source, None, &output_path)
+        .await
+        .expect("dry_run should succeed");
+
+    let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
+    assert!(contents.contains("create table widgets"), "dry-run output should contain V1's SQL");
+    assert!(contents.contains("create table gadgets"), "dry-run output should contain V2's SQL");
+    assert!(contents.contains("V1"), "dry-run output should identify each migration by version");
+    assert!(contents.contains("V2"), "dry-run output should identify each migration by version");
+
+    // Nothing should actually have been applied or recorded.
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify nothing was applied");
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name IN ('widgets', 'gadgets')",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 0, "dry_run must not create any table");
+
+    let source = Box::new(EmbeddedMigrationSource { migrations });
+    assert!(
+        Migrator::has_pending_migrations(&config, source)
+            .await
+            .expect("has_pending_migrations should succeed"),
+        "dry_run must not record migrations as applied - both should still be pending"
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_dry_run_respects_target() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_dry_run_target.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    let migrations = vec![
+        Migration {
+            version: "1".to_string(),
+            description: "create widgets".to_string(),
+            script_path: "V1__create_widgets.sql".to_string(),
+            sql: "create table widgets (id integer primary key);".to_string(),
+        },
+        Migration {
+            version: "2".to_string(),
+            description: "create gadgets".to_string(),
+            script_path: "V2__create_gadgets.sql".to_string(),
+            sql: "create table gadgets (id integer primary key);".to_string(),
+        },
+    ];
+    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let output_path = temp_dir.path().join("dry-run-target.sql");
+
+    Migrator::dry_run(&config, source, Some("1"), &output_path)
+        .await
+        .expect("dry_run should succeed");
+
+    let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
+    assert!(contents.contains("create table widgets"), "V1 is at the target and should be included");
+    assert!(!contents.contains("create table gadgets"), "V2 is past the target and must be excluded");
+}
+
+#[tokio::test]
+async fn test_sqlite_dry_run_with_nothing_pending_writes_empty_notice() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_dry_run_empty.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string)
+        .build()
+        .expect("valid config");
+
+    let source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let output_path = temp_dir.path().join("dry-run-empty.sql");
+
+    Migrator::dry_run(&config, source, None, &output_path)
+        .await
+        .expect("dry_run with no migrations should succeed, not error");
+
+    let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
+    assert!(contents.contains("No pending migrations"));
 }

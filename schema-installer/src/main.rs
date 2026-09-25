@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use schema_installer::{DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder};
+use schema_installer::{Baseline, DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder};
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_sql_generator::common::generator_type::GeneratorType;
 use std::path::PathBuf;
@@ -30,6 +30,10 @@ enum Commands {
     Migrate {
         #[arg(long, help = "Path to migrations directory")]
         migrations_dir: PathBuf,
+        #[arg(long, help = "Only apply migrations up to and including this version")]
+        target: Option<String>,
+        #[arg(long, help = "Don't apply anything; write the pending migrations' SQL to this file instead")]
+        dry_run: Option<PathBuf>,
     },
     /// Show migration status
     Info {
@@ -50,6 +54,10 @@ enum Commands {
     Install {
         #[arg(long, help = "Path to XML schema file")]
         schema_file: PathBuf,
+        #[arg(long, help = "Mark migrations up to this version as already applied, without running them (requires --migrations-dir)")]
+        baseline_version: Option<String>,
+        #[arg(long, help = "Path to migrations directory (required with --baseline-version)")]
+        migrations_dir: Option<PathBuf>,
     },
     /// Check if there are pending migrations (exits 0 = none, 1 = pending)
     PendingCheck {
@@ -72,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let foreign_key_mode = parse_foreign_key_mode(&args.foreign_key_mode)?;
 
     match args.command {
-        Commands::Migrate { migrations_dir } => {
+        Commands::Migrate { migrations_dir, target, dry_run } => {
             let config = SchemaInstallerConfigBuilder::new()
                 .database_type(database_type)
                 .connection_string(connection_string.clone())
@@ -81,7 +89,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
-            Migrator::migrate(&config, source).await?;
+            match dry_run {
+                Some(output_path) => {
+                    Migrator::dry_run(&config, source, target.as_deref(), &output_path).await?;
+                }
+                None => {
+                    Migrator::migrate_to_target(&config, source, target.as_deref()).await?;
+                }
+            }
         }
         Commands::Info { migrations_dir } => {
             let config = SchemaInstallerConfigBuilder::new()
@@ -133,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("No pending migrations");
             }
         }
-        Commands::Install { schema_file } => {
+        Commands::Install { schema_file, baseline_version, migrations_dir } => {
             let config = SchemaInstallerConfigBuilder::new()
                 .database_type(database_type)
                 .connection_string(connection_string.clone())
@@ -142,7 +157,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .foreign_key_mode(foreign_key_mode)
                 .build()?;
 
-            SchemaInstaller::install(&config).await?;
+            match (&baseline_version, &migrations_dir) {
+                (Some(_), None) => {
+                    return Err("Error: --baseline-version requires --migrations-dir".into());
+                }
+                (None, Some(_)) => {
+                    return Err("Error: --migrations-dir has no effect without --baseline-version".into());
+                }
+                (Some(version), Some(dir)) => {
+                    let source = DirectoryMigrationSource { path: dir.clone() };
+                    let baseline = Baseline { version, source: &source };
+                    SchemaInstaller::install_with_baseline(&config, Some(baseline)).await?;
+                }
+                (None, None) => {
+                    SchemaInstaller::install(&config).await?;
+                }
+            }
         }
     }
 

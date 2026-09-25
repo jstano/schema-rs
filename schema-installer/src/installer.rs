@@ -1,6 +1,7 @@
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
+use crate::migration::{MigrationSource, compare_versions, compute_checksum};
 use schema_parser::parse_database_xml;
 use schema_sql_generator::common::generate_options::GenerateOptions;
 use schema_sql_generator::common::generator_type::GeneratorType;
@@ -10,10 +11,32 @@ use std::cell::RefCell;
 use std::fs;
 use std::rc::Rc;
 
+/// Flyway-style baseline: marks every migration in `source` up to and including
+/// `version` as already applied by `install`, without running its SQL. See
+/// `SchemaInstaller::install_with_baseline`.
+pub struct Baseline<'a> {
+    pub version: &'a str,
+    pub source: &'a dyn MigrationSource,
+}
+
 pub struct SchemaInstaller;
 
 impl SchemaInstaller {
     pub async fn install(config: &SchemaInstallerConfig) -> Result<(), SchemaInstallerError> {
+        Self::install_with_baseline(config, None).await
+    }
+
+    /// Like `install`, but when `baseline` is given, also marks every migration from
+    /// `baseline.source` up to and including `baseline.version` as already applied
+    /// (Flyway's `baselineVersion`) - without running their SQL. This is the missing
+    /// piece for adopting the migration workflow after an `install`: without it,
+    /// `Migrator::migrate` has no way to know the freshly-generated schema already
+    /// contains everything through `baseline.version`, and replays that SQL against a
+    /// schema that already has it (L20).
+    pub async fn install_with_baseline(
+        config: &SchemaInstallerConfig,
+        baseline: Option<Baseline<'_>>,
+    ) -> Result<(), SchemaInstallerError> {
         // Connect to database
         let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
 
@@ -106,6 +129,11 @@ impl SchemaInstaller {
         match pool.execute_migration_transactional(&statements, migration_id).await {
             Ok(_) => {
                 println!("Schema installed successfully.");
+
+                if let Some(baseline) = baseline {
+                    Self::record_baseline(&pool, baseline, tool_version).await?;
+                }
+
                 Ok(())
             }
             Err(e) => {
@@ -115,6 +143,48 @@ impl SchemaInstaller {
                 Err(e)
             }
         }
+    }
+
+    /// Marks every migration in `baseline.source` whose version is <= `baseline.version`
+    /// as already applied, with no SQL executed - the schema those migrations describe
+    /// was already generated wholesale from `schema.xml` by the `install` call this
+    /// follows. Mirrors Flyway's `baseline`: it records history, it doesn't run scripts.
+    async fn record_baseline(
+        pool: &AnyPool,
+        baseline: Baseline<'_>,
+        tool_version: &str,
+    ) -> Result<(), SchemaInstallerError> {
+        if baseline.version == crate::migration::RESERVED_INSTALL_VERSION {
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Baseline version '{}' is reserved for the install command's own tracking row and cannot be used as a baseline version",
+                crate::migration::RESERVED_INSTALL_VERSION
+            )));
+        }
+
+        let mut migrations = baseline.source.migrations()?;
+        migrations.sort_by(|a, b| compare_versions(&a.version, &b.version));
+        migrations.retain(|m| compare_versions(&m.version, baseline.version) != std::cmp::Ordering::Greater);
+
+        for migration in &migrations {
+            let checksum = compute_checksum(&migration.sql);
+            pool.insert_migration(
+                &migration.version,
+                &migration.script_path,
+                &checksum,
+                0,
+                "success",
+                tool_version,
+            )
+            .await?;
+        }
+
+        println!(
+            "Baselined {} migration(s) up to version {}.",
+            migrations.len(),
+            baseline.version
+        );
+
+        Ok(())
     }
 
     pub async fn is_installed(config: &SchemaInstallerConfig) -> Result<bool, SchemaInstallerError> {

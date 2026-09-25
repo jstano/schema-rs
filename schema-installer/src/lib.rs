@@ -9,6 +9,6 @@ pub(crate) mod sql_split;
 
 pub use config::{SchemaInstallerConfig, SchemaInstallerConfigBuilder};
 pub use error::SchemaInstallerError;
-pub use installer::SchemaInstaller;
+pub use installer::{Baseline, SchemaInstaller};
 pub use migration::{Migration, MigrationSource, DirectoryMigrationSource, EmbeddedMigrationSource, AppliedMigration, MigrationStatus, compute_checksum};
 pub use migrator::Migrator;

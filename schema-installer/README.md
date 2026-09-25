@@ -37,6 +37,26 @@ schema-installer \
 
 Applies all migrations not yet recorded in the database. Includes checksum verification to prevent applying modified migrations.
 
+Pass `--target <version>` to stop after a specific version even if later migrations exist on disk (Flyway's `-target`) — useful for staged rollouts or gating CI to a known-good version:
+
+```bash
+schema-installer \
+  --database-type postgres \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  migrate --migrations-dir ./migrations --target 2
+```
+
+Running `migrate` again later with no `--target` (or a higher one) picks up the remaining migrations normally.
+
+Pass `--dry-run <path>` to write the SQL of every pending migration to a file instead of applying anything (Flyway's `-dryRun`) — nothing is executed and nothing is recorded, so it's safe to run against a production connection for review before a real `migrate`. Combine with `--target` to preview only up to a given version:
+
+```bash
+schema-installer \
+  --database-type postgres \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  migrate --migrations-dir ./migrations --dry-run ./preview.sql
+```
+
 #### `info` — Display migration status
 
 ```bash
@@ -91,6 +111,24 @@ schema-installer \
 ```
 
 Applies a schema from an XML definition file (for backward compatibility).
+
+`install` only records that the install itself ran; it does not mark any migration
+version as applied even if `schema.xml` already reflects those changes. If you also
+run `migrate` afterward with the same migrations you used to build up `schema.xml`,
+it will try to re-apply all of them against a schema that already has them. Use
+`--baseline-version` (with `--migrations-dir`) to mark every migration up to and
+including that version as already applied, without running its SQL — Flyway calls
+this `baseline`:
+
+```bash
+schema-installer \
+  --database-type postgres \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  install --schema-file schema.xml \
+    --baseline-version 3 --migrations-dir ./migrations
+```
+
+After this, `migrate` will only apply migrations with a version greater than `3`.
 
 ### Global Options
 
