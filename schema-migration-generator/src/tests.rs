@@ -1203,6 +1203,33 @@ fn sqlite_modify_enum_type_emits_manual_rebuild_comment() {
 }
 
 #[test]
+fn sqlite_modify_enum_type_emits_manual_rebuild_comment_on_value_removed() {
+    let (new_enum_type, old_enum_type) = old_and_new_date_range_enum(); // swapped: PAY_PERIOD removed
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyEnumType { old_enum_type, new_enum_type });
+
+    let table = TableBuilder::new(None::<&str>, "tip_pool")
+        .add_column(
+            ColumnBuilder::new(None::<&str>, "date_range_type", ColumnType::Enum)
+                .enum_type(Some("tip_pool_date_range_type".to_string()))
+                .required(true)
+                .build(),
+        )
+        .build();
+    let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    // SQLite can't drop a value from a CHECK constraint in-place either, so removal must
+    // surface the same manual-rebuild instruction as widening - never silence.
+    assert!(sql.contains("-- SQLite does not support altering a CHECK constraint in-place"), "got: {}", sql);
+    assert!(sql.contains("tip_pool.date_range_type"), "got: {}", sql);
+}
+
+#[test]
 fn postgresql_add_and_drop_function_and_procedure() {
     let mut cs = ChangeSet::new();
     cs.add_change(SchemaChange::AddFunction {
