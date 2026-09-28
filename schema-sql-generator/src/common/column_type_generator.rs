@@ -25,7 +25,7 @@ pub trait ColumnTypeGenerator {
             ColumnType::Date => self.date_sql(),
             ColumnType::DateTime => self.date_time_sql(),
             ColumnType::Time => self.time_sql(),
-            ColumnType::Timestamp => self.date_time_sql(),
+            ColumnType::Timestamp => self.timestamp_sql(),
             ColumnType::TimestampTz => self.timestamp_tz_sql(),
             ColumnType::Char => self.char_sql(column),
             ColumnType::Varchar => self.varchar_sql(column),
@@ -119,6 +119,13 @@ pub trait ColumnTypeGenerator {
 
     fn date_time_sql(&self) -> String {
         "timestamp".to_string()
+    }
+
+    /// Used only for `ColumnType::Timestamp` (as distinct from `ColumnType::DateTime`, which
+    /// always uses `date_time_sql`) - defaults to the same SQL as `DateTime` since most dialects
+    /// don't distinguish the two, but SQL Server overrides it to `datetime2` (M6).
+    fn timestamp_sql(&self) -> String {
+        self.date_time_sql()
     }
 
     fn time_sql(&self) -> String {

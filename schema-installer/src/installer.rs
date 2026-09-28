@@ -91,6 +91,7 @@ impl SchemaInstaller {
             target_postgres_version: 17,
             emit_postgres_extensions: true,
             extension_check_user: None,
+            target_sqlserver_version: 0,
         };
 
         config.database_type.generate(generate_options);

@@ -11,7 +11,7 @@ pub mod source;
 
 pub use auto_name::{generate_migration_filename, generate_migration_path};
 pub use error::MigrationGeneratorError;
-pub use generator_factory::create_generator;
+pub use generator_factory::{create_generator, create_generator_with_versions};
 pub use migration_generator::MigrationGenerator;
 
 #[cfg(test)]

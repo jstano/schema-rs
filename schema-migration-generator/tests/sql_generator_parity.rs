@@ -258,6 +258,7 @@ fn real_create_table_type(database_type: DatabaseType, model: DatabaseModel) -> 
         target_postgres_version: 0,
         emit_postgres_extensions: false,
         extension_check_user: None,
+        target_sqlserver_version: 0,
     };
     generator_type.generate(options);
     extract_type_token(&buffer.contents())
@@ -389,6 +390,7 @@ fn real_create_table_default(database_type: DatabaseType, model: DatabaseModel) 
         target_postgres_version: 0,
         emit_postgres_extensions: false,
         extension_check_user: None,
+        target_sqlserver_version: 0,
     };
     generator_type.generate(options);
     extract_default_token(&buffer.contents())

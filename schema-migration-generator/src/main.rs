@@ -9,7 +9,7 @@ use schema_parser::parse_database_xml;
 use std::fs;
 
 use schema_migration_generator::source::{read_file_against_head, read_schema_source};
-use schema_migration_generator::{create_generator, generate_migration_path};
+use schema_migration_generator::{create_generator_with_versions, generate_migration_path};
 
 pub fn main() {
     let arguments = Command::new("schema-migration-generator")
@@ -54,6 +54,18 @@ pub fn main() {
                 .long("output-file")
                 .value_name("FILE")
                 .help("Sets the output SQL migration file path (default: stdout)"),
+        )
+        .arg(
+            Arg::new("postgresql-version")
+                .long("postgresql-version")
+                .value_name("VERSION")
+                .help("Target PostgreSQL major version (e.g. 17, 18); affects UUID default function"),
+        )
+        .arg(
+            Arg::new("sqlserver-version")
+                .long("sqlserver-version")
+                .value_name("VERSION")
+                .help("Target SQL Server product year (e.g. 2022, 2025); affects the json column type"),
         )
         .arg(
             Arg::new("auto-generate-name")
@@ -109,7 +121,15 @@ pub fn main() {
 
     let change_set = diff_models(&old_model, &new_model);
 
-    let generator = create_generator(database_type);
+    let target_postgres_version: u32 = arguments
+        .get_one::<String>("postgresql-version")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let target_sqlserver_version: u32 = arguments
+        .get_one::<String>("sqlserver-version")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let generator = create_generator_with_versions(database_type, target_postgres_version, target_sqlserver_version);
     let mut output = Vec::new();
     generator
         .generate(&change_set, &new_model, &mut output)

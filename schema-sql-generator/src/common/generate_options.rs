@@ -14,6 +14,11 @@ pub struct GenerateOptions {
     pub target_postgres_version: u32,
     pub emit_postgres_extensions: bool,
     pub extension_check_user: Option<String>,
+    /// SQL Server's product year (e.g. 2019, 2022, 2025), used to gate features not
+    /// available on every supported version - currently just the native `json` type,
+    /// introduced in SQL Server 2025 (see `json_sql`). `0` means "unset", which is treated
+    /// as "target the widest range of servers" (pre-2025 behavior).
+    pub target_sqlserver_version: u32,
 }
 
 impl GenerateOptions {
@@ -27,6 +32,7 @@ impl GenerateOptions {
             target_postgres_version: 0,
             emit_postgres_extensions: true,
             extension_check_user: None,
+            target_sqlserver_version: 0,
         }
     }
 }

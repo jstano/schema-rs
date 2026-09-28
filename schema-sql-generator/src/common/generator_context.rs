@@ -61,10 +61,20 @@ impl GeneratorContext {
     /// `Native`, so it's overridden here from `database_model.boolean_mode()` - the model
     /// always carries the real configured mode.
     pub fn for_model(database_model: Rc<DatabaseModel>, database_type: DatabaseType) -> Self {
+        Self::for_model_with_target_version(database_model, database_type, 0)
+    }
+
+    /// Like `for_model`, but with a target dialect version (PostgreSQL major version, or SQL
+    /// Server product year) threaded through, for callers (e.g. `schema-migration-generator`)
+    /// that need version-gated column type SQL (e.g. `json_sql`) to match the dialect's own
+    /// `--postgresql-version`/`--sqlserver-version` target. `target_version` is interpreted
+    /// per-dialect and ignored for `DatabaseType::Sqlite`, which has no version-gated types.
+    pub fn for_model_with_target_version(database_model: Rc<DatabaseModel>, database_type: DatabaseType, target_version: u32) -> Self {
         let boolean_mode = database_model.boolean_mode();
         let writer = Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new()))));
         let mut options = GenerateOptions::new(database_model, writer);
         options.boolean_mode = boolean_mode;
+        apply_target_version(&mut options, database_type, target_version);
         let settings = SqlGeneratorSettings::new(database_type, &options);
         let sql_writer = SqlWriter::new(options.writer.clone());
         Self::new(settings, sql_writer)
@@ -75,11 +85,22 @@ impl GeneratorContext {
     /// generator method (e.g. `TriggerGenerator::output_triggers_for_table`) for its
     /// side-effecting writes and then read back what it produced.
     pub fn for_model_with_buffer(database_model: Rc<DatabaseModel>, database_type: DatabaseType) -> (Self, BufferSink) {
+        Self::for_model_with_buffer_and_target_version(database_model, database_type, 0)
+    }
+
+    /// Like `for_model_with_buffer`, but with a target dialect version - see
+    /// `for_model_with_target_version`.
+    pub fn for_model_with_buffer_and_target_version(
+        database_model: Rc<DatabaseModel>,
+        database_type: DatabaseType,
+        target_version: u32,
+    ) -> (Self, BufferSink) {
         let boolean_mode = database_model.boolean_mode();
         let buffer = BufferSink::new();
         let writer = Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone()))));
         let mut options = GenerateOptions::new(database_model, writer);
         options.boolean_mode = boolean_mode;
+        apply_target_version(&mut options, database_type, target_version);
         let settings = SqlGeneratorSettings::new(database_type, &options);
         let sql_writer = SqlWriter::new(options.writer.clone());
         (Self::new(settings, sql_writer), buffer)
@@ -103,5 +124,16 @@ impl GeneratorContext {
     {
         let mut writer = self.writer.borrow_mut();
         f(&mut writer);
+    }
+}
+
+/// `target_version` is a single dialect-agnostic knob (PostgreSQL major version, or SQL Server
+/// product year); route it to whichever `GenerateOptions` field the target dialect actually
+/// reads - SQLite has no version-gated types, so it's a no-op there.
+fn apply_target_version(options: &mut GenerateOptions, database_type: DatabaseType, target_version: u32) {
+    match database_type {
+        DatabaseType::Postgresql => options.target_postgres_version = target_version,
+        DatabaseType::SqlServer => options.target_sqlserver_version = target_version,
+        DatabaseType::Sqlite => {}
     }
 }

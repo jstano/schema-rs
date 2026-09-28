@@ -26,7 +26,19 @@ use crate::check_constraint;
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
 
-pub struct PostgresqlMigrationGenerator;
+#[derive(Default)]
+pub struct PostgresqlMigrationGenerator {
+    /// Target PostgreSQL major version (e.g. 17, 18) - threaded into every `GeneratorContext`
+    /// this generator builds so version-gated column type SQL (e.g. the UUID default function)
+    /// matches what `--postgresql-version` would produce on the create path. `0` means "unset".
+    pub target_postgres_version: u32,
+}
+
+impl PostgresqlMigrationGenerator {
+    pub fn new(target_postgres_version: u32) -> Self {
+        Self { target_postgres_version }
+    }
+}
 
 impl MigrationGenerator for PostgresqlMigrationGenerator {
     fn generate(
@@ -35,13 +47,23 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
         database_model: &DatabaseModel,
         writer: &mut dyn Write,
     ) -> Result<(), MigrationGeneratorError> {
-        let context = GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::Postgresql);
+        let context = GeneratorContext::for_model_with_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::Postgresql,
+            self.target_postgres_version,
+        );
         let type_generator = PostgresColumnTypeGenerator::new(context.clone());
-        let (trigger_context, trigger_buffer) =
-            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::Postgresql);
+        let (trigger_context, trigger_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::Postgresql,
+            self.target_postgres_version,
+        );
         let trigger_generator = PostgresTriggerGenerator::new(trigger_context);
-        let (table_context, table_buffer) =
-            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::Postgresql);
+        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::Postgresql,
+            self.target_postgres_version,
+        );
         let table_generator = PostgresTableGenerator::new(table_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
         let mut triggers_regenerated: HashSet<String> = HashSet::new();

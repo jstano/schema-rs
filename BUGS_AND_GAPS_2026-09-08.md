@@ -620,9 +620,48 @@ remediation plan) is worth more than any individual fix below.
   `Schema::get_enum_type` (panics), and `validate()` (`schema.rs:169-178`) only looks in the
   column's own schema. A database-level `<enum>` used from inside `<schema name="app">` is
   rejected as *"not defined in this schema"*.
-- [ ] **M6. SQL Server type mappings lose semantics.** [v] `Date`/`Time`/`Timestamp` all →
+- [x] **M6. SQL Server type mappings lose semantics.** [v] `Date`/`Time`/`Timestamp` all →
   `datetime` (should be `date`/`time`/`datetime2`); `Json` → `json`, a type that does not
   exist before SQL Server 2025 (should be `nvarchar(max)`).
+  - **Fixed (2026-09-28).** `sqlserver_column_type_generator.rs`: `date_sql` → `date`, `time_sql`
+    → `time`, `json_sql` → `nvarchar(max)`. `Timestamp` needed a new trait method: it previously
+    shared `date_time_sql()` with `DateTime` (both dispatched to the same method in
+    `ColumnTypeGenerator::column_type_sql`), with no way for one dialect to answer them
+    differently. Added `timestamp_sql()` to the trait (default: delegates to `date_time_sql()`,
+    so Postgres/SQLite are unaffected since they don't override it), changed the
+    `ColumnType::Timestamp` dispatch arm to call it, and gave SQL Server's override `datetime2`.
+    `DateTime` itself stays `datetime` on SQL Server (unchanged) - only `Timestamp` (meant to be
+    the higher-precision variant) moved to `datetime2`. Updated the `temporal_types`/`text_types`
+    unit tests and regenerated `schema-parser-test-schema-sqlserver.sql`. Full
+    `cargo test --workspace` passes; `cargo clippy -p schema-sql-generator --all-targets` clean
+    (pre-existing unrelated warning only).
+  - **Follow-up (2026-09-28): added `--sqlserver-version` to make the `json_sql` fallback
+    user-controllable**, mirroring `--postgresql-version`'s exact shape (u32 CLI flag →
+    `GenerateOptions`/`SqlGeneratorSettings` → gated method). `json_sql` now emits native `json`
+    only when `target_sqlserver_version >= 2025`, else the `nvarchar(max)` fallback above.
+    Also fixed the same pre-existing gap `--postgresql-version` already had:
+    `schema-migration-generator`'s per-dialect generators built their `GeneratorContext`s with
+    hardcoded defaults (version `0`), so a migration's column type SQL could never reflect the
+    user's actual target version, unlike the create path. `GeneratorContext` gained
+    `for_model_with_target_version`/`for_model_with_buffer_and_target_version` (the un-versioned
+    `for_model`/`for_model_with_buffer` now just call these with `0`, so every other caller is
+    unaffected); `PostgresqlMigrationGenerator`/`SqlServerMigrationGenerator` gained a
+    `target_{postgres,sqlserver}_version: u32` field plus a `new(version)` constructor
+    (`#[derive(Default)]` keeps `0` the default, matching prior behavior for every existing
+    `create_generator(db_type)` call site - none needed updating); `create_generator_with_versions`
+    added alongside the existing `create_generator` for callers that want to set it, and
+    `schema-migration-generator`'s own CLI (`main.rs`) gained matching
+    `--postgresql-version`/`--sqlserver-version` flags. Verified end-to-end with a real CLI run
+    (`--sqlserver-version 2025` produces `json json,`, unset produces `nvarchar(max)`) plus
+    two new regression tests in `schema-migration-generator/src/tests.rs`
+    (`sqlserver_add_column_json_defaults_to_nvarchar_max`,
+    `sqlserver_add_column_json_uses_native_json_when_targeting_sql_server_2025`) and one in
+    `sqlserver_column_type_generator.rs`
+    (`json_type_uses_native_json_only_when_targeting_sql_server_2025_or_later`). Full
+    `cargo test --workspace` passes (one `schema-installer` integration test flaked once on a
+    shared temp-file name under parallel execution, unrelated to this change - passed clean on
+    rerun and in isolation); `cargo clippy -p schema-sql-generator -p schema-migration-generator
+    -p schema-installer --all-targets` clean.
 - [ ] **M7. `<aggregations>` emits empty trigger shells and nothing else.**
   `postgres_trigger_generator.rs:25,39` gates trigger emission on
   `!table.aggregations().is_empty()`, but no aggregation SQL is ever generated —

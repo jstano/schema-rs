@@ -76,15 +76,19 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     }
 
     fn date_sql(&self) -> String {
-        "datetime".to_string()
+        "date".to_string()
     }
 
     fn date_time_sql(&self) -> String {
         "datetime".to_string()
     }
 
+    fn timestamp_sql(&self) -> String {
+        "datetime2".to_string()
+    }
+
     fn time_sql(&self) -> String {
-        "datetime".to_string()
+        "time".to_string()
     }
 
     fn char_sql(&self, column: &Column) -> String {
@@ -102,7 +106,14 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     }
 
     fn json_sql(&self, _column: &Column) -> String {
-        "json".to_string()
+        // SQL Server's native `json` type doesn't exist before SQL Server 2025 (M6); use it
+        // only when explicitly targeting 2025+, otherwise fall back to `nvarchar(max)`, which
+        // works on every supported version.
+        if self.context.settings().target_sqlserver_version() >= 2025 {
+            "json".to_string()
+        } else {
+            "nvarchar(max)".to_string()
+        }
     }
 
 
@@ -177,6 +188,21 @@ mod tests {
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 
+    fn make_context_with_version(target_sqlserver_version: u32) -> (GeneratorContext, TableBuilder) {
+        let schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let table = TableBuilder::new(None::<&str>, "test");
+        let mut options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
+        );
+        options.target_sqlserver_version = target_sqlserver_version;
+        let settings = SqlGeneratorSettings::new(DatabaseType::SqlServer, &options);
+        let writer = SqlWriter::new(options.writer.clone());
+        let ctx = GeneratorContext::new(settings, writer);
+        (ctx, table)
+    }
+
     #[test]
     fn sequence_types() {
         assert_type(ColumnType::Sequence, "integer identity(1,1)");
@@ -196,10 +222,10 @@ mod tests {
 
     #[test]
     fn temporal_types() {
-        assert_type(ColumnType::Date, "datetime");
+        assert_type(ColumnType::Date, "date");
         assert_type(ColumnType::DateTime, "datetime");
-        assert_type(ColumnType::Time, "datetime");
-        assert_type(ColumnType::Timestamp, "datetime");
+        assert_type(ColumnType::Time, "time");
+        assert_type(ColumnType::Timestamp, "datetime2");
         assert_type(ColumnType::TimestampTz, "datetimeoffset");
     }
 
@@ -208,8 +234,24 @@ mod tests {
         assert_type(ColumnType::Text, "nvarchar(max)");
         assert_type(ColumnType::CiText, "nvarchar(max)");
         assert_type(ColumnType::CsText, "nvarchar(max)");
-        assert_type(ColumnType::Json, "json");
+        assert_type(ColumnType::Json, "nvarchar(max)");
         assert_type(ColumnType::Uuid, "uniqueidentifier");
+    }
+
+    #[test]
+    fn json_type_uses_native_json_only_when_targeting_sql_server_2025_or_later() {
+        let assert_json_for_version = |target_sqlserver_version: u32, expected: &str| {
+            let (ctx, table_builder) = make_context_with_version(target_sqlserver_version);
+            let generator = SqlServerColumnTypeGenerator::new(ctx);
+            let table = table_builder.build();
+            let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Json).build();
+            assert_eq!(generator.column_type_sql(&table, &col), expected);
+        };
+
+        assert_json_for_version(0, "nvarchar(max)");
+        assert_json_for_version(2022, "nvarchar(max)");
+        assert_json_for_version(2025, "json");
+        assert_json_for_version(2026, "json");
     }
 
     #[test]

@@ -55,6 +55,10 @@ pub fn main() {
             .long("postgresql-version")
             .value_name("VERSION")
             .help("Target PostgreSQL major version (e.g. 17, 18); affects UUID default function"))
+        .arg(Arg::new("sqlserver-version")
+            .long("sqlserver-version")
+            .value_name("VERSION")
+            .help("Target SQL Server product year (e.g. 2022, 2025); affects the json column type"))
         .arg(Arg::new("no-postgres-extensions")
             .long("no-postgres-extensions")
             .action(ArgAction::SetTrue)
@@ -115,6 +119,10 @@ pub fn main() {
         .get_one::<String>("postgresql-version")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let target_sqlserver_version: u32 = arguments
+        .get_one::<String>("sqlserver-version")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let schema_path = Path::new(schema_file);
     let output_path = match arguments.get_one::<String>("output-file") {
         Some(path) => path.clone(),
@@ -159,6 +167,7 @@ pub fn main() {
         target_postgres_version,
         emit_postgres_extensions: !arguments.get_flag("no-postgres-extensions"),
         extension_check_user: arguments.get_one::<String>("extension-check-user").cloned(),
+        target_sqlserver_version,
     };
 
     generator_type.generate(options);

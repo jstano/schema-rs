@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "schema-diagram-generator"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "clap",
  "schema-model",
@@ -1889,7 +1889,7 @@ dependencies = [
 
 [[package]]
 name = "schema-diff"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "schema-model",
  "thiserror 2.0.18",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "schema-installer"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "chrono",
  "clap",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "schema-migration-generator"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "chrono",
  "clap",
@@ -1934,14 +1934,14 @@ dependencies = [
 
 [[package]]
 name = "schema-model"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "url",
 ]
 
 [[package]]
 name = "schema-parser"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "quick-xml",
  "roxmltree",
@@ -1953,7 +1953,7 @@ dependencies = [
 
 [[package]]
 name = "schema-reverse-engineer"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "clap",
  "schema-model",
@@ -1967,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "schema-sql-generator"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "clap",
  "schema-model",

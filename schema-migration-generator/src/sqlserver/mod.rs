@@ -25,7 +25,20 @@ use crate::default_constraint;
 use crate::error::MigrationGeneratorError;
 use crate::migration_generator::MigrationGenerator;
 
-pub struct SqlServerMigrationGenerator;
+#[derive(Default)]
+pub struct SqlServerMigrationGenerator {
+    /// Target SQL Server product year (e.g. 2022, 2025) - threaded into every
+    /// `GeneratorContext` this generator builds so version-gated column type SQL (e.g. the
+    /// native `json` type, M6) matches what `--sqlserver-version` would produce on the create
+    /// path. `0` means "unset".
+    pub target_sqlserver_version: u32,
+}
+
+impl SqlServerMigrationGenerator {
+    pub fn new(target_sqlserver_version: u32) -> Self {
+        Self { target_sqlserver_version }
+    }
+}
 
 impl MigrationGenerator for SqlServerMigrationGenerator {
     fn generate(
@@ -34,13 +47,23 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
         database_model: &DatabaseModel,
         writer: &mut dyn Write,
     ) -> Result<(), MigrationGeneratorError> {
-        let context = GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::SqlServer);
+        let context = GeneratorContext::for_model_with_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::SqlServer,
+            self.target_sqlserver_version,
+        );
         let type_generator = SqlServerColumnTypeGenerator::new(context.clone());
-        let (trigger_context, trigger_buffer) =
-            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::SqlServer);
+        let (trigger_context, trigger_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::SqlServer,
+            self.target_sqlserver_version,
+        );
         let trigger_generator = SqlServerTriggerGenerator::new(trigger_context);
-        let (table_context, table_buffer) =
-            GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::SqlServer);
+        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
+            Rc::new(database_model.clone()),
+            DatabaseType::SqlServer,
+            self.target_sqlserver_version,
+        );
         let table_generator = SqlServerTableGenerator::new(table_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
         let mut triggers_regenerated: HashSet<String> = HashSet::new();

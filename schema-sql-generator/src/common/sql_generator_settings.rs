@@ -15,6 +15,7 @@ pub struct SqlGeneratorSettings {
     target_postgres_version: u32,
     emit_postgres_extensions: bool,
     extension_check_user: Option<String>,
+    target_sqlserver_version: u32,
 }
 
 impl SqlGeneratorSettings {
@@ -29,6 +30,7 @@ impl SqlGeneratorSettings {
             target_postgres_version: options.target_postgres_version,
             emit_postgres_extensions: options.emit_postgres_extensions,
             extension_check_user: options.extension_check_user.clone(),
+            target_sqlserver_version: options.target_sqlserver_version,
         }
     }
 
@@ -66,6 +68,10 @@ impl SqlGeneratorSettings {
 
     pub fn extension_check_user(&self) -> Option<&String> {
         self.extension_check_user.as_ref()
+    }
+
+    pub fn target_sqlserver_version(&self) -> u32 {
+        self.target_sqlserver_version
     }
 }
 

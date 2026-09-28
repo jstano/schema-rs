@@ -11,7 +11,7 @@ use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType};
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 
-use crate::create_generator;
+use crate::{create_generator, create_generator_with_versions};
 
 fn default_model() -> DatabaseModel {
     let schema = SchemaBuilder::new(None::<&str>).build();
@@ -228,6 +228,40 @@ fn sqlserver_add_column_text_with_length_uses_bounded_nvarchar() {
     let sql = String::from_utf8(output).unwrap();
     assert!(sql.contains("nvarchar(200)"), "expected bounded nvarchar, got: {}", sql);
     assert!(!sql.contains("nvarchar(max)"), "expected bounded nvarchar, got: {}", sql);
+}
+
+// M6: `Json` uses `nvarchar(max)` by default (SQL Server's native `json` type doesn't exist
+// before SQL Server 2025), and only switches to `json` when the migration is explicitly
+// generated with `--sqlserver-version 2025` or later.
+#[test]
+fn sqlserver_add_column_json_defaults_to_nvarchar_max() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "settings".to_string(),
+        column: ColumnBuilder::new(Some("s"), "payload", ColumnType::Json).build(),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains("nvarchar(max)"), "got: {}", sql);
+}
+
+#[test]
+fn sqlserver_add_column_json_uses_native_json_when_targeting_sql_server_2025() {
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::AddColumn {
+        table_name: "settings".to_string(),
+        column: ColumnBuilder::new(Some("s"), "payload", ColumnType::Json).build(),
+    });
+
+    let generator = create_generator_with_versions(DatabaseType::SqlServer, 0, 2025);
+    let mut output = Vec::new();
+    generator.generate(&cs, &default_model(), &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+    assert!(sql.contains(" json"), "got: {}", sql);
+    assert!(!sql.contains("nvarchar(max)"), "got: {}", sql);
 }
 
 #[test]
