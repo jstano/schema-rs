@@ -94,7 +94,7 @@ create table dbo.ColumnTesterTable
    datetime datetime,
    time datetime,
    timestamp datetime,
-   char nchar(1) constraint df_columntes_char_BF2D7A7C default default 'A',
+   char nchar(1) constraint df_columntes_char_BF2D7A7C default 'A',
    varchar nvarchar(10),
    varcharWithCheck nvarchar(6),
    enum nchar(1),

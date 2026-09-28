@@ -53,7 +53,7 @@ create table ColumnTesterTable
    datetime text,
    time text,
    timestamp text,
-   char char(1) constraint char default default 'A',
+   char char(1) constraint char default 'A',
    varchar varchar(10),
    varcharWithCheck varchar(6),
    enum char(1),

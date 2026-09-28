@@ -9,6 +9,6 @@ mod sqlserver_other_sql_generator;
 mod sqlserver_procedure_generator;
 mod sqlserver_relation_generator;
 mod sqlserver_table_constraint_generator;
-mod sqlserver_table_generator;
+pub mod sqlserver_table_generator;
 pub mod sqlserver_trigger_generator;
 mod sqlserver_view_generator;

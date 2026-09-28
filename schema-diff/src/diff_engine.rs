@@ -68,12 +68,19 @@ fn diff_drop_tables(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     }
 }
 
+// `AddTable` carries the table's full definition (columns, keys, column/table constraints,
+// indexes, initial data) so the migration generator can render a real `CREATE TABLE` by routing
+// it through `schema-sql-generator`'s own table generator (see schema-migration-generator).
+// That rendering covers columns/keys/constraints/indexes/initial data, but *not* relations or
+// triggers - those are always a separate generation pass even for an existing table - so
+// `diff_add_relations`/`diff_add_triggers` below are relaxed to still emit `AddRelation`/
+// `AddTrigger` for a brand-new table. `diff_add_columns`/`diff_add_keys`/`diff_add_constraints`/
+// `diff_add_initial_data` intentionally keep skipping new tables: their content is already fully
+// covered by the `AddTable` payload, and emitting them too would duplicate DDL.
 fn diff_add_tables(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
         if old.get_optional_table(new_table.name()).is_none() {
-            cs.add_change(SchemaChange::AddTable {
-                table_name: new_table.name().to_string(),
-            });
+            cs.add_change(SchemaChange::AddTable { table: new_table.clone() });
         }
     }
 }
@@ -246,6 +253,7 @@ fn diff_drop_constraints(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                     cs.add_change(SchemaChange::DropConstraint {
                         table_name: old_table.name().to_string(),
                         constraint_name: old_con.name().to_string(),
+                        database_type: old_con.database_type(),
                     });
                 }
             }
@@ -273,7 +281,9 @@ fn constraint_exists_in(con: &Constraint, constraints: &[Constraint]) -> bool {
 }
 
 fn constraints_equal(a: &Constraint, b: &Constraint) -> bool {
-    a.name().eq_ignore_ascii_case(b.name()) && a.sql().trim() == b.sql().trim()
+    a.name().eq_ignore_ascii_case(b.name())
+        && a.database_type() == b.database_type()
+        && a.sql().trim() == b.sql().trim()
 }
 
 fn diff_drop_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
@@ -296,16 +306,19 @@ fn diff_drop_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 
 fn diff_add_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
-        if let Some(old_table) = old.get_optional_table(new_table.name()) {
-            // See diff_drop_relations - same ordinal so an added relation gets the name
-            // the create path would give it.
-            for (index, new_rel) in new_table.relations().iter().enumerate() {
-                if !relation_exists_in(new_rel, old_table.relations()) {
-                    cs.add_change(SchemaChange::AddRelation {
-                        relation: new_rel.clone(),
-                        ordinal: index + 1,
-                    });
-                }
+        // A brand-new table (no `old_table`) still needs its relations emitted - `AddTable`'s
+        // rendered `CREATE TABLE` doesn't include them (see diff_add_tables) - so compare
+        // against an empty slice rather than skipping the table entirely.
+        let old_relations: &[Relation] = old.get_optional_table(new_table.name()).map(|t| t.relations()).unwrap_or(&[]);
+
+        // See diff_drop_relations - same ordinal so an added relation gets the name
+        // the create path would give it.
+        for (index, new_rel) in new_table.relations().iter().enumerate() {
+            if !relation_exists_in(new_rel, old_relations) {
+                cs.add_change(SchemaChange::AddRelation {
+                    relation: new_rel.clone(),
+                    ordinal: index + 1,
+                });
             }
         }
     }
@@ -334,6 +347,7 @@ fn diff_drop_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
         if !view_exists_in(old_view, new.all_views()) {
             cs.add_change(SchemaChange::DropView {
                 view_name: old_view.name().to_string(),
+                database_type: old_view.database_type(),
             });
         }
     }
@@ -354,7 +368,9 @@ fn view_exists_in(view: &View, views: &[View]) -> bool {
 }
 
 fn views_equal(a: &View, b: &View) -> bool {
-    a.name().eq_ignore_ascii_case(b.name()) && a.sql().trim() == b.sql().trim()
+    a.name().eq_ignore_ascii_case(b.name())
+        && a.database_type() == b.database_type()
+        && a.sql().trim() == b.sql().trim()
 }
 
 fn diff_add_enum_types(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
@@ -477,20 +493,22 @@ fn other_sql_equal(a: &OtherSql, b: &OtherSql) -> bool {
     a.database_type() == b.database_type() && a.order() == b.order() && a.sql().trim() == b.sql().trim()
 }
 
-// Triggers and initial data are table-scoped, and - like `diff_add_columns`/`diff_drop_columns`
-// - only diffed for tables present in both old and new. A brand-new table's columns aren't
-// emitted as `AddColumn`s either (see those functions), so a brand-new table's triggers/initial
-// data have the same pre-existing gap; not fixed here.
+// Initial data is table-scoped and - like `diff_add_columns` - only diffed for tables present in
+// both old and new; a brand-new table's initial data is already emitted inline by `AddTable`'s
+// rendered `CREATE TABLE` (see diff_add_tables), so that's intentional, not a gap.
+//
+// Triggers are different: they're always a separate generation pass, even for an existing table
+// (see diff_add_tables' comment), so a brand-new table's triggers must still be diffed - compare
+// against an empty slice rather than skipping the table when there's no `old_table`.
 fn diff_add_triggers(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
-        if let Some(old_table) = old.get_optional_table(new_table.name()) {
-            for new_trigger in new_table.triggers() {
-                if !triggers_contains(old_table.triggers(), new_trigger) {
-                    cs.add_change(SchemaChange::AddTrigger {
-                        table_name: new_table.name().to_string(),
-                        trigger: new_trigger.clone(),
-                    });
-                }
+        let old_triggers: &[Trigger] = old.get_optional_table(new_table.name()).map(|t| t.triggers()).unwrap_or(&[]);
+        for new_trigger in new_table.triggers() {
+            if !triggers_contains(old_triggers, new_trigger) {
+                cs.add_change(SchemaChange::AddTrigger {
+                    table_name: new_table.name().to_string(),
+                    trigger: new_trigger.clone(),
+                });
             }
         }
     }

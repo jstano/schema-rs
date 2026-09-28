@@ -7,6 +7,7 @@ use schema_model::model::key::Key;
 use schema_model::model::other_sql::OtherSql;
 use schema_model::model::procedure::Procedure;
 use schema_model::model::relation::Relation;
+use schema_model::model::table::Table;
 use schema_model::model::trigger::Trigger;
 use schema_model::model::types::DatabaseType;
 use schema_model::model::view::View;
@@ -14,14 +15,10 @@ use schema_model::model::view::View;
 #[derive(Debug, Clone)]
 pub enum SchemaChange {
     AddTable {
-        table_name: String,
+        table: Table,
     },
     DropTable {
         table_name: String,
-    },
-    RenameTable {
-        old_name: String,
-        new_name: String,
     },
     AddColumn {
         table_name: String,
@@ -31,11 +28,6 @@ pub enum SchemaChange {
         table_name: String,
         column_name: String,
         rename_candidates: Vec<String>,
-    },
-    RenameColumn {
-        table_name: String,
-        old_name: String,
-        new_name: String,
     },
     ModifyColumn {
         table_name: String,
@@ -64,6 +56,7 @@ pub enum SchemaChange {
     DropConstraint {
         table_name: String,
         constraint_name: String,
+        database_type: DatabaseType,
     },
     AddRelation {
         relation: Relation,
@@ -81,6 +74,7 @@ pub enum SchemaChange {
     },
     DropView {
         view_name: String,
+        database_type: Option<DatabaseType>,
     },
     AddEnumType {
         enum_type: EnumType,

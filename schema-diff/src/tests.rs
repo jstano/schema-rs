@@ -30,7 +30,78 @@ fn detects_added_table() {
 
     let cs = SchemaDiffEngine::diff(&old, &new);
     assert_eq!(cs.len(), 1);
-    assert!(matches!(&cs.changes()[0], SchemaChange::AddTable { table_name } if table_name == "users"));
+    // `AddTable` must carry the full `Table` (C7) - not just its name - so the migration
+    // generator has the columns/keys/constraints it needs to render a real `CREATE TABLE`.
+    match &cs.changes()[0] {
+        SchemaChange::AddTable { table } => {
+            assert_eq!(table.name(), "users");
+            assert!(table.has_column("id"));
+        }
+        other => panic!("expected AddTable, got {:?}", other),
+    }
+}
+
+#[test]
+fn added_table_with_relation_to_existing_table_emits_add_relation() {
+    let old = SchemaBuilder::new(Some("s"))
+        .add_table(
+            TableBuilder::new(Some("s"), "customers")
+                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .build(),
+        )
+        .build();
+    let new = SchemaBuilder::new(Some("s"))
+        .add_table(
+            TableBuilder::new(Some("s"), "customers")
+                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .build(),
+        )
+        .add_table(
+            TableBuilder::new(Some("s"), "orders")
+                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build())
+                .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
+                .add_relation(Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false))
+                .build(),
+        )
+        .build();
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+
+    // The new table's own key is expected to already be embedded in the `AddTable` payload -
+    // not surfaced as a separate `AddKey`.
+    let add_table = cs.changes().iter().find_map(|c| match c {
+        SchemaChange::AddTable { table } if table.name() == "orders" => Some(table),
+        _ => None,
+    });
+    assert!(add_table.is_some());
+    assert!(!add_table.unwrap().keys().is_empty());
+    assert!(!cs.changes().iter().any(|c| matches!(c, SchemaChange::AddKey { table_name, .. } if table_name == "orders")));
+
+    // But the relation to the pre-existing "customers" table must still be a separate
+    // `AddRelation` change, since `AddTable`'s rendered `CREATE TABLE` doesn't include it.
+    assert!(cs.changes().iter().any(|c| matches!(
+        c,
+        SchemaChange::AddRelation { relation, .. } if relation.from_table_name().eq_ignore_ascii_case("orders")
+    )));
+}
+
+#[test]
+fn added_table_with_trigger_emits_add_trigger() {
+    let old = SchemaBuilder::new(Some("s")).build();
+    let new = SchemaBuilder::new(Some("s"))
+        .add_table(
+            TableBuilder::new(Some("s"), "orders")
+                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_trigger(Trigger::new("raise notice 'x'", TriggerType::Update, DatabaseType::Postgresql))
+                .build(),
+        )
+        .build();
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddTable { table } if table.name() == "orders")));
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddTrigger { table_name, .. } if table_name == "orders")));
 }
 
 #[test]
@@ -368,6 +439,47 @@ fn detects_check_constraint_body_change() {
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddConstraint { constraint, .. } if constraint.sql() == "qty > 1")));
 }
 
+// M29: `DropConstraint`/`DropView` must carry the removed object's own `database_type` so a
+// migration generator for a different dialect can skip it instead of emitting drop SQL for
+// something it never created.
+#[test]
+fn drop_constraint_carries_its_own_database_type() {
+    let make = |present: bool| {
+        let mut builder = TableBuilder::new(Some("s"), "orders").add_column(ColumnBuilder::new(Some("s"), "qty", ColumnType::Int).build());
+        if present {
+            builder = builder.add_constraint(Constraint::new("chk_qty", "qty > 0", DatabaseType::SqlServer));
+        }
+        SchemaBuilder::new(Some("s")).add_table(builder.build()).build()
+    };
+    let old = make(true);
+    let new = make(false);
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::DropConstraint { constraint_name, database_type, .. }
+            if constraint_name == "chk_qty" && *database_type == DatabaseType::SqlServer)
+    ));
+}
+
+#[test]
+fn drop_view_carries_its_own_database_type() {
+    let make = |present: bool| {
+        let mut builder = SchemaBuilder::new(Some("s"));
+        if present {
+            builder = builder.add_view(View::new(Some("s"), "v_orders", "select id from orders", Some(DatabaseType::SqlServer)));
+        }
+        builder.build()
+    };
+    let old = make(true);
+    let new = make(false);
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::DropView { view_name, database_type }
+            if view_name == "v_orders" && *database_type == Some(DatabaseType::SqlServer))
+    ));
+}
+
 #[test]
 fn detects_view_select_change() {
     let make = |sql: &str| {
@@ -379,7 +491,7 @@ fn detects_view_select_change() {
     let new = make("select id, qty from orders");
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropView { view_name } if view_name == "v_orders")));
+    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropView { view_name, .. } if view_name == "v_orders")));
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddView { view } if view.sql() == "select id, qty from orders")));
 }
 

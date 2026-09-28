@@ -1,5 +1,5 @@
 pub mod postgres_generator;
-mod postgres_table_generator;
+pub mod postgres_table_generator;
 mod postgres_relation_generator;
 mod postgres_index_generator;
 mod postgres_function_generator;

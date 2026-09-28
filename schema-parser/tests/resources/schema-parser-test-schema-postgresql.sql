@@ -86,7 +86,7 @@ create table public.ColumnTesterTable
    datetime timestamp,
    time time,
    timestamp timestamp,
-   char char(1) default default 'A',
+   char char(1) default 'A',
    varchar text,
    varcharWithCheck text,
    enum test_enum_type,

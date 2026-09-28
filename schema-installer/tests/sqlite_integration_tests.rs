@@ -1363,3 +1363,107 @@ async fn test_sqlite_dry_run_with_nothing_pending_writes_empty_notice() {
     let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
     assert!(contents.contains("No pending migrations"));
 }
+
+/// End-to-end regression test for C7: `schema-diff`'s `AddTable` must carry a real `Table`
+/// (not just a name) so a brand-new table's migration is the real `CREATE TABLE`, not an empty
+/// one. Unlike the rest of this file, the migration SQL here isn't hand-written - it's produced
+/// by running the real `SchemaDiffEngine::diff` (old schema -> new schema with a brand-new
+/// table that has a column, a primary key, an index, initial data, and a foreign key to an
+/// already-existing table) through the real `schema-migration-generator`, then actually
+/// executing that SQL against a real SQLite database and querying the result - not just
+/// asserting on the generated SQL string.
+#[tokio::test]
+async fn test_sqlite_add_table_migration_materializes_new_table() {
+    use schema_diff::SchemaDiffEngine;
+    use schema_migration_generator::create_generator;
+    use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
+    use schema_model::model::column_type::ColumnType;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::initial_data::InitialData;
+    use schema_model::model::relation::Relation;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType};
+    use sqlx::Row;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    let customers_table = || {
+        TableBuilder::new(None::<&str>, "customers")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
+            .build()
+    };
+
+    let old_schema = SchemaBuilder::new(None::<&str>).add_table(customers_table()).build();
+    let new_schema = SchemaBuilder::new(None::<&str>)
+        .add_table(customers_table())
+        .add_table(
+            TableBuilder::new(None::<&str>, "orders")
+                .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+                .add_column(ColumnBuilder::new(None::<&str>, "customer_id", ColumnType::Int).required(true).build())
+                .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
+                .add_index(KeyBuilder::new(KeyType::Index).add_column("customer_id").build())
+                .add_relation(Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false))
+                .add_initial_data(InitialData::new("insert into orders (id, customer_id) values (1, 1)", None))
+                .build(),
+        )
+        .build();
+
+    let change_set = SchemaDiffEngine::diff(&old_schema, &new_schema);
+    let database_model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![new_schema]);
+
+    let generator = create_generator(DatabaseType::Sqlite);
+    let mut sql_bytes = Vec::new();
+    generator
+        .generate(&change_set, &database_model, &mut sql_bytes)
+        .expect("migration generation should succeed");
+    let migration_sql = String::from_utf8(sql_bytes).expect("generated SQL should be valid UTF-8");
+
+    // Regression assertions for C7 - the old behavior fabricated an `id integer primary key
+    // autoincrement)` column that isn't in the model at all.
+    assert!(migration_sql.contains("create table if not exists orders"), "got: {}", migration_sql);
+    assert!(migration_sql.contains("customer_id"), "expected the real 'customer_id' column, got: {}", migration_sql);
+    assert!(
+        !migration_sql.contains("id integer primary key autoincrement)"),
+        "must not fabricate an autoincrement id column, got: {}",
+        migration_sql
+    );
+
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_add_table_materializes.db");
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    // The migration only creates "orders" (a foreign key to "customers"), so "customers" must
+    // already exist for the foreign key to resolve.
+    let migrations = vec![
+        Migration {
+            version: "1".to_string(),
+            description: "create customers".to_string(),
+            script_path: "V1__create_customers.sql".to_string(),
+            sql: "create table customers (id integer primary key autoincrement);\ninsert into customers (id) values (1);".to_string(),
+        },
+        Migration {
+            version: "2".to_string(),
+            description: "create orders".to_string(),
+            script_path: "V2__create_orders.sql".to_string(),
+            sql: migration_sql,
+        },
+    ];
+    let source = Box::new(EmbeddedMigrationSource { migrations });
+    Migrator::migrate(&config, source).await.expect("migration should succeed against a real SQLite database");
+
+    let pool = SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to the migrated database");
+
+    let row = sqlx::query("select id, customer_id from orders where id = 1")
+        .fetch_one(&pool)
+        .await
+        .expect("the row inserted by the migration's initial data should be queryable");
+    let customer_id: i64 = row.get("customer_id");
+    assert_eq!(customer_id, 1, "the foreign key column should hold the real inserted value");
+}

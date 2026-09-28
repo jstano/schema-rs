@@ -10,6 +10,6 @@ mod sqlite_pk_support;
 mod sqlite_procedure_generator;
 mod sqlite_relation_generator;
 mod sqlite_table_constraint_generator;
-mod sqlite_table_generator;
+pub mod sqlite_table_generator;
 mod sqlite_trigger_generator;
 mod sqlite_view_generator;
