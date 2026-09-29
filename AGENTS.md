@@ -282,5 +282,6 @@ The `schema-installer` crate provides a Flyway-style migration system.
 - `connection_string`: Database URL
 - `schema_file`: Optional PathBuf (only needed for `install` command)
 - `boolean_mode`, `foreign_key_mode`: Same as above
+- `trust_server_certificate`: bool (default false; SQL Server only, skips TLS cert verification; CLI `--trust-server-certificate`)
 
 **Edition:** Rust 2024

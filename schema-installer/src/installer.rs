@@ -38,7 +38,7 @@ impl SchemaInstaller {
         baseline: Option<Baseline<'_>>,
     ) -> Result<(), SchemaInstallerError> {
         // Connect to database
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         // Create tracking tables if they don't exist
         Self::ensure_tracking_tables(&pool, &config.database_type).await?;
@@ -189,12 +189,12 @@ impl SchemaInstaller {
     }
 
     pub async fn is_installed(config: &SchemaInstallerConfig) -> Result<bool, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
         Self::check_if_installed(&pool).await
     }
 
     pub async fn get_installed_version(config: &SchemaInstallerConfig) -> Result<Option<String>, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
         match pool.get_applied_migrations().await {
             Ok(migrations) => {
                 let latest = migrations

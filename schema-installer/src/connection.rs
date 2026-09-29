@@ -16,7 +16,7 @@ pub enum AnyPool {
 }
 
 impl AnyPool {
-    pub async fn connect(database_type: &GeneratorType, connection_string: &str) -> Result<Self, SchemaInstallerError> {
+    pub async fn connect(database_type: &GeneratorType, connection_string: &str, trust_server_certificate: bool) -> Result<Self, SchemaInstallerError> {
         match database_type {
             GeneratorType::Postgresql => {
                 let pool = PgPoolOptions::new()
@@ -49,6 +49,9 @@ impl AnyPool {
                     .map_err(|e| SchemaInstallerError::Connection(format!("Invalid SQL Server connection string: {}", e)))?;
 
                 config.encryption(tiberius::EncryptionLevel::Required);
+                if trust_server_certificate {
+                    config.trust_cert();
+                }
 
                 let tcp = TcpStream::connect(config.get_addr())
                     .await

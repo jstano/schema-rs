@@ -157,7 +157,7 @@ async fn test_sqlite_migration_ddl_and_success_status_commit_atomically() {
         .build()
         .expect("valid config");
 
-    let pool = AnyPool::connect(&config.database_type, &config.connection_string)
+    let pool = AnyPool::connect(&config.database_type, &config.connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&config.database_type)
@@ -353,7 +353,7 @@ async fn test_sqlite_validate_exempts_reserved_install_version() {
 
     // Simulate the legacy XML `install` command's tracking row: reserved version "0",
     // which never corresponds to a real migration file.
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -386,7 +386,7 @@ async fn test_sqlite_validate_detects_failed_migration() {
     // `wait_for_slot`'s "run `repair` before retrying" error). BUGS_AND_GAPS H10: before
     // this fix, `validate`'s loop skipped any non-"success" row outright and reported no
     // issue at all.
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -625,7 +625,7 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
         .build()
         .expect("valid config");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -676,7 +676,7 @@ async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
         .build()
         .expect("valid config");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -727,7 +727,7 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
         .build()
         .expect("valid config");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -964,7 +964,7 @@ async fn test_sqlite_install_can_be_retried_after_a_failed_attempt() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let connection_string = sqlite_connection_string(&temp_dir, "test_install_retry.db");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)
@@ -1009,7 +1009,7 @@ async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gon
     let temp_dir = TempDir::new().expect("create temp dir");
     let connection_string = sqlite_connection_string(&temp_dir, "test_update_status_missing_row.db");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string)
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
     pool.ensure_migration_table(&GeneratorType::Sqlite)

@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use crate::error::SchemaInstallerError;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_sql_generator::common::generator_type::GeneratorType;
-use crate::error::SchemaInstallerError;
+use std::path::PathBuf;
 
 pub struct SchemaInstallerConfig {
     pub database_type: GeneratorType,
@@ -9,6 +9,7 @@ pub struct SchemaInstallerConfig {
     pub schema_file: Option<PathBuf>,
     pub boolean_mode: BooleanMode,
     pub foreign_key_mode: ForeignKeyMode,
+    pub trust_server_certificate: bool,
 }
 
 pub struct SchemaInstallerConfigBuilder {
@@ -17,6 +18,7 @@ pub struct SchemaInstallerConfigBuilder {
     schema_file: Option<PathBuf>,
     boolean_mode: BooleanMode,
     foreign_key_mode: ForeignKeyMode,
+    trust_server_certificate: bool,
 }
 
 impl SchemaInstallerConfigBuilder {
@@ -27,6 +29,7 @@ impl SchemaInstallerConfigBuilder {
             schema_file: None,
             boolean_mode: BooleanMode::Native,
             foreign_key_mode: ForeignKeyMode::Relations,
+            trust_server_certificate: false,
         }
     }
 
@@ -55,6 +58,12 @@ impl SchemaInstallerConfigBuilder {
         self
     }
 
+    /// SQL Server only: skip TLS certificate verification (for self-signed certs).
+    pub fn trust_server_certificate(mut self, trust: bool) -> Self {
+        self.trust_server_certificate = trust;
+        self
+    }
+
     pub fn build(self) -> Result<SchemaInstallerConfig, SchemaInstallerError> {
         let database_type = self.database_type
             .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("database_type required".to_string()))?;
@@ -72,6 +81,7 @@ impl SchemaInstallerConfigBuilder {
             schema_file: self.schema_file,
             boolean_mode: self.boolean_mode,
             foreign_key_mode: self.foreign_key_mode,
+            trust_server_certificate: self.trust_server_certificate,
         })
     }
 }
@@ -79,5 +89,26 @@ impl SchemaInstallerConfigBuilder {
 impl Default for SchemaInstallerConfigBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn builder() -> SchemaInstallerConfigBuilder {
+        SchemaInstallerConfigBuilder::new()
+            .database_type(GeneratorType::SqlServer)
+            .connection_string("Server=localhost".to_string())
+    }
+
+    #[test]
+    fn trust_server_certificate_defaults_to_false() {
+        assert!(!builder().build().unwrap().trust_server_certificate);
+    }
+
+    #[test]
+    fn trust_server_certificate_can_be_enabled() {
+        assert!(builder().trust_server_certificate(true).build().unwrap().trust_server_certificate);
     }
 }

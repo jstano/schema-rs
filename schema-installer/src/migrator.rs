@@ -120,7 +120,7 @@ impl Migrator {
         source: Box<dyn MigrationSource>,
         target: Option<&str>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         pool.ensure_migration_table(&config.database_type)
             .await?;
@@ -181,7 +181,7 @@ impl Migrator {
         target: Option<&str>,
         output_path: &Path,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         pool.ensure_migration_table(&config.database_type)
             .await?;
@@ -308,7 +308,7 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         pool.ensure_migration_table(&config.database_type).await?;
 
@@ -378,7 +378,7 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         pool.ensure_migration_table(&config.database_type)
             .await?;
@@ -473,7 +473,7 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<bool, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         if pool.ensure_migration_table(&config.database_type).await.is_err() {
             return Ok(true);
@@ -498,7 +498,7 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string).await?;
+        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
         pool.ensure_migration_table(&config.database_type)
             .await?;

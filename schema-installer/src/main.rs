@@ -22,6 +22,9 @@ struct Args {
 
     #[arg(long, global = true, default_value = "relations", help = "Foreign key mode (none, relations, triggers)")]
     foreign_key_mode: String,
+
+    #[arg(long, global = true, help = "SQL Server only: trust the server certificate without verification (for self-signed certs)")]
+    trust_server_certificate: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -86,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .connection_string(connection_string.clone())
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
@@ -104,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .connection_string(connection_string.clone())
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
@@ -115,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .connection_string(connection_string.clone())
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
@@ -126,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .connection_string(connection_string.clone())
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
@@ -137,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .connection_string(connection_string.clone())
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
@@ -155,6 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .schema_file(schema_file)
                 .boolean_mode(boolean_mode)
                 .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
             match (&baseline_version, &migrations_dir) {
