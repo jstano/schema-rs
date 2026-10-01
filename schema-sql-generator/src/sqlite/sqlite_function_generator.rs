@@ -17,7 +17,10 @@ impl SqliteFunctionGenerator {
 
 impl FunctionGenerator for SqliteFunctionGenerator {
     fn output_functions(&self) {
-        self.function_generator.output_functions();
+        // Self-dispatching, matching the other dialects - see
+        // `PostgresFunctionGenerator`/M10 for why this must route through `_via(self)`
+        // rather than delegate straight to `DefaultFunctionGenerator`.
+        self.function_generator.output_functions_via(self);
     }
 
     fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {

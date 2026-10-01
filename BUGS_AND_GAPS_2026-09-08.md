@@ -674,10 +674,36 @@ remediation plan) is worth more than any individual fix below.
 - [ ] **M9. No dependency ordering for views/functions.** Views are emitted in declaration order
   and functions come *after* triggers but *before* procedures (`sql_generator.rs:126-130`).
   A view selecting from a later-declared view fails.
-- [ ] **M10. Remaining static-dispatch override traps** (the BUGS #6 pattern), currently masked
+- [x] **M10. Remaining static-dispatch override traps** (the BUGS #6 pattern), currently masked
   only because the overrides are pure delegation: `DefaultIndexGenerator::output_indexes_for_table`
   (so a dialect `index_options` override — the natural place to implement M1 — would never
   run), `OtherSqlGenerator::output_other_sql`, `PostgresFunctionGenerator::output_function`.
+
+  **Fixed 2026-09-30.** `DefaultIndexGenerator::output_indexes_for_table` turned out to
+  already be closed as a side effect of M1 (all three dialect `IndexGenerator`s already
+  route through `output_indexes_via`/`output_indexes_for_table_via`, confirmed by reading
+  each file) — the doc's own text was already slightly stale on that one. The two real
+  remaining traps: added `DefaultOtherSqlGenerator::output_other_sql_top_via`/
+  `output_other_sql_bottom_via` (same `_via(&dyn Trait)` pattern as
+  `DefaultFunctionGenerator::output_functions_via`/`DefaultIndexGenerator::output_indexes_via`)
+  and switched all three dialect `OtherSqlGenerator`s to call them with `self` instead of
+  plainly delegating to `DefaultOtherSqlGenerator`'s own top/bottom methods. Also switched
+  `PostgresFunctionGenerator::output_functions` to `output_functions_via(self)` — and, since
+  `SqliteFunctionGenerator::output_functions` had the identical shape (not explicitly named
+  in this entry, but the same trap), fixed it too for consistency, matching how M1 fixed all
+  three `IndexGenerator`s even though only some had differing per-dialect behavior at the
+  time. None of these currently change generated output — Postgres/SQLite's `other_sql`/
+  `function` generators have no dialect-specific override today — this closes the *trap*
+  (a future override would now actually be reached) rather than fixing a live bug, same
+  framing as the doc's own M10 title. Added regression tests at the `common/` layer
+  (`output_functions_via_dispatches_through_the_passed_generator_not_self`,
+  `output_other_sql_top_via_dispatches_through_the_passed_generator_not_self`) using a
+  stub wrapper type that overrides `output_function`/`output_other_sql` and asserting the
+  override's marker text appears in the output when invoked through the real
+  `output_functions`/`output_other_sql_top` entry point — proving the dispatch mechanism
+  itself, independent of any one dialect's current (lack of) override. Full
+  `cargo test --workspace` passes (573 tests); `cargo clippy -p schema-sql-generator
+  --all-targets` clean (only pre-existing unrelated warnings, see L19).
 - [ ] **M11. `Schema::validate()` gaps BUGS #32 left open, confirmed still open:** duplicate table
   (H22) and column names, key/index columns existing on the table
   (`<primary><column name="Idd"/></primary>` → runtime error), relation *target column*

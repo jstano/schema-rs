@@ -16,11 +16,15 @@ impl PostgresOtherSqlGenerator {
 
 impl OtherSqlGenerator for PostgresOtherSqlGenerator {
     fn output_other_sql_top(&self) {
-        self.other_sql_generator.output_other_sql_top();
+        // Self-dispatching (via `output_other_sql_top_via(self)`, not a plain delegation
+        // to `DefaultOtherSqlGenerator::output_other_sql_top`) so any future override of
+        // `output_other_sql` on this type is actually reached - see M10/the static-dispatch
+        // trap this avoids.
+        self.other_sql_generator.output_other_sql_top_via(self);
     }
 
     fn output_other_sql_bottom(&self) {
-        self.other_sql_generator.output_other_sql_bottom();
+        self.other_sql_generator.output_other_sql_bottom_via(self);
     }
 
     fn output_other_sql(&self, writer: &mut SqlWriter, statement_separator: &str, sql: &str) {

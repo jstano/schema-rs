@@ -17,7 +17,12 @@ impl PostgresFunctionGenerator {
 
 impl FunctionGenerator for PostgresFunctionGenerator {
     fn output_functions(&self) {
-        self.function_generator.output_functions();
+        // Self-dispatching (via `output_functions_via(self)`, not a plain delegation to
+        // `DefaultFunctionGenerator::output_functions`) so any future override of
+        // `output_function` on this type is actually reached - see
+        // `SqlServerFunctionGenerator`/M10 for why this matters: a plain delegation here
+        // would silently bypass such an override, as it did for SQL Server's drop-guard.
+        self.function_generator.output_functions_via(self);
     }
 
     fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {

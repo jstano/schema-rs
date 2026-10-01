@@ -16,11 +16,14 @@ impl SqliteOtherSqlGenerator {
 
 impl OtherSqlGenerator for SqliteOtherSqlGenerator {
     fn output_other_sql_top(&self) {
-        self.other_sql_generator.output_other_sql_top();
+        // Self-dispatching, matching the other dialects - see
+        // `PostgresOtherSqlGenerator`/M10 for why this must route through `_via(self)`
+        // rather than delegate straight to `DefaultOtherSqlGenerator`.
+        self.other_sql_generator.output_other_sql_top_via(self);
     }
 
     fn output_other_sql_bottom(&self) {
-        self.other_sql_generator.output_other_sql_bottom();
+        self.other_sql_generator.output_other_sql_bottom_via(self);
     }
 
     fn output_other_sql(&self, writer: &mut SqlWriter, statement_separator: &str, sql: &str) {

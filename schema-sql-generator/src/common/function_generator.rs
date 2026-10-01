@@ -65,3 +65,48 @@ impl FunctionGenerator for DefaultFunctionGenerator {
         writer.newline();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::test_support::make_context;
+    use schema_model::builder::SchemaBuilder;
+    use schema_model::model::database_model::DatabaseModel;
+    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    struct TaggingFunctionGenerator(DefaultFunctionGenerator);
+
+    impl FunctionGenerator for TaggingFunctionGenerator {
+        fn output_functions(&self) {
+            self.0.output_functions_via(self);
+        }
+
+        fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
+            writer.print("-- tagged\n");
+            self.0.output_function(writer, statement_separator, function);
+        }
+    }
+
+    #[test]
+    fn output_functions_via_dispatches_through_the_passed_generator_not_self() {
+        // Regression test for M10: a wrapper around `DefaultFunctionGenerator` must have
+        // its own `output_function` override honored when `output_functions` calls
+        // `output_functions_via(self)` rather than plainly delegating to
+        // `DefaultFunctionGenerator::output_functions` - the latter would call back only
+        // into `DefaultFunctionGenerator::output_function`, silently skipping the
+        // wrapper's override, exactly the trap that made `SqlServerFunctionGenerator`'s
+        // drop-guard unreachable before it was fixed.
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_functions(vec![Function::new(None::<&str>, "f", DatabaseType::Postgresql, "create function f()")])
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let generator = TaggingFunctionGenerator(DefaultFunctionGenerator::new(ctx));
+        generator.output_functions();
+
+        let output = buffer.contents();
+        assert!(output.contains("-- tagged"));
+        assert!(output.contains("create function f()"));
+    }
+}
