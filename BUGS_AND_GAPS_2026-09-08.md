@@ -609,10 +609,33 @@ remediation plan) is worth more than any individual fix below.
   - Not yet decided: whether SQL Server's generated columns should always be `PERSISTED` (my
     lean, for parity with Postgres/SQLite always being physically stored) or left virtual by
     default - worth confirming before implementing.
-- [ ] **M3. Only one check constraint per column can ever be emitted.**
+- [x] **M3. Only one check constraint per column can ever be emitted.**
   `column_constraint_generator.rs:46-58` is an if/else-if chain, so a column with both
   `<check>` and `minValue`/`maxValue` silently loses the min/max. The hashed name is per
   (table,column), so emitting both would collide anyway.
+
+  **Fixed 2026-09-30.** `check_constraint_sql` no longer picks the first applicable
+  attribute and drops the rest - it collects a clause for every applicable attribute
+  (boolean-mode restriction, user `<check>`, enum restriction, min/max) and AND's them
+  together into one `check(...)` clause, since the hashed constraint name really can only
+  hold one constraint per column. A user-supplied `<check>` that already included its own
+  `check(...)` wrapper is unwrapped back to a bare predicate first (`strip_check_wrapper`)
+  so it combines cleanly instead of nesting. The single-clause case (still the overwhelming
+  majority) renders byte-for-byte as before - no added parentheses - to avoid disturbing
+  existing output; only when two or more clauses apply does each get wrapped in its own
+  parens before joining with `and`, which also fixes a latent correctness issue a plain
+  `and`-join would have had with a user `<check>` containing its own `or`. This closes the
+  exact case H6 explicitly left open: a Boolean column with min/max set under
+  `BooleanMode::Native` now renders the min/max check instead of silently emitting nothing.
+  Added 4 regression tests (user-check+min/max, already-wrapped-user-check+min/max,
+  Boolean+min/max under Native, Boolean+min/max under YesNo exercising the real two-clause
+  combination path). Verified end-to-end: regenerated all three dialects from the real
+  `schema-parser-test-schema.xml` fixture and diffed against the checked-in reference
+  `.sql` files - byte-identical, confirming no behavior change for the existing
+  single-attribute-per-column fixture data; `sqlite3` still executes the generated SQLite
+  output cleanly. Full `cargo test --workspace` passes (577 tests, 2 pre-existing ignored);
+  `cargo clippy -p schema-sql-generator --all-targets` clean (only pre-existing unrelated
+  warnings).
 - [ ] **M4. PostgreSQL enum types are emitted unqualified.** [v] (`postgres_generator.rs:104-105`)
   while the columns using them are fully qualified. Lands wherever `search_path` points;
   two schemas with a same-named enum → the second `drop type … cascade` removes the first.
