@@ -109,6 +109,21 @@ impl AnyPool {
             self.execute_sql(&SchemaMigrationDdl::sqlserver_repair_ddl()).await?;
         }
 
+        // Same story for the `description` column added after the table first shipped (M14).
+        if let Some(ddl) = SchemaMigrationDdl::add_description_column_ddl(database_type) {
+            self.execute_sql(&ddl).await?;
+        } else if let AnyPool::Sqlite(pool) = self {
+            let (count,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM pragma_table_info('schema_migration') WHERE name = 'description'",
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+            if count == 0 {
+                self.execute_sql(SchemaMigrationDdl::SQLITE_ADD_DESCRIPTION_COLUMN_DDL).await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -270,9 +285,9 @@ impl AnyPool {
     pub async fn get_applied_migrations(&self) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                let rows: Vec<(i64, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String)> =
+                let rows: Vec<(i64, String, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String)> =
                     sqlx::query_as(
-                        "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
                     )
                     .fetch_all(pool)
                     .await
@@ -281,11 +296,12 @@ impl AnyPool {
                 Ok(rows
                     .into_iter()
                     .map(
-                        |(id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version)| {
+                        |(id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version)| {
                             AppliedMigration {
                                 id,
                                 version,
                                 script_path,
+                                description,
                                 checksum,
                                 execution_time_ms: execution_time_ms as i64,
                                 installed_at: installed_at.to_rfc3339(),
@@ -297,9 +313,9 @@ impl AnyPool {
                     .collect())
             }
             AnyPool::Sqlite(pool) => {
-                let rows: Vec<(i64, String, String, String, i64, String, String, String)> =
+                let rows: Vec<(i64, String, String, String, String, i64, String, String, String)> =
                     sqlx::query_as(
-                        "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
                     )
                     .fetch_all(pool)
                     .await
@@ -308,11 +324,12 @@ impl AnyPool {
                 Ok(rows
                     .into_iter()
                     .map(
-                        |(id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version)| {
+                        |(id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version)| {
                             AppliedMigration {
                                 id,
                                 version,
                                 script_path,
+                                description,
                                 checksum,
                                 execution_time_ms,
                                 installed_at,
@@ -327,7 +344,7 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 let results = client
                     .query(
-                        "SELECT id, version, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at",
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at",
                         &[],
                     )
                     .await
@@ -339,23 +356,25 @@ impl AnyPool {
                     let id: i64 = row.get(0).ok_or_else(|| SchemaInstallerError::Database("Missing id".to_string()))?;
                     let version: &str = row.get(1).ok_or_else(|| SchemaInstallerError::Database("Missing version".to_string()))?;
                     let script_path: &str = row.get(2).ok_or_else(|| SchemaInstallerError::Database("Missing script_path".to_string()))?;
-                    let checksum: &str = row.get(3).ok_or_else(|| SchemaInstallerError::Database("Missing checksum".to_string()))?;
-                    let execution_time_ms: i32 = row.get(4).ok_or_else(|| SchemaInstallerError::Database("Missing execution_time_ms".to_string()))?;
+                    let description: &str = row.get(3).ok_or_else(|| SchemaInstallerError::Database("Missing description".to_string()))?;
+                    let checksum: &str = row.get(4).ok_or_else(|| SchemaInstallerError::Database("Missing checksum".to_string()))?;
+                    let execution_time_ms: i32 = row.get(5).ok_or_else(|| SchemaInstallerError::Database("Missing execution_time_ms".to_string()))?;
                     // `DATETIME2` round-trips through tiberius as a naive (timezone-less)
                     // `chrono::NaiveDateTime`, not `chrono::DateTime<Utc>` - that FromSql impl
                     // matches only `DateTimeOffset` (SQL Server's separate `DATETIMEOFFSET`
                     // type). Reading it as `DateTime<Utc>` panics via `Row::get`'s internal
                     // `.unwrap()` as soon as the table has a row. `installed_at`'s default is
                     // `SYSUTCDATETIME()` (see `tracking.rs`), so the naive value is already UTC.
-                    let installed_at: chrono::NaiveDateTime = row.get(5).ok_or_else(|| SchemaInstallerError::Database("Missing installed_at".to_string()))?;
+                    let installed_at: chrono::NaiveDateTime = row.get(6).ok_or_else(|| SchemaInstallerError::Database("Missing installed_at".to_string()))?;
                     let installed_at = installed_at.and_utc();
-                    let status: &str = row.get(6).ok_or_else(|| SchemaInstallerError::Database("Missing status".to_string()))?;
-                    let tool_version: &str = row.get(7).ok_or_else(|| SchemaInstallerError::Database("Missing tool_version".to_string()))?;
+                    let status: &str = row.get(7).ok_or_else(|| SchemaInstallerError::Database("Missing status".to_string()))?;
+                    let tool_version: &str = row.get(8).ok_or_else(|| SchemaInstallerError::Database("Missing tool_version".to_string()))?;
 
                     migrations.push(AppliedMigration {
                         id,
                         version: version.to_string(),
                         script_path: script_path.to_string(),
+                        description: description.to_string(),
                         checksum: checksum.to_string(),
                         execution_time_ms: execution_time_ms as i64,
                         installed_at: installed_at.to_rfc3339(),
@@ -373,6 +392,7 @@ impl AnyPool {
         &self,
         version: &str,
         script_path: &str,
+        description: &str,
         checksum: &str,
         execution_time_ms: i64,
         status: &str,
@@ -381,10 +401,11 @@ impl AnyPool {
         match self {
             AnyPool::Postgresql(pool) => {
                 let row: (i64,) = sqlx::query_as(
-                    "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+                    "INSERT INTO schema_migration (version, script_path, description, checksum, execution_time_ms, status, tool_version) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"
                 )
                 .bind(version)
                 .bind(script_path)
+                .bind(description)
                 .bind(checksum)
                 .bind(execution_time_ms)
                 .bind(status)
@@ -396,10 +417,11 @@ impl AnyPool {
             }
             AnyPool::Sqlite(pool) => {
                 sqlx::query(
-                    "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES (?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO schema_migration (version, script_path, description, checksum, execution_time_ms, status, tool_version) VALUES (?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(version)
                 .bind(script_path)
+                .bind(description)
                 .bind(checksum)
                 .bind(execution_time_ms)
                 .bind(status)
@@ -419,8 +441,8 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 client
                     .execute(
-                        "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version) VALUES (@P1, @P2, @P3, @P4, @P5, @P6)",
-                        &[&version, &script_path, &checksum, &(execution_time_ms as i32), &status, &tool_version],
+                        "INSERT INTO schema_migration (version, script_path, description, checksum, execution_time_ms, status, tool_version) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7)",
+                        &[&version, &script_path, &description, &checksum, &(execution_time_ms as i32), &status, &tool_version],
                     )
                     .await
                     .map_err(|e| map_tiberius_insert_error(e, version))?;

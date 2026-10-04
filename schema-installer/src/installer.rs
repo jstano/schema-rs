@@ -115,7 +115,7 @@ impl SchemaInstaller {
         pool.delete_failed_migration_by_version(install_version).await?;
 
         let migration_id = pool
-            .insert_migration(install_version, script_name, &checksum, 0, "pending", tool_version)
+            .insert_migration(install_version, script_name, "install schema", &checksum, 0, "pending", tool_version)
             .await?;
 
         // Execute all statements and record "success" as one transaction (H14): the
@@ -174,6 +174,7 @@ impl SchemaInstaller {
             pool.insert_migration(
                 &migration.version,
                 &migration.script_path,
+                &migration.description,
                 &checksum,
                 0,
                 "success",

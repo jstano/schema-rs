@@ -10,6 +10,7 @@ impl SchemaMigrationDdl {
     id BIGSERIAL PRIMARY KEY,
     version TEXT NOT NULL,
     script_path TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     checksum TEXT NOT NULL,
     execution_time_ms INT NOT NULL,
     installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -32,6 +33,7 @@ BEGIN
     id BIGINT IDENTITY(1,1) PRIMARY KEY,
     version NVARCHAR(200) NOT NULL,
     script_path NVARCHAR(1000) NOT NULL,
+    description NVARCHAR(500) NOT NULL DEFAULT '',
     checksum NVARCHAR(64) NOT NULL,
     execution_time_ms INT NOT NULL,
     installed_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -47,6 +49,7 @@ END"#
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     version TEXT NOT NULL,
     script_path TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     checksum TEXT NOT NULL,
     execution_time_ms INTEGER NOT NULL,
     installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -58,6 +61,28 @@ END"#
             }
         }
     }
+
+    /// Idempotent upgrade for `schema_migration` tables created before the `description`
+    /// column existed (M14): `CREATE TABLE IF NOT EXISTS` never touches an existing table.
+    /// Existing rows get an empty description, which `info` falls back from to the filename.
+    /// SQLite has no `ADD COLUMN IF NOT EXISTS`, so it returns `None` here and the caller
+    /// checks `pragma_table_info` first (see `AnyPool::ensure_migration_table`).
+    pub fn add_description_column_ddl(database_type: &GeneratorType) -> Option<String> {
+        match database_type {
+            GeneratorType::Postgresql => Some(
+                "ALTER TABLE schema_migration ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';".to_string(),
+            ),
+            GeneratorType::SqlServer => Some(
+                r#"IF COL_LENGTH('dbo.schema_migration', 'description') IS NULL
+    ALTER TABLE dbo.schema_migration ADD description NVARCHAR(500) NOT NULL CONSTRAINT DF_schema_migration_description DEFAULT '';"#
+                    .to_string(),
+            ),
+            GeneratorType::Sqlite => None,
+        }
+    }
+
+    pub const SQLITE_ADD_DESCRIPTION_COLUMN_DDL: &'static str =
+        "ALTER TABLE schema_migration ADD COLUMN description TEXT NOT NULL DEFAULT ''";
 
     /// Idempotent repair for SQL Server `schema_migration` tables created before the
     /// NVARCHAR(MAX) -> bounded-length fix (see the comment on `schema_migration_ddl`'s
@@ -135,6 +160,22 @@ mod tests {
         assert!(ddl.contains("CREATE TABLE IF NOT EXISTS schema_migration"));
         assert!(ddl.contains("INTEGER PRIMARY KEY AUTOINCREMENT"));
         assert!(ddl.contains("UNIQUE (version)"));
+    }
+
+    #[test]
+    fn test_fresh_ddl_has_description_column_for_every_dialect() {
+        for db in [GeneratorType::Postgresql, GeneratorType::SqlServer, GeneratorType::Sqlite] {
+            assert!(SchemaMigrationDdl::schema_migration_ddl(&db).contains("description"));
+        }
+    }
+
+    #[test]
+    fn test_add_description_column_ddl_is_idempotent_for_postgres_and_sqlserver() {
+        let pg = SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::Postgresql).unwrap();
+        assert!(pg.contains("ADD COLUMN IF NOT EXISTS description"));
+        let ss = SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::SqlServer).unwrap();
+        assert!(ss.contains("COL_LENGTH('dbo.schema_migration', 'description') IS NULL"));
+        assert!(SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::Sqlite).is_none());
     }
 
     #[test]

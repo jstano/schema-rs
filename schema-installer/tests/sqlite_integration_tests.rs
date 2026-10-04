@@ -359,7 +359,7 @@ async fn test_sqlite_validate_exempts_reserved_install_version() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("0", "V0__install_schema.sql", "deadbeef", 0, "success", "test")
+    pool.insert_migration("0", "V0__install_schema.sql", "install schema", "deadbeef", 0, "success", "test")
         .await
         .expect("insert reserved install row");
 
@@ -392,7 +392,7 @@ async fn test_sqlite_validate_detects_failed_migration() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "failed", "test")
+    pool.insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "failed", "test")
         .await
         .expect("insert failed migration row");
 
@@ -632,7 +632,7 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
         .await
         .expect("insert pending row");
 
@@ -683,7 +683,7 @@ async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
         .await
         .expect("insert pending row");
 
@@ -733,7 +733,7 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+    pool.insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
         .await
         .expect("insert pending row");
 
@@ -970,7 +970,7 @@ async fn test_sqlite_install_can_be_retried_after_a_failed_attempt() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("0", "V0__install_schema.sql", "deadbeef", 0, "failed", "test")
+    pool.insert_migration("0", "V0__install_schema.sql", "install schema", "deadbeef", 0, "failed", "test")
         .await
         .expect("simulate leftover failed install row");
 
@@ -1016,7 +1016,7 @@ async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gon
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "deadbeef", 0, "pending", "test")
+        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
         .await
         .expect("insert pending row");
 
@@ -1466,4 +1466,74 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
         .expect("the row inserted by the migration's initial data should be queryable");
     let customer_id: i64 = row.get("customer_id");
     assert_eq!(customer_id, 1, "the foreign key column should hold the real inserted value");
+}
+
+#[tokio::test]
+async fn test_sqlite_records_filename_and_description_not_absolute_path() {
+    // M13/M14: `script_path` must be the bare filename (an absolute path differs between
+    // dev/CI/prod), and the description is stored in its own column.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_script_path.db");
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    let migrations_dir = temp_dir.path().join("migrations");
+    std::fs::create_dir(&migrations_dir).unwrap();
+    std::fs::write(
+        migrations_dir.join("V1__create_users.sql"),
+        "CREATE TABLE users (id INTEGER PRIMARY KEY);",
+    )
+    .unwrap();
+
+    Migrator::migrate(&config, Box::new(DirectoryMigrationSource { path: migrations_dir }))
+        .await
+        .expect("migrate");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false).await.unwrap();
+    let applied = pool.get_applied_migrations().await.unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].script_path, "V1__create_users.sql");
+    assert_eq!(applied[0].description, "create users");
+}
+
+#[tokio::test]
+async fn test_sqlite_ensure_migration_table_adds_description_to_legacy_table() {
+    // M14: a `schema_migration` table created before the `description` column existed is
+    // upgraded in place, keeping its rows (with an empty description).
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_legacy_table.db");
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false).await.unwrap();
+
+    pool.execute_sql(
+        "CREATE TABLE schema_migration (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            version TEXT NOT NULL,
+            script_path TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            execution_time_ms INTEGER NOT NULL,
+            installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL,
+            tool_version TEXT NOT NULL,
+            UNIQUE (version)
+        )",
+    )
+    .await
+    .unwrap();
+    pool.execute_sql(
+        "INSERT INTO schema_migration (version, script_path, checksum, execution_time_ms, status, tool_version)
+         VALUES ('1', '/old/abs/V1__create_users.sql', 'x', 0, 'success', 'old')",
+    )
+    .await
+    .unwrap();
+
+    pool.ensure_migration_table(&GeneratorType::Sqlite).await.unwrap();
+    // Running it again must be a no-op, not a duplicate-column error.
+    pool.ensure_migration_table(&GeneratorType::Sqlite).await.unwrap();
+
+    let applied = pool.get_applied_migrations().await.unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].description, "");
 }

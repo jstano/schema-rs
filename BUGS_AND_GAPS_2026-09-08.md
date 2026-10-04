@@ -769,12 +769,20 @@ remediation plan) is worth more than any individual fix below.
 
 ### Installer
 
-- [ ] **M13. `script_path` stores an absolute local path.** [v]
+- [x] **M13. `script_path` stores an absolute local path.** [v]
   `/tmp/.../scratchpad/migrations/V1__create_users.sql`. Differs between dev, CI and prod for
   identical migrations, and is meaningless for `EmbeddedMigrationSource`.
-- [ ] **M14. `info` shows the filename, not the description, for applied rows.** [v] `migrate`
+  Fixed 2026-10-03: `DirectoryMigrationSource` now records just the filename (`V1__create_users.sql`).
+  Rows already holding an absolute path are left as-is; `info` strips directories when it falls back to them.
+- [x] **M14. `info` shows the filename, not the description, for applied rows.** [v] `migrate`
   prints `1 - create users`, `info` prints `V1__create_users.sql`. There is no `description`
   column on `schema_migration` (Flyway has one).
+  Fixed 2026-10-03: added `description` (`NOT NULL DEFAULT ''`) to the `schema_migration` DDL for all three
+  dialects, written by `insert_migration` (new parameter) and read back into `AppliedMigration`. Existing
+  tables are upgraded in place by `ensure_migration_table` (Postgres `ADD COLUMN IF NOT EXISTS`, SQL Server
+  `COL_LENGTH` guard, SQLite `pragma_table_info` check). `info` shows the stored description; legacy rows with
+  an empty one fall back to the description parsed from their filename. SQL Server paths are untested
+  (same QEMU limitation as C6) - Postgres/SQLite DDL verified by tests / real SQLite.
 - [x] **M15. Nested block comments break statement splitting** (`sql_split.rs:112-119`, and the
   `GO` variant at 283-296) — PostgreSQL guarantees `/* */` nests, so a commented-out
   `DROP TABLE users;` inside a nested comment is **executed**.
@@ -1147,7 +1155,7 @@ more progress than the findings section it's derived from.
 - [x] Hard-error on duplicate versions at load time (H13).
 - [x] Use `execute_transactional` in the `install` path and scope `check_if_installed` to
   `RESERVED_INSTALL_VERSION` (H14).
-- [ ] Store the script filename, add a `description` column, use it in `info` (M13, M14).
+- [x] Store the script filename, add a `description` column, use it in `info` (M13, M14).
 - [ ] Give `sql_split` nested-comment depth, `E''` backslash handling and end-state validation
   (M15–M17); reject version strings the comparator can't parse (M19); stop swallowing errors
   as "pending" (M20).

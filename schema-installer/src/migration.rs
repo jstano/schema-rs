@@ -22,6 +22,7 @@ pub struct AppliedMigration {
     pub id: i64,
     pub version: String,
     pub script_path: String,
+    pub description: String,
     pub checksum: String,
     pub execution_time_ms: i64,
     pub installed_at: String,
@@ -110,7 +111,10 @@ impl MigrationSource for DirectoryMigrationSource {
             let sql = std::fs::read_to_string(&path)
                 .map_err(SchemaInstallerError::Io)?;
 
-            let script_path = path.to_string_lossy().to_string();
+            // Just the filename, not the absolute path: the path differs between dev, CI and
+            // prod for identical migrations, so recording it made `schema_migration` rows
+            // environment-specific (M13).
+            let script_path = filename.to_string();
 
             migrations.push(Migration {
                 version,
@@ -172,7 +176,7 @@ fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaIns
 /// to manage (H11). A file that *does* start with `V` but is otherwise malformed still
 /// hard-errors, since that shape is far more likely to be a typo in a real migration
 /// than an intentional non-versioned file.
-fn parse_migration_filename(filename: &str) -> Result<Option<(String, String)>, SchemaInstallerError> {
+pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String, String)>, SchemaInstallerError> {
     let name_without_ext = filename
         .strip_suffix(".sql")
         .ok_or_else(|| {

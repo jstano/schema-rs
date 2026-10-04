@@ -97,8 +97,22 @@ async fn insert_pending(
     checksum: &str,
     tool_version: &str,
 ) -> Result<i64, SchemaInstallerError> {
-    pool.insert_migration(&migration.version, &migration.script_path, checksum, 0, "pending", tool_version)
+    pool.insert_migration(&migration.version, &migration.script_path, &migration.description, checksum, 0, "pending", tool_version)
         .await
+}
+
+/// The description `info` shows for an applied row. Rows written before the `description`
+/// column existed (M14) have it empty, so fall back to deriving it from the recorded filename
+/// the way `migrate` would, and failing that to the filename itself.
+fn applied_description(applied: &crate::migration::AppliedMigration) -> String {
+    if !applied.description.is_empty() {
+        return applied.description.clone();
+    }
+    let filename = applied.script_path.rsplit(['/', '\\']).next().unwrap_or("");
+    match crate::migration::parse_migration_filename(filename) {
+        Ok(Some((_, description))) if !description.is_empty() => description,
+        _ => filename.to_string(),
+    }
 }
 
 pub struct Migrator;
@@ -350,7 +364,7 @@ impl Migrator {
                 println!(
                     "{:<10} {:<30} {:<10} {:<30} {:<15}",
                     applied_mig.version,
-                    applied_mig.script_path.split('/').next_back().unwrap_or(""),
+                    applied_description(applied_mig),
                     applied_mig.status,
                     applied_mig.installed_at,
                     applied_mig.execution_time_ms
