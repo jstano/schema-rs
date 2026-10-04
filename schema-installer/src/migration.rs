@@ -46,12 +46,17 @@ impl MigrationStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+}
+
+impl std::str::FromStr for MigrationStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "success" => Some(MigrationStatus::Success),
-            "failed" => Some(MigrationStatus::Failed),
-            "pending" => Some(MigrationStatus::Pending),
-            _ => None,
+            "success" => Ok(MigrationStatus::Success),
+            "failed" => Ok(MigrationStatus::Failed),
+            "pending" => Ok(MigrationStatus::Pending),
+            _ => Err(()),
         }
     }
 }

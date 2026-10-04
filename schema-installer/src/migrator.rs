@@ -69,9 +69,9 @@ async fn wait_for_slot(
             loop {
                 let applied = pool.get_applied_migrations().await?;
                 if let Some(existing) = applied.iter().find(|m| m.version == version) {
-                    match MigrationStatus::from_str(&existing.status) {
-                        Some(MigrationStatus::Success) => return Ok(Slot::AlreadyApplied),
-                        Some(MigrationStatus::Failed) => {
+                    match existing.status.parse::<MigrationStatus>() {
+                        Ok(MigrationStatus::Success) => return Ok(Slot::AlreadyApplied),
+                        Ok(MigrationStatus::Failed) => {
                             return Err(SchemaInstallerError::MigrationFailed {
                                 version: version.clone(),
                                 error: "a concurrent process already attempted this migration and it failed; run `repair` before retrying".to_string(),

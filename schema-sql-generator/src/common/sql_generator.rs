@@ -74,6 +74,8 @@ pub struct DefaultSqlGenerator {
 }
 
 impl DefaultSqlGenerator {
+    /// Wires one strategy per output section; the argument count mirrors the struct fields.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         context: GeneratorContext,
         table_generator: Box<dyn TableGenerator>,

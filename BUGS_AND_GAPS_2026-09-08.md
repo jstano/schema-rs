@@ -1168,14 +1168,20 @@ remediation plan) is worth more than any individual fix below.
 - [ ] **L16.** No CI: no `.github/` at all, `.githooks/` is empty. 326 tests and `cargo clippy`
   run only when someone remembers, and the 28 `#[ignore]`d PostgreSQL/SQL Server integration
   tests never run — which is how C6 shipped.
-- [ ] **L17.** `.DS_Store` and `.idea/*` are tracked in git despite `.gitignore` listing `.idea/`.
-- [ ] **L18.** Docs drift: AGENTS.md and README.md:276 show `--database-type postgres`; the
+- [x] **L17.** `.DS_Store` and `.idea/*` are tracked in git despite `.gitignore` listing `.idea/`.
+
+  **Fixed 2026-10-03 (uncommitted).** `git rm --cached` on `.DS_Store` and `.idea/`; added `.DS_Store` to `.gitignore`.
+- [x] **L18.** Docs drift: AGENTS.md and README.md:276 show `--database-type postgres`; the
   accepted value is `postgresql` [v — clap rejects `postgres`]. README:283 says the output is
   `schema-postgres.sql`; it is `schema-postgresql.sql`. README:49 claims `info` shows
   checksums; it does not. AGENTS.md claims `uuid-ossp` is emitted (H8).
-- [ ] **L19.** Clippy: `large_enum_variant` on `AnyPool` (864 bytes), two `type_complexity`
+
+  **Fixed 2026-10-03.** `postgres` -> `postgresql` in AGENTS.md and README (command and output filenames); README's `info` blurb no longer claims checksums (the output has no such column). The `uuid-ossp` claim was already corrected under H8.
+- [x] **L19.** Clippy: `large_enum_variant` on `AnyPool` (864 bytes), two `type_complexity`
   tuples, `should_implement_trait` on `MigrationStatus::from_str`, `too_many_arguments` on
   `SqlGenerator::new`, `module_inception` in schema-parser.
+
+  **Fixed 2026-10-03.** `AnyPool::SqlServer` boxed; two row-tuple `type` aliases in `connection.rs`; `MigrationStatus` now implements `FromStr` (caller uses `.parse()`); `DefaultSqlGenerator::new` gets a justified `#[allow(clippy::too_many_arguments)]` (one strategy per struct field); `schema-parser/src/parser/parser.rs` renamed `xml_parser.rs` (still re-exported as `parser::parse_database_xml`). Remaining clippy warnings (`Column::new_all`, `insert_migration`, `parse_boolean_default`, etc.) weren't in this item and are untouched.
 - [ ] **L20.** Flyway gaps in the installer CLI: no `baseline` (so this can never be adopted on
   an existing database without hand-inserting rows), no `--out-of-order`, `--target`,
   `--dry-run`, `clean`, `undo`, repeatable migrations, or configurable history-table name.

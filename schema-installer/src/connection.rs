@@ -20,8 +20,13 @@ fn ado_specifies_encrypt(connection_string: &str) -> bool {
 pub enum AnyPool {
     Postgresql(Pool<Postgres>),
     Sqlite(Pool<Sqlite>),
-    SqlServer(tokio::sync::Mutex<Client<Compat<TcpStream>>>),
+    SqlServer(Box<tokio::sync::Mutex<Client<Compat<TcpStream>>>>),
 }
+
+/// Row shape of `schema_migration` as read from PostgreSQL (`installed_at` is a native timestamp).
+type PostgresMigrationRow = (i64, String, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String);
+/// Row shape of `schema_migration` as read from SQLite (`installed_at` is text).
+type SqliteMigrationRow = (i64, String, String, String, String, i64, String, String, String);
 
 impl AnyPool {
     pub async fn connect(database_type: &GeneratorType, connection_string: &str, trust_server_certificate: bool) -> Result<Self, SchemaInstallerError> {
@@ -77,7 +82,7 @@ impl AnyPool {
                     .await
                     .map_err(|e| SchemaInstallerError::Connection(format!("Failed to authenticate with SQL Server: {}", e)))?;
 
-                Ok(AnyPool::SqlServer(tokio::sync::Mutex::new(client)))
+                Ok(AnyPool::SqlServer(Box::new(tokio::sync::Mutex::new(client))))
             }
         }
     }
@@ -298,7 +303,7 @@ impl AnyPool {
     pub async fn get_applied_migrations(&self) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                let rows: Vec<(i64, String, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String)> =
+                let rows: Vec<PostgresMigrationRow> =
                     sqlx::query_as(
                         "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY id"
                     )
@@ -326,7 +331,7 @@ impl AnyPool {
                     .collect())
             }
             AnyPool::Sqlite(pool) => {
-                let rows: Vec<(i64, String, String, String, String, i64, String, String, String)> =
+                let rows: Vec<SqliteMigrationRow> =
                     sqlx::query_as(
                         "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY id"
                     )

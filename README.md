@@ -89,7 +89,7 @@ Applied migration: 2 - create posts
 ```
 
 #### `info` — Display migration status
-Shows all migrations (applied and pending) with execution times and checksums.
+Shows all migrations (applied and pending) with execution times.
 
 ```bash
 schema-installer \
@@ -292,14 +292,14 @@ docker run --rm -v $(pwd)/migrations:/migrations jstano/schema-rs schema-install
   migrate --migrations-dir /migrations
 
 docker run --rm -v $(pwd)/schemas:/data jstano/schema-rs schema-sql-generator \
-  --database-type postgres \
+  --database-type postgresql \
   --schema-file /data/schema.xml \
   --foreign-key-mode relations \
   --boolean-mode native
 ```
 
 The generator writes its output next to the input file (`{schema-stem}-{database-type}.sql`),
-so with the mount above the resulting `schema-postgres.sql` appears back in `./schemas` on
+so with the mount above the resulting `schema-postgresql.sql` appears back in `./schemas` on
 the host.
 
 To build and publish the image yourself (requires `docker buildx` and a prior `docker login`):

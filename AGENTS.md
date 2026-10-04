@@ -57,7 +57,7 @@ cargo doc --workspace --open
 
 # Run SQL generator (requires schema file)
 cargo run -p schema-sql-generator -- \
-  --database-type postgres \
+  --database-type postgresql \
   --schema-file schema-parser/tests/resources/schema-parser-test-schema.xml \
   --foreign-key-mode relations \
   --boolean-mode native
@@ -72,7 +72,7 @@ cargo run -p schema-installer -- \
 cargo make coverage
 ```
 
-By default the CLI writes output to a file named `{schema-stem}-{database-type}.sql` in the same directory as the input schema file (e.g. `schema-parser-test-schema-postgres.sql`), not to stdout. Pass `--output-file <path>` to override this with an exact output path (parent directories are created if missing), e.g. `--output-file migration/V1__initial_schema.sql`.
+By default the CLI writes output to a file named `{schema-stem}-{database-type}.sql` in the same directory as the input schema file (e.g. `schema-parser-test-schema-postgresql.sql`), not to stdout. Pass `--output-file <path>` to override this with an exact output path (parent directories are created if missing), e.g. `--output-file migration/V1__initial_schema.sql`.
 
 ## Architecture
 
