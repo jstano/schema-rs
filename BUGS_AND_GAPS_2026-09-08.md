@@ -1288,7 +1288,7 @@ more progress than the findings section it's derived from.
   `output_tables`/`output_table`, mirroring `SqlServerTableGenerator::output_tables`
   (`sqlserver_table_generator.rs:35-50`). Do the same for `PostgresTableGenerator` and
   restore its `output_table` to the full five-call sequence. — Fixed with H1.
-- [ ] Sweep every trait for the same "delegate to `Default*` and lose self-dispatch" shape —
+- [x] Sweep every trait for the same "delegate to `Default*` and lose self-dispatch" shape —
   M10 lists the three that remain. This is the pattern's **third** appearance (BUGS #6, H1);
   consider making the default implementations take `&dyn Trait` so it can't recur. — Two
   more instances were found and fixed opportunistically while fixing H1 (see H1's note), but
@@ -1323,7 +1323,7 @@ more progress than the findings section it's derived from.
 - [x] Make `attr_i32`/`attr_f64`/`attr_bool` return `Err` on an unparseable value instead of
   `None` (H4), and replace the two `.unwrap()`s in `convert.rs:35,41` (H5). These were the
   last silent holes left by the BUGS #22/#23 sweep, and they fed directly into H3.
-- [ ] L6: `roxml_parser.rs`'s `parse_check_node` still uses `node.text()` instead of
+- [x] L6: `roxml_parser.rs`'s `parse_check_node` still uses `node.text()` instead of
   `collect_text`, so a `<check>` with a comment or nested element loses everything after it.
   Not addressed.
 
@@ -1347,7 +1347,7 @@ more progress than the findings section it's derived from.
 - [x] Use `execute_transactional` in the `install` path and scope `check_if_installed` to
   `RESERVED_INSTALL_VERSION` (H14).
 - [x] Store the script filename, add a `description` column, use it in `info` (M13, M14).
-- [ ] Give `sql_split` nested-comment depth, `E''` backslash handling and end-state validation
+- [x] Give `sql_split` nested-comment depth, `E''` backslash handling and end-state validation
   (M15–M17); reject version strings the comparator can't parse (M19); stop swallowing errors
   as "pending" (M20).
 
@@ -1358,7 +1358,7 @@ the crate is worth keeping in its current form.
   `schema-sql-generator` table generator rather than a second, divergent type mapping —
   that single change fixes C7, M23 and M24 together and removes the duplicate mapping
   causing permanent diff churn. (Fixed 2026-09-28, see C7 above.)
-- [ ] Share the constraint/index/FK naming helpers with `schema-sql-generator` (H20).
+- [x] Share the constraint/index/FK naming helpers with `schema-sql-generator` (H20).
 - [x] Compare `relation_type`, key uniqueness, constraint bodies and view bodies (H19) — fixed
   2026-09-09, see H19 above.
 - [x] Emit rename changes, or delete the dead `RenameTable`/`RenameColumn` variants and
@@ -1367,28 +1367,28 @@ the crate is worth keeping in its current form.
   unsupported** (2026-09-28, user decision — see C7 above), not by implementing rename
   emission: there's no declarative signal in the XML format to key a rename off, and a
   heuristic risks a false-positive match silently renaming the wrong table.
-- [ ] Guard destructive statements behind a flag; wrap output in a transaction (M28).
+- [x] Guard destructive statements behind a flag; wrap output in a transaction (M28).
 - [x] Ship a binary, or fold the functionality into `schema-installer` (M36). (Resolved 2026-10-03: `schema-migration-generator` binary already exists; documented in README.)
 
 ### Step 7 — Model, diagrams, reverse engineer, hygiene
 - [x] H21: drop the `to_lowercase()` in `Table::column`/`has_column`; settle on one
   case-folding convention across `Schema::table_index`, `Table::column` and
   `Key::contains_column`.
-- [ ] H22/M11/M12: finish `Schema::validate()` (duplicate names, key/index columns, relation
+- [x] H22/M11/M12: finish `Schema::validate()` (duplicate names, key/index columns, relation
   target columns, enum/array type resolution — H23's panic sites); make schema lookup
   case-insensitive.
-- [ ] M30/M31/M32: resolve diagram relation endpoints through `find_table_by_qualified_name`
+- [x] M30/M31/M32: resolve diagram relation endpoints through `find_table_by_qualified_name`
   and emit the same entity id used for the declaration; key the identifier map by qualified
   name; derive cardinality from the FK column's `required()`.
 - [x] H24: keep the schema name, write keys/indexes for PK-less tables, sort key output, and
   skip unsupported column types with a warning.
-- [ ] M33/M34: cross-schema FKs, expression/partial/covering indexes, materialized views, and
+- [ ] M33/M34 (M34 done; M33 open): cross-schema FKs, expression/partial/covering indexes, materialized views, and
   align the `ON DELETE` mapping across all three crates.
 - [x] L1: convert both panicking `main.rs` files to `Result`-returning, like the other binaries.
-- [ ] L16: add a GitHub Actions workflow — `cargo fmt --check`,
+- [x] L16: add a GitHub Actions workflow — `cargo fmt --check`,
   `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, plus a services job
   for the integration tests.
-- [ ] L17/L18/L19: untrack `.DS_Store`/`.idea`, correct the docs, clear the clippy warnings.
+- [x] L17/L18/L19: untrack `.DS_Store`/`.idea`, correct the docs, clear the clippy warnings.
   Partial: L18's AGENTS.md `uuid-ossp` claim was already corrected as part of H8.
 
 ---
