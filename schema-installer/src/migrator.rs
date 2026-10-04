@@ -489,11 +489,11 @@ impl Migrator {
     ) -> Result<bool, SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
 
-        if pool.ensure_migration_table(&config.database_type).await.is_err() {
-            return Ok(true);
-        }
+        // Propagate failures (bad credentials, missing permissions, ...) rather than
+        // reporting them as "everything is pending".
+        pool.ensure_migration_table(&config.database_type).await?;
 
-        let applied = pool.get_applied_migrations().await.unwrap_or_default();
+        let applied = pool.get_applied_migrations().await?;
         let applied_versions: HashSet<String> = applied
             .iter()
             .filter(|m| m.status == "success")

@@ -1537,3 +1537,27 @@ async fn test_sqlite_ensure_migration_table_adds_description_to_legacy_table() {
     assert_eq!(applied.len(), 1);
     assert_eq!(applied[0].description, "");
 }
+
+#[tokio::test]
+async fn test_sqlite_has_pending_migrations_propagates_errors() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let db_path = temp_dir.path().join("readonly.db");
+
+    // Create an empty database file, then reopen it read-only so that creating the
+    // migration table fails.
+    std::fs::File::create(&db_path).expect("create db file");
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(format!("sqlite://{}?mode=ro", db_path.to_string_lossy()))
+        .build()
+        .expect("valid config");
+
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sqlite");
+    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir });
+
+    let result = Migrator::has_pending_migrations(&config, source).await;
+    assert!(
+        result.is_err(),
+        "a failure creating the migration table must surface as an error, not Ok(true): {result:?}"
+    );
+}

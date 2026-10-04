@@ -810,10 +810,15 @@ remediation plan) is worth more than any individual fix below.
   comparison. `parse_migration_filename` now hard-errors on a segment with a leading zero
   (`V01`, `V1.02`) rather than normalizing it, since that's the case where the comparator and
   the string-based "already applied" check disagreed. Regression tests in `migration.rs`.
-- [ ] **M20. Errors are converted into "everything is pending"** (`migrator.rs:330-334`) —
+- [x] **M20. Errors are converted into "everything is pending"** (`migrator.rs:330-334`) —
   `ensure_migration_table(…).is_err()` → `return Ok(true)` and
   `get_applied_migrations().await.unwrap_or_default()`. A permissions failure makes
   `pending-check` report unapplied migrations instead of bad credentials.
+
+  **Fixed 2026-10-03.** `Migrator::has_pending_migrations` now propagates both failures with
+  `?` instead of returning `Ok(true)` / an empty applied list. Regression test
+  `test_sqlite_has_pending_migrations_propagates_errors` opens a read-only SQLite database
+  (migration-table creation fails) and asserts `Err`; confirmed it fails on the old code.
 - [ ] **M21. TLS is forced on for SQL Server** (`connection.rs:50`) — `config.encryption(Required)`
   runs *after* `from_ado_string`, discarding the user's `Encrypt=false`.
 - [ ] **M22. `is_installed`/`get_installed_version` sniff error strings** (`installer.rs:121,135`)
