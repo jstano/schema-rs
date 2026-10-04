@@ -701,11 +701,19 @@ remediation plan) is worth more than any individual fix below.
   `postgres_trigger_generator.rs:25,39` gates trigger emission on
   `!table.aggregations().is_empty()`, but no aggregation SQL is ever generated —
   `Aggregation::aggregation_columns/groups/frequency` have no non-test call sites.
-- [ ] **M8. Truncated identifiers can still exceed PostgreSQL's limit** (BUGS #15 partially
+- [x] **M8. Truncated identifiers can still exceed PostgreSQL's limit** (BUGS #15 partially
   fixed): `key_generator.rs:34-60` etc. test with `full_name.len()` (**bytes**) but truncate
   with `.chars().take(available)`. PostgreSQL's 63 is a byte limit, so a Cyrillic table name
   truncates to 60 chars = 120 bytes and PostgreSQL silently truncates further — potentially
   colliding with a sibling whose only difference is the cut-off numeric suffix.
+
+  **Fixed 2026-10-03.** The cited `key_generator.rs` code had already moved to the shared
+  `schema_model::naming::build_name` (char-count check + `.chars().take`), so the mismatch was
+  there instead. `build_name` now takes the `DatabaseType` and measures in bytes for
+  PostgreSQL (the only byte-limited dialect; SQL Server/SQLite stay char-based), lower-cases
+  first, and pops table-name chars until the whole identifier fits, keeping the ordinal
+  suffix intact. Added tests for Cyrillic names on Postgres (<=63 bytes, distinct ordinals)
+  and that SQLite stays char-based.
 - [ ] **M9. No dependency ordering for views/functions.** Views are emitted in declaration order
   and functions come *after* triggers but *before* procedures (`sql_generator.rs:126-130`).
   A view selecting from a later-declared view fails.

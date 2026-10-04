@@ -16,43 +16,62 @@ const FK_PREFIX: &str = "fk_";
 /// Builds a `<prefix><table><suffix>` identifier, lower-cased and truncated - by char,
 /// never by byte index, so a multi-byte UTF-8 table name can't panic - so it fits the
 /// target database's max identifier length.
-fn build_name(prefix: &str, table_name: &str, suffix: &str, max_len: usize) -> String {
-    let full_name = format!("{prefix}{table_name}{suffix}");
-    if full_name.chars().count() <= max_len {
-        return full_name.to_lowercase();
+///
+/// PostgreSQL's limit (63) is in *bytes*; SQL Server's and SQLite's are in characters. The
+/// budget is measured accordingly, otherwise a multi-byte table name would pass the char
+/// check, then be silently truncated by PostgreSQL itself - potentially colliding with a
+/// sibling whose only difference was the (cut-off) numeric suffix (M8). Lower-casing can
+/// change a character's width, so the measurement is taken on the lower-cased result.
+fn build_name(prefix: &str, table_name: &str, suffix: &str, database_type: DatabaseType) -> String {
+    let max_len = database_type.max_key_name_length();
+    let measure = |s: &str| {
+        if database_type == DatabaseType::Postgresql {
+            s.len()
+        } else {
+            s.chars().count()
+        }
+    };
+
+    let full_name = format!("{prefix}{table_name}{suffix}").to_lowercase();
+    if measure(&full_name) <= max_len {
+        return full_name;
     }
 
-    // Reserve space for the *actual* prefix/suffix length, not a hard-coded budget -
-    // a table with >=10 siblings needs a 2-digit suffix.
-    let available = max_len.saturating_sub(prefix.chars().count() + suffix.chars().count());
-    let truncated_table_name: String = table_name.chars().take(available).collect();
-    format!("{prefix}{truncated_table_name}{suffix}").to_lowercase()
+    // Keep the suffix intact (it carries the ordinal that keeps sibling names distinct) and
+    // drop table-name chars one at a time until the whole identifier fits.
+    let prefix = prefix.to_lowercase();
+    let suffix = suffix.to_lowercase();
+    let mut table_name: String = table_name.to_lowercase();
+    while !table_name.is_empty() && measure(&format!("{prefix}{table_name}{suffix}")) > max_len {
+        table_name.pop();
+    }
+    format!("{prefix}{table_name}{suffix}")
 }
 
 /// Name of a table's primary key constraint, e.g. `pk_users`.
 pub fn primary_key_name(database_type: DatabaseType, table_name: &str) -> String {
-    build_name(PK_PREFIX, table_name, "", database_type.max_key_name_length())
+    build_name(PK_PREFIX, table_name, "", database_type)
 }
 
 /// Name of the `ordinal`-th (1-based) unique key constraint on a table, e.g. `ak_users1`.
 /// `ordinal` counts only unique keys - it is the position of this key among the table's
 /// `KeyType::Unique` entries, matching the create path's numbering.
 pub fn unique_key_name(database_type: DatabaseType, table_name: &str, ordinal: usize) -> String {
-    build_name(AK_PREFIX, table_name, &ordinal.to_string(), database_type.max_key_name_length())
+    build_name(AK_PREFIX, table_name, &ordinal.to_string(), database_type)
 }
 
 /// Name of the `ordinal`-th (1-based) non-unique index on a table, e.g. `ix_users1`.
 /// `ordinal` counts only indexes - the position of this key among the table's
 /// `KeyType::Index` entries, matching the create path's numbering.
 pub fn index_name(database_type: DatabaseType, table_name: &str, ordinal: usize) -> String {
-    build_name(IX_PREFIX, table_name, &ordinal.to_string(), database_type.max_key_name_length())
+    build_name(IX_PREFIX, table_name, &ordinal.to_string(), database_type)
 }
 
 /// Name of the `ordinal`-th (1-based) foreign key constraint on a table, e.g. `fk_orders1`.
 /// `ordinal` is the position of this relation among all of the table's relations,
 /// matching the create path's numbering.
 pub fn foreign_key_name(database_type: DatabaseType, table_name: &str, ordinal: usize) -> String {
-    build_name(FK_PREFIX, table_name, &ordinal.to_string(), database_type.max_key_name_length())
+    build_name(FK_PREFIX, table_name, &ordinal.to_string(), database_type)
 }
 
 #[cfg(test)]
@@ -87,5 +106,29 @@ mod tests {
         assert!(name.chars().count() <= 32);
         assert!(name.starts_with("ix_"));
         assert!(name.ends_with("10"));
+    }
+
+    #[test]
+    fn postgres_limit_is_measured_in_bytes_not_chars() {
+        // 70 Cyrillic chars = 140 bytes; the old char-based budget kept 60 chars (120 bytes)
+        // and left PostgreSQL to truncate further on its own.
+        let long_table_name = "ж".repeat(70);
+        for ordinal in [1, 2, 10] {
+            let name = unique_key_name(DatabaseType::Postgresql, &long_table_name, ordinal);
+            assert!(name.len() <= 63, "name '{}' is {} bytes", name, name.len());
+            assert!(name.starts_with("ak_"));
+            assert!(name.ends_with(&ordinal.to_string()));
+        }
+        assert_ne!(
+            unique_key_name(DatabaseType::Postgresql, &long_table_name, 1),
+            unique_key_name(DatabaseType::Postgresql, &long_table_name, 2)
+        );
+    }
+
+    #[test]
+    fn non_postgres_limits_remain_char_based() {
+        let long_table_name = "ж".repeat(200);
+        let name = primary_key_name(DatabaseType::Sqlite, &long_table_name);
+        assert_eq!(name.chars().count(), 128);
     }
 }
