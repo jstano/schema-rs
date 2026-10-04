@@ -636,13 +636,25 @@ remediation plan) is worth more than any individual fix below.
   output cleanly. Full `cargo test --workspace` passes (577 tests, 2 pre-existing ignored);
   `cargo clippy -p schema-sql-generator --all-targets` clean (only pre-existing unrelated
   warnings).
-- [ ] **M4. PostgreSQL enum types are emitted unqualified.** [v] (`postgres_generator.rs:104-105`)
+- [x] **M4. PostgreSQL enum types are emitted unqualified.** [v] (`postgres_generator.rs:104-105`)
   while the columns using them are fully qualified. Lands wherever `search_path` points;
   two schemas with a same-named enum → the second `drop type … cascade` removes the first.
-- [ ] **M5. Cross-schema enum references are impossible.** `column_type_generator.rs:147-148` →
+  - **Fixed (2026-10-03).** `create type`/`drop type` and the column's type are now qualified with the
+    schema that *owns* the enum (`app.status_type`; default-schema enums stay bare) via
+    `qualified_enum_type_name` in `postgres_util.rs`. Correction to the text above: columns were
+    *not* qualified before either - `enum_sql` returned the bare name - so both sides changed.
+    **Still open (not part of M4's cited code):** the migration path - `SchemaChange::AddEnumType`/
+    `DropEnumType`/`ModifyEnumType` carry no schema name, so `schema-migration-generator` still
+    emits unqualified `create type`/`drop type` for enums in named schemas.
+- [x] **M5. Cross-schema enum references are impossible.** `column_type_generator.rs:147-148` →
   `Schema::get_enum_type` (panics), and `validate()` (`schema.rs:169-178`) only looks in the
   column's own schema. A database-level `<enum>` used from inside `<schema name="app">` is
   rejected as *"not defined in this schema"*.
+  - **Fixed (2026-10-03).** New `DatabaseModel::resolve_enum_type(schema, name)`: the column's own
+    schema first, then database-level (default-schema) enums; an enum in the column's own schema
+    shadows a same-named database-level one. `find_enum_type` (previously a panic path) and the
+    enum check-constraint generator use it. The "undeclared enumType" validation moved from
+    `Schema::validate()` (which can't see other schemas) to `DatabaseModel::validate()`.
 - [x] **M6. SQL Server type mappings lose semantics.** [v] `Date`/`Time`/`Timestamp` all →
   `datetime` (should be `date`/`time`/`datetime2`); `Json` → `json`, a type that does not
   exist before SQL Server 2025 (should be `nvarchar(max)`).
@@ -747,13 +759,16 @@ remediation plan) is worth more than any individual fix below.
 - [ ] **M14. `info` shows the filename, not the description, for applied rows.** [v] `migrate`
   prints `1 - create users`, `info` prints `V1__create_users.sql`. There is no `description`
   column on `schema_migration` (Flyway has one).
-- [ ] **M15. Nested block comments break statement splitting** (`sql_split.rs:112-119`, and the
+- [x] **M15. Nested block comments break statement splitting** (`sql_split.rs:112-119`, and the
   `GO` variant at 283-296) — PostgreSQL guarantees `/* */` nests, so a commented-out
   `DROP TABLE users;` inside a nested comment is **executed**.
-- [ ] **M16. Backslash escapes in `E'…'` break quote tracking** (`sql_split.rs:69-80`, which
+  Fixed 2026-10-03: `/* */` nests (depth counter) for PostgreSQL and SQL Server, in both the `;` and `GO` splitters; SQLite deliberately does not nest.
+- [x] **M16. Backslash escapes in `E'…'` break quote tracking** (`sql_split.rs:69-80`, which
   handles only doubled `''`) → `E'it\'s; here'` is split mid-literal.
-- [ ] **M17. Splitter end-state is never validated** (`sql_split.rs:123-126`) — an unterminated
+  Fixed 2026-10-03: PostgreSQL-only; a `\` inside an `E'…'` literal now escapes the next char. Plain `'…'` strings are unchanged (backslash literal).
+- [x] **M17. Splitter end-state is never validated** (`sql_split.rs:123-126`) — an unterminated
   `$$` body yields one giant "statement" and an unhelpful error thousands of characters in.
+  Fixed 2026-10-03: `split_sql_statements` returns `Result`; a script ending inside an unterminated string, quoted identifier, dollar-quote or block comment is an error (the migration is marked failed, nothing executed).
 - [ ] **M18. No way to run a migration outside a transaction** (`migrator.rs:398-401`) →
   `CREATE INDEX CONCURRENTLY`, `VACUUM`, `ALTER TYPE … ADD VALUE` can never be migrated.
   Relatedly, a script with its own `BEGIN;`/`COMMIT;` nests, the inner `COMMIT` closes the

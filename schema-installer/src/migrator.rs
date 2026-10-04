@@ -547,7 +547,7 @@ async fn execute_migration(
     migration_id: i64,
     sql: &str,
 ) -> Result<i64, SchemaInstallerError> {
-    let statements = crate::sql_split::split_sql_statements(sql, database_type);
+    let statements = crate::sql_split::split_sql_statements(sql, database_type)?;
     // All statements in a migration file, plus the tracking row's "success" update,
     // commit or roll back together as one transaction - see `execute_migration_transactional`
     // for why (BUGS_AND_GAPS H9).

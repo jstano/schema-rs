@@ -13,6 +13,17 @@ pub fn to_snake_case(s: &str) -> String {
     result
 }
 
+/// The PostgreSQL name of an enum type: `schema.snake_case_name` for an enum owned by a
+/// named schema, bare `snake_case_name` for the default schema. Qualifying matters because
+/// an unqualified `create type` lands wherever `search_path` points, and two schemas
+/// declaring a same-named enum would otherwise collide (M4).
+pub fn qualified_enum_type_name(owner_schema: Option<&str>, enum_name: &str) -> String {
+    match owner_schema {
+        Some(schema) => format!("{}.{}", schema, to_snake_case(enum_name)),
+        None => to_snake_case(enum_name),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

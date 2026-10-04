@@ -1,3 +1,4 @@
+use crate::error::SchemaInstallerError;
 use schema_sql_generator::common::generator_type::GeneratorType;
 
 /// Splits a SQL script into individual statements, respecting quoting and
@@ -5,12 +6,45 @@ use schema_sql_generator::common::generator_type::GeneratorType;
 /// separators) embedded inside string/identifier/dollar-quoted literals or
 /// comments are not treated as statement boundaries.
 ///
-/// Returns trimmed, non-empty statements only.
-pub(crate) fn split_sql_statements(sql: &str, database_type: &GeneratorType) -> Vec<String> {
+/// Returns trimmed, non-empty statements only, or an error if the script ends
+/// inside an unterminated string, quoted identifier, dollar-quote or block comment
+/// (M17) - splitting it anyway would yield one giant bogus "statement".
+///
+/// Dialect rules: PostgreSQL and SQL Server nest `/* */` comments, SQLite does not (M15);
+/// only PostgreSQL has `E'...'` strings where `\` escapes a quote (M16).
+pub(crate) fn split_sql_statements(
+    sql: &str,
+    database_type: &GeneratorType,
+) -> Result<Vec<String>, SchemaInstallerError> {
+    let rules = match database_type {
+        GeneratorType::Postgresql => Rules { nested_comments: true, backslash_escapes: true },
+        GeneratorType::SqlServer => Rules { nested_comments: true, backslash_escapes: false },
+        _ => Rules { nested_comments: false, backslash_escapes: false },
+    };
     match database_type {
-        GeneratorType::SqlServer => split_on_go_batches(sql),
-        _ => split_on_semicolons(sql),
+        GeneratorType::SqlServer => split_on_go_batches(sql, rules),
+        _ => split_on_semicolons(sql, rules),
     }
+}
+
+#[derive(Clone, Copy)]
+struct Rules {
+    nested_comments: bool,
+    backslash_escapes: bool,
+}
+
+/// True if the single quote at `pos` opens a PostgreSQL escape string (`E'...'`):
+/// preceded by `e`/`E` that is not itself the tail of a longer identifier or number.
+fn opens_escape_string(chars: &[char], pos: usize) -> bool {
+    pos >= 1
+        && matches!(chars[pos - 1], 'e' | 'E')
+        && (pos < 2 || !(chars[pos - 2].is_alphanumeric() || chars[pos - 2] == '_' || chars[pos - 2] == '$'))
+}
+
+fn unterminated(what: &str) -> SchemaInstallerError {
+    SchemaInstallerError::Execution(format!(
+        "unterminated {what} at end of SQL script - check for a missing closing delimiter"
+    ))
 }
 
 enum State {
@@ -23,7 +57,7 @@ enum State {
 }
 
 /// Context-aware `;`-splitter for Postgres/SQLite dialects.
-fn split_on_semicolons(sql: &str) -> Vec<String> {
+fn split_on_semicolons(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaInstallerError> {
     let chars: Vec<char> = sql.chars().collect();
     let len = chars.len();
 
@@ -31,6 +65,8 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
     let mut current_start = 0usize;
     let mut state = State::Normal;
     let mut dollar_tag = String::new();
+    let mut comment_depth = 0usize;
+    let mut escape_string = false;
 
     let mut i = 0usize;
     while i < len {
@@ -39,6 +75,7 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
         match state {
             State::Normal => {
                 if c == '\'' {
+                    escape_string = rules.backslash_escapes && opens_escape_string(&chars, i);
                     state = State::SingleQuote;
                     i += 1;
                 } else if c == '"' {
@@ -49,6 +86,7 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
                     i += 2;
                 } else if c == '/' && i + 1 < len && chars[i + 1] == '*' {
                     state = State::BlockComment;
+                    comment_depth = 1;
                     i += 2;
                 } else if c == '$' {
                     if let Some((tag, end)) = try_match_dollar_tag_open(&chars, i) {
@@ -67,7 +105,9 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
                 }
             }
             State::SingleQuote => {
-                if c == '\'' {
+                if escape_string && c == '\\' && i + 1 < len {
+                    i += 2;
+                } else if c == '\'' {
                     if i + 1 < len && chars[i + 1] == '\'' {
                         i += 2;
                     } else {
@@ -110,8 +150,14 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
                 i += 1;
             }
             State::BlockComment => {
-                if c == '*' && i + 1 < len && chars[i + 1] == '/' {
-                    state = State::Normal;
+                if rules.nested_comments && c == '/' && i + 1 < len && chars[i + 1] == '*' {
+                    comment_depth += 1;
+                    i += 2;
+                } else if c == '*' && i + 1 < len && chars[i + 1] == '/' {
+                    comment_depth -= 1;
+                    if comment_depth == 0 {
+                        state = State::Normal;
+                    }
                     i += 2;
                 } else {
                     i += 1;
@@ -120,15 +166,23 @@ fn split_on_semicolons(sql: &str) -> Vec<String> {
         }
     }
 
+    match state {
+        State::SingleQuote => return Err(unterminated("string literal")),
+        State::DoubleQuote => return Err(unterminated("quoted identifier")),
+        State::DollarQuote => return Err(unterminated("dollar-quoted string")),
+        State::BlockComment => return Err(unterminated("block comment")),
+        State::Normal | State::LineComment => {}
+    }
+
     if current_start < len {
         statements.push(chars[current_start..len].iter().collect::<String>());
     }
 
-    statements
+    Ok(statements
         .into_iter()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .collect()
+        .collect())
 }
 
 /// If `chars[pos]` starts a dollar-quote opening tag (`$`, then zero or more
@@ -177,7 +231,7 @@ enum GoState {
 /// tracks quote/comment state across the whole script first, so a `GO`-only line that's
 /// actually inside a multi-line string literal or block comment is never mistaken for a
 /// real batch separator.
-fn split_on_go_batches(sql: &str) -> Vec<String> {
+fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaInstallerError> {
     let chars: Vec<char> = sql.chars().collect();
     let len = chars.len();
 
@@ -185,6 +239,7 @@ fn split_on_go_batches(sql: &str) -> Vec<String> {
     let mut current = String::new();
     let mut current_line = String::new();
     let mut state = GoState::Normal;
+    let mut comment_depth = 0usize;
     // Whether the parser was in `Normal` state at the *start* of the line now being
     // scanned - only a line that starts and ends in `Normal` state can possibly be a
     // real top-level `GO` separator.
@@ -220,6 +275,7 @@ fn split_on_go_batches(sql: &str) -> Vec<String> {
                     i += 2;
                 } else if c == '/' && i + 1 < len && chars[i + 1] == '*' {
                     state = GoState::BlockComment;
+                    comment_depth = 1;
                     current_line.push_str("/*");
                     i += 2;
                 } else if c == '\n' {
@@ -281,9 +337,16 @@ fn split_on_go_batches(sql: &str) -> Vec<String> {
                 }
             }
             GoState::BlockComment => {
-                if c == '*' && i + 1 < len && chars[i + 1] == '/' {
+                if rules.nested_comments && c == '/' && i + 1 < len && chars[i + 1] == '*' {
+                    current_line.push_str("/*");
+                    comment_depth += 1;
+                    i += 2;
+                } else if c == '*' && i + 1 < len && chars[i + 1] == '/' {
                     current_line.push_str("*/");
-                    state = GoState::Normal;
+                    comment_depth -= 1;
+                    if comment_depth == 0 {
+                        state = GoState::Normal;
+                    }
                     i += 2;
                 } else if c == '\n' {
                     finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
@@ -296,16 +359,22 @@ fn split_on_go_batches(sql: &str) -> Vec<String> {
             }
         }
     }
+    match state {
+        GoState::SingleQuote => return Err(unterminated("string literal")),
+        GoState::DoubleQuote => return Err(unterminated("quoted identifier")),
+        GoState::BlockComment => return Err(unterminated("block comment")),
+        GoState::Normal | GoState::LineComment => {}
+    }
     finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
     if !current.is_empty() {
         batches.push(current);
     }
 
-    batches
+    Ok(batches
         .into_iter()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .collect()
+        .collect())
 }
 
 /// A line is a `GO` batch separator iff, once trimmed of surrounding
@@ -321,7 +390,7 @@ mod tests {
     #[test]
     fn splits_simple_postgres_statements() {
         let sql = "CREATE TABLE t1 (id INT); CREATE TABLE t2 (id INT);";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], "CREATE TABLE t1 (id INT)");
         assert_eq!(result[1], "CREATE TABLE t2 (id INT)");
@@ -330,7 +399,7 @@ mod tests {
     #[test]
     fn splits_simple_sqlserver_go_batches() {
         let sql = "CREATE TABLE t1 (id INT)\nGO\nCREATE TABLE t2 (id INT)\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], "CREATE TABLE t1 (id INT)");
         assert_eq!(result[1], "CREATE TABLE t2 (id INT)");
@@ -339,7 +408,7 @@ mod tests {
     #[test]
     fn sqlserver_go_inside_identifier_is_not_a_separator() {
         let sql = "CREATE TABLE t1 (EGO INT)\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("EGO"));
     }
@@ -347,7 +416,7 @@ mod tests {
     #[test]
     fn does_not_split_inside_single_quoted_string_containing_semicolon() {
         let sql = "INSERT INTO t1 (name) VALUES ('a;b'); INSERT INTO t1 (name) VALUES ('c');";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("'a;b'"));
     }
@@ -355,7 +424,7 @@ mod tests {
     #[test]
     fn handles_escaped_single_quotes() {
         let sql = "INSERT INTO t1 (name) VALUES ('it''s; fine'); SELECT 1;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("it''s; fine"));
     }
@@ -363,7 +432,7 @@ mod tests {
     #[test]
     fn handles_double_quoted_identifiers_with_semicolon_and_escaped_quote() {
         let sql = r#"SELECT * FROM "weird;table" WHERE "a""b" = 1; SELECT 2;"#;
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains(r#""weird;table""#));
     }
@@ -371,21 +440,21 @@ mod tests {
     #[test]
     fn does_not_split_inside_line_comment() {
         let sql = "SELECT 1; -- comment with a ; semicolon\nSELECT 2;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn does_not_split_inside_block_comment() {
         let sql = "SELECT 1; /* comment ; with ; semicolons */ SELECT 2;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn does_not_split_inside_bare_dollar_quote() {
         let sql = "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$\nBEGIN\n  PERFORM 1; PERFORM 2;\nEND;\n$$; SELECT 1;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("PERFORM 1; PERFORM 2;"));
     }
@@ -393,7 +462,7 @@ mod tests {
     #[test]
     fn does_not_split_inside_tagged_dollar_quote() {
         let sql = "do $createextensions$\nbegin\n  create extension if not exists pgcrypto;\nend\n$createextensions$;\nSELECT 1;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("create extension if not exists pgcrypto;"));
     }
@@ -401,14 +470,14 @@ mod tests {
     #[test]
     fn different_dollar_tags_do_not_close_each_other() {
         let sql = "SELECT $foo$ this has $$ inside it $foo$ as literal;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 1);
     }
 
     #[test]
     fn dollar_sign_not_forming_a_quote_is_left_alone() {
         let sql = "INSERT INTO prices (amount) VALUES ('$5'); SELECT 1;";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("'$5'"));
     }
@@ -440,7 +509,7 @@ $createextensions$;
 
 insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
 "#;
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 4);
         assert!(result[0].starts_with("create table books"));
         assert!(result[1].starts_with("create or replace function generate_uuid"));
@@ -454,7 +523,7 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
     #[test]
     fn empty_and_whitespace_only_statements_are_filtered() {
         let sql = "  ;\nCREATE TABLE t1 (id INT);\n\n  ;  ";
-        let result = split_sql_statements(sql, &GeneratorType::Postgresql);
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "CREATE TABLE t1 (id INT)");
     }
@@ -462,7 +531,7 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
     #[test]
     fn sqlite_uses_semicolon_splitting_like_postgres() {
         let sql = "CREATE TABLE t1 (id INT); CREATE TABLE t2 (id INT);";
-        let result = split_sql_statements(sql, &GeneratorType::Sqlite);
+        let result = split_sql_statements(sql, &GeneratorType::Sqlite).unwrap();
         assert_eq!(result.len(), 2);
     }
 
@@ -471,7 +540,7 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
         // Regression test: a GO-only line inside a multi-line string literal must not be
         // mistaken for a real batch separator.
         let sql = "INSERT INTO notes (body) VALUES ('line one\nGO\nline three')\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("line one\nGO\nline three"));
     }
@@ -481,7 +550,7 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
         // Regression test: a GO-only line inside a multi-line block comment must not be
         // mistaken for a real batch separator.
         let sql = "CREATE TABLE t1 (id INT)\n/* a comment\nGO\nstill a comment */\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("still a comment"));
     }
@@ -491,7 +560,7 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
         // The batch containing the multi-line string must still end at the real,
         // top-level GO that follows it, and a second batch must start cleanly after.
         let sql = "INSERT INTO notes (body) VALUES ('a\nb')\nGO\nCREATE TABLE t2 (id INT)\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("'a\nb'"));
         assert!(result[1].starts_with("CREATE TABLE t2"));
@@ -500,9 +569,74 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
     #[test]
     fn sqlserver_go_after_line_comment_on_same_line_still_splits_correctly() {
         let sql = "CREATE TABLE t1 (id INT) -- trailing comment\nGO\nCREATE TABLE t2 (id INT)\nGO";
-        let result = split_sql_statements(sql, &GeneratorType::SqlServer);
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].starts_with("CREATE TABLE t1"));
         assert!(result[1].starts_with("CREATE TABLE t2"));
+    }
+
+    #[test]
+    fn postgres_nested_block_comment_hides_inner_statement() {
+        let sql = "select 1; /* outer /* inner */ drop table users; */ select 2;";
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[1].contains("drop table users"));
+        assert!(result[1].ends_with("select 2"));
+    }
+
+    #[test]
+    fn sqlite_block_comments_do_not_nest() {
+        let sql = "select 1; /* a /* b */ select 2; */ select 3;";
+        let result = split_sql_statements(sql, &GeneratorType::Sqlite).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn sqlserver_nested_block_comment_hides_go() {
+        let sql = "select 1\n/* a\n/* b */\nGO\n*/\nselect 2\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("select 2"));
+    }
+
+    #[test]
+    fn postgres_escape_string_backslash_quote_does_not_end_literal() {
+        let sql = "insert into t values (E'it\\'s; here'); select 2;";
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0].contains("it\\'s; here"));
+    }
+
+    #[test]
+    fn plain_string_backslash_is_literal() {
+        let sql = "select 'a\\'; select 2;";
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn trailing_e_of_identifier_is_not_an_escape_prefix() {
+        let sql = "select name'a\\'; select 2;";
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn unterminated_constructs_are_errors() {
+        for (sql, db) in [
+            ("select $$ oops; select 2;", GeneratorType::Postgresql),
+            ("select 'oops; select 2;", GeneratorType::Postgresql),
+            ("select \"oops; select 2;", GeneratorType::Sqlite),
+            ("select 1; /* oops", GeneratorType::Postgresql),
+            ("select 'oops\nGO", GeneratorType::SqlServer),
+            ("select 1 /* /* x */\nGO", GeneratorType::SqlServer),
+        ] {
+            assert!(split_sql_statements(sql, &db).is_err(), "expected error for {sql:?}");
+        }
+    }
+
+    #[test]
+    fn trailing_line_comment_without_newline_is_fine() {
+        assert!(split_sql_statements("select 1; -- done", &GeneratorType::Postgresql).is_ok());
     }
 }

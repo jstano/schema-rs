@@ -8,7 +8,7 @@ use crate::postgresql::postgres_procedure_generator::PostgresProcedureGenerator;
 use crate::postgresql::postgres_relation_generator::PostgresRelationGenerator;
 use crate::postgresql::postgres_table_generator::PostgresTableGenerator;
 use crate::postgresql::postgres_trigger_generator::PostgresTriggerGenerator;
-use crate::postgresql::postgres_util::to_snake_case;
+use crate::postgresql::postgres_util::qualified_enum_type_name;
 use crate::postgresql::postgres_view_generator::PostgresViewGenerator;
 use crate::sql_println;
 
@@ -129,7 +129,7 @@ impl PostgresGenerator {
 
         for schema in database_model.schemas() {
             for enum_type in schema.enum_types() {
-                let enum_type_name = to_snake_case(enum_type.name());
+                let enum_type_name = qualified_enum_type_name(schema.schema_name(), enum_type.name());
                 let values = enum_type
                     .values()
                     .iter()
@@ -463,5 +463,27 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("create type status_type as enum ('O''Brien')"));
+    }
+
+    #[test]
+    fn output_header_qualifies_enum_types_with_their_schema() {
+        // M4: two schemas declaring a same-named enum must not collide (an unqualified
+        // `drop type ... cascade` in the second would remove the first).
+        let default_schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(EnumType::new("StatusType", vec![EnumValue::new("A", None::<String>)]))
+            .build();
+        let app = SchemaBuilder::new(Some("app"))
+            .add_enum_type(EnumType::new("StatusType", vec![EnumValue::new("B", None::<String>)]))
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let (ctx, buffer) = make_context_with_version(model, 18);
+
+        PostgresGenerator::new(ctx).output_header();
+
+        let output = buffer.contents();
+        assert!(output.contains("drop type if exists status_type cascade"));
+        assert!(output.contains("create type status_type as enum ('A')"));
+        assert!(output.contains("drop type if exists app.status_type cascade"));
+        assert!(output.contains("create type app.status_type as enum ('B')"));
     }
 }

@@ -107,14 +107,14 @@ impl DefaultColumnConstraintGenerator {
     }
 
     fn enum_check_clause(&self, column: &Column) -> Option<String> {
-        let schema_name = column.schema_name();
-        let schema = self
+        let enum_type = column.enum_type()?;
+        let enum_values = self
             .context
             .settings()
             .database_model()
-            .find_schema(schema_name);
-        let enum_type = column.enum_type();
-        let enum_values = schema.get_enum_type(enum_type?).values().clone();
+            .find_enum_type(column.schema_name(), enum_type)
+            .values()
+            .clone();
 
         let joined_values = enum_values
             .iter()

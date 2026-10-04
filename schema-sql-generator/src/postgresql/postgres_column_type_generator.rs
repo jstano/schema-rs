@@ -1,6 +1,6 @@
 use crate::common::column_type_generator::ColumnTypeGenerator;
 use crate::common::generator_context::GeneratorContext;
-use crate::postgresql::postgres_util::to_snake_case;
+use crate::postgresql::postgres_util::qualified_enum_type_name;
 use schema_model::model::column::Column;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::schema::Schema;
@@ -108,10 +108,15 @@ impl ColumnTypeGenerator for PostgresColumnTypeGenerator {
     }
 
     fn enum_sql(&self, column: &Column) -> String {
-        let enum_type_opt = column.enum_type();
-        let enum_type_name = enum_type_opt.as_ref().unwrap();
+        let enum_type_name = column.enum_type().unwrap();
+        let database_model = self.context().settings().database_model();
+        // Qualify with the schema that *owns* the enum, which for a shared database-level
+        // enum is not the column's own schema (M4/M5).
+        let owner = database_model
+            .resolve_enum_type(column.schema_name(), enum_type_name)
+            .and_then(|(owner, _)| owner);
 
-        to_snake_case(enum_type_name)
+        qualified_enum_type_name(owner, enum_type_name)
     }
 
     fn native_boolean_sql(&self) -> String {
@@ -243,5 +248,32 @@ mod tests {
         let table = table_builder.build();
         let col = ColumnBuilder::new(None::<&str>, "col", ColumnType::Array).build();
         generator.column_type_sql(&table, &col);
+    }
+
+    #[test]
+    fn enum_sql_qualifies_with_the_schema_that_owns_the_enum() {
+        use schema_model::model::enum_type::EnumType;
+
+        let default_schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(EnumType::new("SharedType", Vec::new()))
+            .build();
+        let app = SchemaBuilder::new(Some("app"))
+            .add_enum_type(EnumType::new("LocalType", Vec::new()))
+            .build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let (ctx, table_builder) = make_context(model);
+        let generator = PostgresColumnTypeGenerator::new(ctx);
+        let table = table_builder.build();
+
+        let local = ColumnBuilder::new(Some("app"), "c", ColumnType::Enum)
+            .enum_type(Some("LocalType".to_string()))
+            .build();
+        // A database-level enum used from inside a named schema is owned by the default
+        // schema, so it stays unqualified (M5) rather than being qualified with `app`.
+        let shared = ColumnBuilder::new(Some("app"), "c", ColumnType::Enum)
+            .enum_type(Some("SharedType".to_string()))
+            .build();
+        assert_eq!(generator.column_type_sql(&table, &local), "app.local_type");
+        assert_eq!(generator.column_type_sql(&table, &shared), "shared_type");
     }
 }

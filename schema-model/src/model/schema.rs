@@ -110,6 +110,12 @@ impl Schema {
         enum_types.into_iter()
     }
 
+    /// Like `get_enum_type`, but returns `None` instead of panicking when this schema
+    /// declares no enum with that name.
+    pub fn get_optional_enum_type(&self, type_name: &str) -> Option<&EnumType> {
+        self.enum_types.get(&type_name.to_lowercase())
+    }
+
     pub fn get_enum_type(&self, type_name: &str) -> &EnumType {
         self.enum_types
             .get(&type_name.to_lowercase())
@@ -202,17 +208,9 @@ impl Schema {
             }
 
             for column in table.columns() {
-                if let Some(enum_type_name) = column.enum_type()
-                    && !self.enum_types.contains_key(&enum_type_name.to_lowercase())
-                {
-                    errors.push(format!(
-                        "ERROR: {}.{} references enum type '{}' which is not defined in this schema",
-                        table.name(),
-                        column.name(),
-                        enum_type_name
-                    ));
-                }
-
+                // Whether `enumType` resolves is checked in `DatabaseModel::validate()`, not
+                // here: a column may legitimately reference a database-level `<enum>` that
+                // lives in the default schema (M5), which a single schema can't see.
                 if column.column_type() == crate::model::column_type::ColumnType::Enum && column.enum_type().is_none() {
                     errors.push(format!(
                         "ERROR: {}.{} is an enum column but has no enumType",
@@ -494,28 +492,6 @@ mod tests {
         let errors = s.validate();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("does_not_exist"));
-    }
-
-    #[test]
-    fn validate_reports_error_for_column_referencing_an_undeclared_enum_type() {
-        // A column's `enumType` attribute referencing a name with no matching `<enum>`
-        // declaration must surface as a validation error - previously nothing caught
-        // this, and it panicked deep in SQL generation instead (`get_enum_type`).
-        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
-        use crate::model::column_type::ColumnType as CT;
-
-        let table = TableBuilder::new(Some("s"), "widget")
-            .add_column(
-                ColumnBuilder::new(Some("s"), "status", CT::Enum)
-                    .enum_type(Some("StatusType".to_string()))
-                    .build(),
-            )
-            .build();
-        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
-
-        let errors = schema.validate();
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("StatusType"));
     }
 
     #[test]

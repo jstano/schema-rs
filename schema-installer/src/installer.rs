@@ -126,8 +126,11 @@ impl SchemaInstaller {
         // `execute_migration_transactional` the migration path uses (see H9) means a
         // failure rolls back the entire script, leaving nothing behind to retry against.
         let start = std::time::Instant::now();
-        let statements = crate::sql_split::split_sql_statements(&sql, &config.database_type);
-        match pool.execute_migration_transactional(&statements, migration_id).await {
+        let result = match crate::sql_split::split_sql_statements(&sql, &config.database_type) {
+            Ok(statements) => pool.execute_migration_transactional(&statements, migration_id).await,
+            Err(e) => Err(e),
+        };
+        match result {
             Ok(_) => {
                 println!("Schema installed successfully.");
 
