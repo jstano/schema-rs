@@ -1,5 +1,5 @@
 use crate::common::generator_context::GeneratorContext;
-use crate::common::view_generator::ViewGenerator;
+use crate::common::view_generator::{ViewGenerator, views_in_dependency_order};
 use crate::sql_println;
 use schema_model::model::view::View;
 
@@ -19,11 +19,13 @@ impl ViewGenerator for PostgresViewGenerator {
         let database_type = self.context.settings().database_type();
         let separator = self.context.settings().statement_separator();
 
-        let views: Vec<View> = database_model
-            .schemas()
-            .iter()
-            .flat_map(|schema| schema.views(database_type))
-            .collect();
+        let views: Vec<View> = views_in_dependency_order(
+            database_model
+                .schemas()
+                .iter()
+                .flat_map(|schema| schema.views(database_type))
+                .collect(),
+        );
 
         if !views.is_empty() {
             self.context.with_writer(|writer| {

@@ -714,9 +714,19 @@ remediation plan) is worth more than any individual fix below.
   first, and pops table-name chars until the whole identifier fits, keeping the ordinal
   suffix intact. Added tests for Cyrillic names on Postgres (<=63 bytes, distinct ordinals)
   and that SQLite stays char-based.
-- [ ] **M9. No dependency ordering for views/functions.** Views are emitted in declaration order
+- [x] **M9. No dependency ordering for views/functions.** Views are emitted in declaration order
   and functions come *after* triggers but *before* procedures (`sql_generator.rs:126-130`).
   A view selecting from a later-declared view fails.
+
+  **Fixed 2026-10-03 (views only).** Added `views_in_dependency_order` in
+  `common/view_generator.rs`, used by all three dialect `ViewGenerator`s: a view whose SQL
+  mentions another view's name (case-insensitive identifier-token match, so quoting and
+  schema qualification don't hide it) is emitted after it; independent views keep
+  declaration order; a cycle falls back to declaration order (same precedent as
+  `tables_in_drop_order`). Tests cover reorder, chains, quoting/case, no substring match,
+  and cycles. **Not addressed:** view<->function ordering - functions are still emitted
+  entirely before views, so a function body that is validated at create time and selects
+  from a view would still fail.
 - [x] **M10. Remaining static-dispatch override traps** (the BUGS #6 pattern), currently masked
   only because the overrides are pure delegation: `DefaultIndexGenerator::output_indexes_for_table`
   (so a dialect `index_options` override — the natural place to implement M1 — would never
