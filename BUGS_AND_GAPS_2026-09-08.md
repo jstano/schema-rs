@@ -841,10 +841,19 @@ remediation plan) is worth more than any individual fix below.
 
 ### Diff / migration generator / diagrams / reverse engineer
 
-- [ ] **M23. Migration type mapping diverges from the create-path mapping** → permanent diff
+- [x] **M23. Migration type mapping diverges from the create-path mapping** → permanent diff
   churn. `postgresql/mod.rs:194,198` map `Varchar → text` and `Enum → text` while the create
   path emits `varchar(n)` and the native enum type. A column added by migration can never
   converge with the same column created fresh; enum columns lose their type entirely.
+
+  **Fixed (found already closed 2026-10-03).** The hand-rolled mapping the doc cites no longer
+  exists: since the C7 work all three migration generators (`AddColumn`, `ModifyColumn`,
+  `AddTable`) call `schema-sql-generator`'s own `*ColumnTypeGenerator`, so there is a single
+  mapping. (The doc's "create path emits `varchar(n)`" was also stale: Postgres emits `text`,
+  or `citext` for `ignore_case`, on both paths.) No code change needed; added
+  `add_column_type_matches_create_table_type_on_every_dialect` in `schema-migration-generator`
+  pinning concrete varchar(50) and enum types on all three dialects for both `AddColumn` and
+  `AddTable`, complementing the existing `tests/sql_generator_parity.rs`.
 - [x] **M24. `ALTER COLUMN TYPE` emits `serial` and never a `USING` clause**
   (`postgresql/mod.rs:67-78,170`) → `type "serial" does not exist`, and `varchar`→`int`
   without `USING` → `cannot be cast automatically`.

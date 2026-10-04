@@ -1893,3 +1893,47 @@ fn sqlserver_add_key_unique_filtered_index_renders_unique_and_where() {
     assert!(sql.contains("create unique index"), "got: {}", sql);
     assert!(sql.contains("where parent_labor_structure_id is null"), "got: {}", sql);
 }
+
+/// M23: a column added by migration must render the same type as the same column in a
+/// freshly created table (the migration path used to keep its own `Varchar -> text` /
+/// `Enum -> text` mapping, so the two could never converge).
+#[test]
+fn add_column_type_matches_create_table_type_on_every_dialect() {
+    let enum_type = EnumType::new("status_type", vec![EnumValue::new("ACTIVE", Some("A".to_string()))]);
+    let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let name = ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar).length(50).build();
+    let status = ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
+        .enum_type(Some("status_type".to_string()))
+        .build();
+
+    // (dialect, expected `name` type, expected `status` type)
+    let cases = [
+        (DatabaseType::Postgresql, "name text", "status status_type"),
+        (DatabaseType::Sqlite, "name varchar(50)", "status char(1)"),
+        (DatabaseType::SqlServer, "name nvarchar(50)", "status nchar(1)"),
+    ];
+
+    for (db, name_decl, status_decl) in cases {
+        let generator = create_generator(db);
+        let render = |change: SchemaChange| {
+            let mut cs = ChangeSet::new();
+            cs.add_change(change);
+            let mut out = Vec::new();
+            generator.generate(&cs, &model, &mut out).unwrap();
+            String::from_utf8(out).unwrap().to_lowercase()
+        };
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Int).build())
+            .add_column(name.clone())
+            .add_column(status.clone())
+            .build();
+        let created = render(SchemaChange::AddTable { table });
+        for (column, decl) in [(&name, name_decl), (&status, status_decl)] {
+            let added = render(SchemaChange::AddColumn { table_name: "t".to_string(), column: column.clone() });
+            assert!(added.contains(decl), "{:?} add-column missing `{}`:\n{}", db, decl, added);
+            assert!(created.contains(decl), "{:?} create-table missing `{}`:\n{}", db, decl, created);
+        }
+    }
+}
