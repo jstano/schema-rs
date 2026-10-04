@@ -1561,3 +1561,20 @@ async fn test_sqlite_has_pending_migrations_propagates_errors() {
         "a failure creating the migration table must surface as an error, not Ok(true): {result:?}"
     );
 }
+
+#[tokio::test]
+async fn test_sqlite_is_installed_and_version_on_fresh_database() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(sqlite_connection_string(&temp_dir, "fresh_is_installed.db"))
+        .build()
+        .expect("valid config");
+
+    // No schema_migration table yet: must bootstrap it, not surface a missing-table error (M22).
+    assert!(!SchemaInstaller::is_installed(&config).await.expect("is_installed on fresh db"));
+    assert_eq!(
+        SchemaInstaller::get_installed_version(&config).await.expect("version on fresh db"),
+        None
+    );
+}

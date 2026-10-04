@@ -9,6 +9,14 @@ use tiberius::Client;
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
+/// Whether an ADO.NET-style connection string contains an `Encrypt` key (case-insensitive).
+fn ado_specifies_encrypt(connection_string: &str) -> bool {
+    connection_string.split(';').any(|pair| {
+        pair.split_once('=')
+            .is_some_and(|(key, _)| key.trim().eq_ignore_ascii_case("encrypt"))
+    })
+}
+
 pub enum AnyPool {
     Postgresql(Pool<Postgres>),
     Sqlite(Pool<Sqlite>),
@@ -48,7 +56,12 @@ impl AnyPool {
                 let mut config = tiberius::Config::from_ado_string(connection_string)
                     .map_err(|e| SchemaInstallerError::Connection(format!("Invalid SQL Server connection string: {}", e)))?;
 
-                config.encryption(tiberius::EncryptionLevel::Required);
+                // `from_ado_string` honours an explicit `Encrypt=`, but maps an *absent* key to
+                // `Off` (login-only encryption). Keep TLS required by default and only defer
+                // to the driver's parse when the user actually spelled the setting out.
+                if !ado_specifies_encrypt(connection_string) {
+                    config.encryption(tiberius::EncryptionLevel::Required);
+                }
                 if trust_server_certificate {
                     config.trust_cert();
                 }
@@ -699,4 +712,27 @@ fn map_tiberius_insert_error(e: tiberius::error::Error, version: &str) -> Schema
         return SchemaInstallerError::ConcurrentMigrationDetected(version.to_string());
     }
     SchemaInstallerError::Database(e.to_string())
+}
+
+#[cfg(test)]
+mod ado_encrypt_tests {
+    use super::ado_specifies_encrypt;
+    use tiberius::{Config, EncryptionLevel};
+
+    #[test]
+    fn detects_explicit_encrypt_key_case_insensitively() {
+        assert!(ado_specifies_encrypt("Server=tcp:h,1433;Encrypt=false;User=sa"));
+        assert!(ado_specifies_encrypt("server=h; ENCRYPT = true"));
+        assert!(!ado_specifies_encrypt("Server=tcp:h,1433;User=sa;Password=encrypt=x"));
+        assert!(!ado_specifies_encrypt("Server=tcp:h,1433;User=sa"));
+    }
+
+    #[test]
+    fn driver_parse_honours_explicit_encrypt_false() {
+        // Guards the premise of the fix: with no override applied, `Encrypt=false` survives.
+        let cfg = Config::from_ado_string("Server=tcp:h,1433;User=sa;Password=p;Encrypt=false").unwrap();
+        let dbg = format!("{:?}", cfg);
+        assert!(dbg.contains("Off"), "{dbg}");
+        let _ = EncryptionLevel::Off;
+    }
 }

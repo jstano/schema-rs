@@ -194,50 +194,35 @@ impl SchemaInstaller {
 
     pub async fn is_installed(config: &SchemaInstallerConfig) -> Result<bool, SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        // Create-if-missing rather than sniffing the "table doesn't exist" error text, which
+        // is dialect-specific (SQL Server says `Invalid object name`) and so made a fresh
+        // database return `Err` instead of "not installed" (M22). Every other command already
+        // bootstraps the table this way.
+        Self::ensure_tracking_tables(&pool, &config.database_type).await?;
         Self::check_if_installed(&pool).await
     }
 
     pub async fn get_installed_version(config: &SchemaInstallerConfig) -> Result<Option<String>, SchemaInstallerError> {
         let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
-        match pool.get_applied_migrations().await {
-            Ok(migrations) => {
-                let latest = migrations
-                    .iter()
-                    .filter(|m| m.status == "success")
-                    .max_by(|a, b| {
-                        crate::migration::compare_versions(&a.version, &b.version)
-                    });
-                Ok(latest.map(|m| m.version.clone()))
-            }
-            Err(e) => {
-                // Table might not exist yet, which is fine
-                if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
-                    Ok(None)
-                } else {
-                    Err(e)
-                }
-            }
-        }
+        Self::ensure_tracking_tables(&pool, &config.database_type).await?;
+        let migrations = pool.get_applied_migrations().await?;
+        let latest = migrations
+            .iter()
+            .filter(|m| m.status == "success")
+            .max_by(|a, b| crate::migration::compare_versions(&a.version, &b.version));
+        Ok(latest.map(|m| m.version.clone()))
     }
 
     async fn check_if_installed(pool: &AnyPool) -> Result<bool, SchemaInstallerError> {
         // Scoped to the reserved `install` tracking row only (H14): checking for *any*
         // successful row conflated "the XML install ran" with "a Flyway-style migration
         // ran", so running `migrate` first made a later `install` report "already
-        // installed" and exit 0 without creating a single table.
-        match pool.get_applied_migrations().await {
-            Ok(migrations) => Ok(migrations.iter().any(|m| {
-                m.status == "success" && m.version == crate::migration::RESERVED_INSTALL_VERSION
-            })),
-            Err(e) => {
-                // Table might not exist yet, which is fine
-                if e.to_string().contains("does not exist") || e.to_string().contains("no such table") {
-                    Ok(false)
-                } else {
-                    Err(e)
-                }
-            }
-        }
+        // installed" and exit 0 without creating a single table. Callers must have run
+        // `ensure_tracking_tables` first.
+        let migrations = pool.get_applied_migrations().await?;
+        Ok(migrations.iter().any(|m| {
+            m.status == "success" && m.version == crate::migration::RESERVED_INSTALL_VERSION
+        }))
     }
 
     async fn ensure_tracking_tables(pool: &AnyPool, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {

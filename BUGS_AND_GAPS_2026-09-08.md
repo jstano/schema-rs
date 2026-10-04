@@ -819,11 +819,25 @@ remediation plan) is worth more than any individual fix below.
   `?` instead of returning `Ok(true)` / an empty applied list. Regression test
   `test_sqlite_has_pending_migrations_propagates_errors` opens a read-only SQLite database
   (migration-table creation fails) and asserts `Err`; confirmed it fails on the old code.
-- [ ] **M21. TLS is forced on for SQL Server** (`connection.rs:50`) — `config.encryption(Required)`
+- [x] **M21. TLS is forced on for SQL Server** (`connection.rs:50`) — `config.encryption(Required)`
   runs *after* `from_ado_string`, discarding the user's `Encrypt=false`.
-- [ ] **M22. `is_installed`/`get_installed_version` sniff error strings** (`installer.rs:121,135`)
+
+  **Fixed 2026-10-03.** The forced override is now applied only when the connection string has
+  no `Encrypt` key (`ado_specifies_encrypt` in `connection.rs`). Needed because tiberius maps an
+  *absent* `Encrypt` to `Off`, so simply deleting the override would have silently downgraded the
+  default from TLS-required to login-only encryption. Explicit `Encrypt=true/false/DANGER_PLAINTEXT`
+  now reach the driver untouched; absent still means `Required`. Unit tests cover key detection
+  and the driver's `Encrypt=false` parse; not exercised against a live SQL Server (see C6 caveat).
+- [x] **M22. `is_installed`/`get_installed_version` sniff error strings** (`installer.rs:121,135`)
   for `"does not exist"`/`"no such table"`. SQL Server says `Invalid object name` — matching
   neither, so a fresh-database bootstrap returns `Err` instead of `Ok(false)`.
+
+  **Fixed 2026-10-03.** `is_installed` and `get_installed_version` now call
+  `ensure_tracking_tables` first (like every other command) and propagate any remaining error
+  as-is; the error-string sniffing is gone from them and from `check_if_installed`. Side effect:
+  these two read-only queries now create an empty `schema_migration` table on a fresh database.
+  Added `test_sqlite_is_installed_and_version_on_fresh_database`; SQL Server path not run live
+  (see C6 caveat).
 
 ### Diff / migration generator / diagrams / reverse engineer
 
@@ -1153,8 +1167,8 @@ more progress than the findings section it's derived from.
   Caveat: could not be confirmed end-to-end in this sandbox (SQL Server's Linux container
   crashes under QEMU on this ARM64 host); `sqlserver_integration_tests.rs` is still
   `#[ignore]`d pending a native x86_64 run (tracked jointly with Step 0 item 3).
-- [ ] M21: honour `Encrypt=` from the ADO connection string instead of forcing TLS on.
-- [ ] M22: replace the error-string sniffing in `is_installed`/`get_installed_version` with
+- [x] M21: honour `Encrypt=` from the ADO connection string instead of forcing TLS on.
+- [x] M22: replace the error-string sniffing in `is_installed`/`get_installed_version` with
   an `ensure_migration_table` call, so SQL Server's `Invalid object name` is handled too.
 
 ### Step 5 — Installer semantics (H9–H14, M13–M22)
