@@ -952,12 +952,12 @@ remediation plan) is worth more than any individual fix below.
     confirm each generator emits nothing for a change scoped to a different dialect. Full
     `cargo test --workspace` passes; `cargo clippy -p schema-diff -p schema-migration-generator
     --all-targets` clean.
-- [ ] **M30. Diagrams emit a dangling entity for schema-qualified relations.** [v] `entity UNIT`
+- [x] **M30. Diagrams emit a dangling entity for schema-qualified relations.** [v] `entity UNIT`
   is declared, `KBI }o--o| TEST_UNIT` is referenced. Both `.mmd` and `.puml`.
-- [ ] **M31. Diagram identifier map silently merges same-named tables**
+- [x] **M31. Diagram identifier map silently merges same-named tables**
   (`common/safe_identifier.rs:28-38`) — `map.insert(name, candidate)` on a duplicate name
   overwrites, so `sales.users` and `auth.users` both resolve to `USERS_2`.
-- [ ] **M32. Diagram cardinality is derived from the delete action, not nullability**
+- [x] **M32. Diagram cardinality is derived from the delete action, not nullability**
   (`mermaid_generator.rs:94`, `plantuml_generator.rs:120`) — wrong in both directions.
 - [ ] **M33. Reverse engineer: cross-schema FKs, expression/partial/covering indexes,
   materialized views.** `relations.rs:28-47` filters only the FK-owning table by schema and

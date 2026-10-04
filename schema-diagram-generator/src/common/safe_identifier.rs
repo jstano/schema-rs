@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Maps every character that isn't safe as a diagram identifier/attribute token
 /// (alphanumeric or underscore) to `_` - both Mermaid's `erDiagram` and PlantUML's
@@ -12,18 +12,22 @@ pub fn sanitize_token(name: &str) -> String {
         .collect()
 }
 
-/// Builds a collision-free mapping from each name in `names` to a safe diagram
-/// identifier token. Sanitizing each name in isolation isn't enough: two *distinct*
-/// names that happen to sanitize to the same token (e.g. `"Order-Detail"` and
+/// Builds a collision-free list of safe diagram identifier tokens, one per entry of
+/// `names` and in the same order. Sanitizing each name in isolation isn't enough: two
+/// *distinct* names that happen to sanitize to the same token (e.g. `"Order-Detail"` and
 /// `"Order Detail"` both -> `"Order_Detail"`) would otherwise silently collide and get
 /// merged into a single diagram entity/attribute with no warning. This disambiguates by
 /// appending a numeric suffix to every occurrence of a token after the first.
-pub fn build_safe_identifier_map<'a, I>(names: I) -> HashMap<&'a str, String>
+///
+/// The result is positional rather than a name-keyed map so that two entries with the
+/// *same* name (e.g. `sales.users` and `auth.users` both named `users`) still get
+/// distinct ids instead of the later one overwriting the earlier.
+pub fn build_safe_identifiers<'a, I>(names: I) -> Vec<String>
 where
     I: IntoIterator<Item = &'a str>,
 {
     let mut used: HashSet<String> = HashSet::new();
-    let mut map = HashMap::new();
+    let mut ids = Vec::new();
 
     for name in names {
         let base = sanitize_token(name);
@@ -34,10 +38,10 @@ where
             suffix += 1;
         }
         used.insert(candidate.clone());
-        map.insert(name, candidate);
+        ids.push(candidate);
     }
 
-    map
+    ids
 }
 
 #[cfg(test)]
@@ -46,24 +50,28 @@ mod tests {
 
     #[test]
     fn leaves_already_safe_names_unchanged() {
-        let map = build_safe_identifier_map(["CUSTOMER", "ORDER_ITEM"]);
-        assert_eq!(map["CUSTOMER"], "CUSTOMER");
-        assert_eq!(map["ORDER_ITEM"], "ORDER_ITEM");
+        assert_eq!(build_safe_identifiers(["CUSTOMER", "ORDER_ITEM"]), ["CUSTOMER", "ORDER_ITEM"]);
     }
 
     #[test]
     fn sanitizes_unsafe_characters() {
-        let map = build_safe_identifier_map(["ORDER DETAIL"]);
-        assert_eq!(map["ORDER DETAIL"], "ORDER_DETAIL");
+        assert_eq!(build_safe_identifiers(["ORDER DETAIL"]), ["ORDER_DETAIL"]);
     }
 
     #[test]
     fn disambiguates_distinct_names_that_sanitize_to_the_same_token() {
-        let map = build_safe_identifier_map(["ORDER-DETAIL", "ORDER DETAIL", "ORDER_DETAIL"]);
-        let ids: HashSet<&String> = map.values().collect();
-        assert_eq!(ids.len(), 3, "all three distinct names must map to distinct ids: {map:?}");
+        let ids = build_safe_identifiers(["ORDER-DETAIL", "ORDER DETAIL", "ORDER_DETAIL"]);
+        let unique: HashSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), 3, "all three distinct names must map to distinct ids: {ids:?}");
         // The first occurrence keeps the unsuffixed token so the common (already-safe)
         // case is unaffected.
-        assert_eq!(map["ORDER-DETAIL"], "ORDER_DETAIL");
+        assert_eq!(ids[0], "ORDER_DETAIL");
+    }
+
+    #[test]
+    fn identical_names_get_distinct_ids() {
+        // M31: a name-keyed map overwrote the first entry with the second.
+        let ids = build_safe_identifiers(["USERS", "USERS"]);
+        assert_eq!(ids, ["USERS", "USERS_2"]);
     }
 }
