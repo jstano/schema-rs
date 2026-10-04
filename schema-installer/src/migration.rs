@@ -15,6 +15,11 @@ pub struct Migration {
     pub description: String,
     pub script_path: String,
     pub sql: String,
+    /// `false` runs each statement in autocommit mode, with no wrapping transaction, so
+    /// statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`,
+    /// `ALTER TYPE ... ADD VALUE`) can be migrated (M18). Loaded from a sibling
+    /// `<script>.conf` file by `DirectoryMigrationSource`; always `true` unless set.
+    pub transactional: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +124,7 @@ impl MigrationSource for DirectoryMigrationSource {
                 None => continue,
             };
             let sql = std::fs::read_to_string(&path).map_err(SchemaInstallerError::Io)?;
+            let transactional = read_migration_config(&path)?;
 
             // Just the filename, not the absolute path: the path differs between dev, CI and
             // prod for identical migrations, so recording it made `schema_migration` rows
@@ -130,6 +136,7 @@ impl MigrationSource for DirectoryMigrationSource {
                 description,
                 script_path,
                 sql,
+                transactional,
             });
         }
 
@@ -139,6 +146,62 @@ impl MigrationSource for DirectoryMigrationSource {
 
         Ok(migrations)
     }
+}
+
+/// Reads the optional Flyway-style `<script>.conf` sitting next to a migration script
+/// (`V3__add_index.sql` -> `V3__add_index.sql.conf`) and returns whether the migration
+/// should run in a transaction (M18). Format: `key=value` lines, `#`/`!` comments and blank
+/// lines ignored. The only recognised key is `executeInTransaction` (`true`/`false`,
+/// default `true`). Anything else - an unknown key, a malformed line, a non-boolean value -
+/// is a hard error rather than being ignored, since a typo'd flag would otherwise silently
+/// run a `CREATE INDEX CONCURRENTLY` migration inside a transaction.
+fn read_migration_config(script: &std::path::Path) -> Result<bool, SchemaInstallerError> {
+    let mut conf_name = script.as_os_str().to_owned();
+    conf_name.push(".conf");
+    let conf_path = PathBuf::from(conf_name);
+    if !conf_path.is_file() {
+        return Ok(true);
+    }
+    let text = std::fs::read_to_string(&conf_path).map_err(SchemaInstallerError::Io)?;
+    parse_migration_config(&text).map_err(|e| {
+        SchemaInstallerError::InvalidConfiguration(format!("{}: {}", conf_path.display(), e))
+    })
+}
+
+fn parse_migration_config(text: &str) -> Result<bool, String> {
+    let mut transactional = true;
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with('!') {
+            continue;
+        }
+        let (key, value) = line
+            .split_once('=')
+            .ok_or_else(|| format!("line {}: expected `key=value`, found `{}`", index + 1, line))?;
+        match key.trim() {
+            "executeInTransaction" => {
+                transactional = match value.trim() {
+                    "true" => true,
+                    "false" => false,
+                    other => {
+                        return Err(format!(
+                            "line {}: executeInTransaction must be `true` or `false`, found `{}`",
+                            index + 1,
+                            other
+                        ));
+                    }
+                };
+            }
+            other => {
+                return Err(format!(
+                    "line {}: unknown setting `{}` (supported: executeInTransaction)",
+                    index + 1,
+                    other
+                ));
+            }
+        }
+    }
+    Ok(transactional)
 }
 
 pub struct EmbeddedMigrationSource {
@@ -309,6 +372,31 @@ pub fn compute_checksum(sql: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn config_defaults_to_transactional() {
+        assert_eq!(parse_migration_config(""), Ok(true));
+        assert_eq!(parse_migration_config("# just a comment\n\n"), Ok(true));
+    }
+
+    #[test]
+    fn config_can_disable_transaction() {
+        assert_eq!(
+            parse_migration_config("# needs autocommit\nexecuteInTransaction = false\n"),
+            Ok(false)
+        );
+        assert_eq!(
+            parse_migration_config("executeInTransaction=true"),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn config_rejects_unknown_key_bad_value_and_malformed_line() {
+        assert!(parse_migration_config("executeInTransacton=false").is_err());
+        assert!(parse_migration_config("executeInTransaction=no").is_err());
+        assert!(parse_migration_config("executeInTransaction").is_err());
+    }
     use super::*;
 
     #[test]
@@ -442,12 +530,14 @@ mod tests {
     fn test_check_no_duplicate_versions_ok() {
         let migrations = vec![
             Migration {
+                transactional: true,
                 version: "1".to_string(),
                 description: "add users".to_string(),
                 script_path: "V1__add_users.sql".to_string(),
                 sql: String::new(),
             },
             Migration {
+                transactional: true,
                 version: "2".to_string(),
                 description: "add orders".to_string(),
                 script_path: "V2__add_orders.sql".to_string(),
@@ -465,12 +555,14 @@ mod tests {
         // to return silently win the slot while the second is never executed.
         let migrations = vec![
             Migration {
+                transactional: true,
                 version: "1".to_string(),
                 description: "add users".to_string(),
                 script_path: "V1__add_users.sql".to_string(),
                 sql: String::new(),
             },
             Migration {
+                transactional: true,
                 version: "1".to_string(),
                 description: "add orders".to_string(),
                 script_path: "V1__add_orders.sql".to_string(),

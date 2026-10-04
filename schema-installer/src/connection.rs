@@ -347,6 +347,64 @@ impl AnyPool {
         }
     }
 
+    /// Executes a migration's already-split statements one at a time in autocommit mode -
+    /// no wrapping transaction - on a single connection (so session state like `SET` carries
+    /// across statements), returning the elapsed milliseconds (M18). Needed for statements
+    /// that refuse to run inside a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`,
+    /// `ALTER TYPE ... ADD VALUE`), and the only mode in which a script may manage its own
+    /// `BEGIN`/`COMMIT`.
+    ///
+    /// Unlike `execute_migration_transactional` this cannot be atomic with the tracking
+    /// row: statements commit as they run, so a failure part-way leaves the earlier
+    /// statements applied. The caller records `"failed"` and the operator must fix the
+    /// leftovers by hand before `repair` and a retry.
+    pub async fn execute_migration_non_transactional(
+        &self,
+        statements: &[String],
+    ) -> Result<i64, SchemaInstallerError> {
+        let start = Instant::now();
+        match self {
+            AnyPool::Postgresql(pool) => {
+                let mut conn = pool
+                    .acquire()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                for statement in statements {
+                    sqlx::query(statement.as_str())
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                }
+            }
+            AnyPool::Sqlite(pool) => {
+                let mut conn = pool
+                    .acquire()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                for statement in statements {
+                    sqlx::query(statement.as_str())
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                }
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                // `simple_query`, not `execute`: see the note in `execute_migration_transactional`.
+                for statement in statements {
+                    client
+                        .simple_query(statement.as_str())
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                        .into_results()
+                        .await
+                        .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
+                }
+            }
+        }
+        Ok(start.elapsed().as_millis() as i64)
+    }
+
     pub async fn get_applied_migrations(
         &self,
     ) -> Result<Vec<AppliedMigration>, SchemaInstallerError> {

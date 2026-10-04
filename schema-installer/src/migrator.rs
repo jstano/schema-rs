@@ -160,6 +160,8 @@ impl Migrator {
             return Ok(());
         }
 
+        validate_migration_scripts(&migrations, &config.database_type)?;
+
         let tool_version = env!("CARGO_PKG_VERSION");
 
         for migration in migrations {
@@ -177,9 +179,7 @@ impl Migrator {
                 };
 
             let start = Instant::now();
-            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql)
-                .await
-            {
+            match execute_migration(&pool, &config.database_type, migration_id, &migration).await {
                 Ok(_) => {
                     println!(
                         "Applied migration: {} - {}",
@@ -226,6 +226,8 @@ impl Migrator {
         pool.ensure_migration_table(&config.database_type).await?;
 
         let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
+
+        validate_migration_scripts(&migrations, &config.database_type)?;
 
         let mut output = String::new();
         if migrations.is_empty() {
@@ -612,12 +614,44 @@ async fn execute_migration(
     pool: &AnyPool,
     database_type: &GeneratorType,
     migration_id: i64,
-    sql: &str,
+    migration: &Migration,
 ) -> Result<i64, SchemaInstallerError> {
-    let statements = crate::sql_split::split_sql_statements(sql, database_type)?;
+    let statements = crate::sql_split::split_sql_statements(&migration.sql, database_type)?;
+    if !migration.transactional {
+        // Autocommit: the statements can't be atomic with the tracking row (M18), so the
+        // success update is a separate step after they have all run.
+        let elapsed_ms = pool
+            .execute_migration_non_transactional(&statements)
+            .await?;
+        pool.update_migration_status(migration_id, MigrationStatus::Success.as_str(), elapsed_ms)
+            .await?;
+        return Ok(elapsed_ms);
+    }
     // All statements in a migration file, plus the tracking row's "success" update,
     // commit or roll back together as one transaction - see `execute_migration_transactional`
     // for why (BUGS_AND_GAPS H9).
     pool.execute_migration_transactional(&statements, migration_id)
         .await
+}
+
+/// Rejects, before anything is executed, any transactional migration whose script contains
+/// its own transaction control (M18) - see `find_transaction_control` for why it would
+/// wedge the migration. Scripts that need to manage their own transactions must opt out
+/// with `executeInTransaction=false` in a `<script>.conf`.
+fn validate_migration_scripts(
+    migrations: &[Migration],
+    database_type: &GeneratorType,
+) -> Result<(), SchemaInstallerError> {
+    for migration in migrations.iter().filter(|m| m.transactional) {
+        let statements = crate::sql_split::split_sql_statements(&migration.sql, database_type)?;
+        if let Some(statement) =
+            crate::sql_split::find_transaction_control(&statements, database_type)
+        {
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Migration {} ({}) contains its own transaction control (`{}`), but migrations run inside a transaction managed by the installer; remove it, or set `executeInTransaction=false` in {}.conf to run the script without a wrapping transaction",
+                migration.version, migration.script_path, statement, migration.script_path
+            )));
+        }
+    }
+    Ok(())
 }

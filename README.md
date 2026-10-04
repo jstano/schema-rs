@@ -50,6 +50,14 @@ migrations/
 ```
 
 File naming format: `V{version}__{description}.sql` — the `__{description}` part is optional (`V{version}.sql` is also valid)
+
+Each migration runs inside a transaction. Scripts must not contain their own `BEGIN`/`COMMIT`/`ROLLBACK` (they are rejected before anything runs). For statements that can't run in a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `ALTER TYPE ... ADD VALUE`), put a Flyway-style config file next to the script, e.g. `V3__add_index.sql.conf`:
+
+```properties
+executeInTransaction=false
+```
+
+The script's statements then run in autocommit mode (it may manage its own transactions). This can't be atomic: if a statement fails part-way, earlier statements stay applied and the migration is recorded `failed`.
 - Versions support semantic numbering (1, 1.1, 2.0, 2.0.1, etc.)
 - Description becomes a human-readable label (underscores become spaces)
 

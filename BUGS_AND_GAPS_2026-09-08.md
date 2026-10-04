@@ -803,11 +803,23 @@ remediation plan) is worth more than any individual fix below.
 - [x] **M17. Splitter end-state is never validated** (`sql_split.rs:123-126`) — an unterminated
   `$$` body yields one giant "statement" and an unhelpful error thousands of characters in.
   Fixed 2026-10-03: `split_sql_statements` returns `Result`; a script ending inside an unterminated string, quoted identifier, dollar-quote or block comment is an error (the migration is marked failed, nothing executed).
-- [ ] **M18. No way to run a migration outside a transaction** (`migrator.rs:398-401`) →
+- [x] **M18. No way to run a migration outside a transaction** (`migrator.rs:398-401`) →
   `CREATE INDEX CONCURRENTLY`, `VACUUM`, `ALTER TYPE … ADD VALUE` can never be migrated.
   Relatedly, a script with its own `BEGIN;`/`COMMIT;` nests, the inner `COMMIT` closes the
   outer transaction, `tx.commit()` fails, and a fully-applied migration is recorded
   `failed` → H9's wedge.
+  **Fixed 2026-10-04.** `Migration` gained `transactional: bool` (default `true`).
+  `DirectoryMigrationSource` reads a Flyway-style sibling `<script>.sql.conf`
+  (`executeInTransaction=false`; unknown keys/non-boolean values hard-error). A
+  non-transactional migration runs its statements autocommit on one connection
+  (`execute_migration_non_transactional`), then marks the row `success` as a separate step
+  — it cannot be atomic with the tracking row, so a mid-script failure keeps earlier
+  statements and records `failed`. For the nesting wedge, `validate_migration_scripts`
+  rejects (in `migrate` and `dry_run`, before anything runs) any transactional script
+  containing `BEGIN`/`COMMIT`/`ROLLBACK`/`START TRANSACTION`/… (`find_transaction_control`),
+  pointing at the `.conf` opt-out. Tests: sqlite `VACUUM` fails transactionally and passes
+  with the conf; own-`BEGIN/COMMIT` rejected up front / allowed when opted out; conf parsing
+  and detector unit tests. PostgreSQL/SQL Server paths compile but weren't run here.
 - [x] **M19. Version parsing and version comparison disagree.** `migration.rs:180` accepts any
   digit run but `:207` does `.parse::<u64>().ok()` → a 20-digit timestamp version (a standard
   Flyway convention) parses to nothing and sorts *before* `V1`, rejecting everything else as

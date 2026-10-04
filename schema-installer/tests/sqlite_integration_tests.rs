@@ -122,6 +122,7 @@ async fn test_sqlite_failed_migration_rolls_back_partial_statements() {
     // wrapping, `widgets` would be left permanently in the schema despite the migration
     // being recorded as "failed".
     let bad_migration = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets then fail".to_string(),
         script_path: "V1__create_widgets_then_fail.sql".to_string(),
@@ -293,6 +294,7 @@ async fn test_sqlite_concurrent_migrate_calls_propagate_shared_failure() {
         .expect("valid config");
 
     let bad_migration = || Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "bad migration".to_string(),
         script_path: "V1__bad.sql".to_string(),
@@ -333,6 +335,7 @@ async fn test_sqlite_validate_detects_missing_migration_source() {
         .expect("valid config");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
@@ -430,6 +433,7 @@ async fn test_sqlite_validate_detects_failed_migration() {
     .expect("insert failed migration row");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
@@ -458,6 +462,7 @@ async fn test_sqlite_validate_detects_out_of_order_unapplied_migration() {
 
     // V2 applies first, as if V1 didn't exist yet at the time.
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widget color".to_string(),
         script_path: "V2__add_widget_color.sql".to_string(),
@@ -476,6 +481,7 @@ async fn test_sqlite_validate_detects_out_of_order_unapplied_migration() {
     // never noticed a resolved-but-unapplied one at all, so it passed on this identical
     // state.
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets base".to_string(),
         script_path: "V1__create_widgets_base.sql".to_string(),
@@ -503,6 +509,7 @@ async fn test_sqlite_migrate_detects_missing_migration_source() {
         .expect("valid config");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
@@ -519,6 +526,7 @@ async fn test_sqlite_migrate_detects_missing_migration_source() {
     // must refuse to proceed at all - not even apply V2 - until the drift on V1 is
     // resolved, the same way Flyway's validateOnMigrate blocks a migrate run.
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widget color".to_string(),
         script_path: "V2__add_widget_color.sql".to_string(),
@@ -561,6 +569,7 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
 
     // V2 applies first, as if V1 didn't exist yet at the time.
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widget color".to_string(),
         script_path: "V2__add_widget_color.sql".to_string(),
@@ -577,6 +586,7 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
     // refuse to apply it out of order rather than silently running it against a schema
     // state it was never designed for.
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets base".to_string(),
         script_path: "V1__create_widgets_base.sql".to_string(),
@@ -613,12 +623,14 @@ async fn test_sqlite_migrate_applies_embedded_migrations_in_version_order_not_so
         .expect("valid config");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
         sql: "create table widgets (id integer primary key);".to_string(),
     };
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widgets column".to_string(),
         script_path: "V2__add_widgets_column.sql".to_string(),
@@ -880,6 +892,7 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
         .expect("valid config");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
@@ -893,6 +906,7 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
         .expect("migration should succeed");
 
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widgets column".to_string(),
         script_path: "V2__add_widgets_column.sql".to_string(),
@@ -919,6 +933,7 @@ async fn test_sqlite_info_succeeds_with_out_of_order_pending_migration() {
 
     // V2 applies first, as if V1 didn't exist yet at the time.
     let migration_two = Migration {
+        transactional: true,
         version: "2".to_string(),
         description: "add widget color".to_string(),
         script_path: "V2__add_widget_color.sql".to_string(),
@@ -936,12 +951,14 @@ async fn test_sqlite_info_succeeds_with_out_of_order_pending_migration() {
     // out-of-order migration, it should just label it "Ignored" rather than "Pending"
     // (see Migrator::info) since `migrate` would refuse to apply it.
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets base".to_string(),
         script_path: "V1__create_widgets_base.sql".to_string(),
         sql: "select 1;".to_string(),
     };
     let migration_three = Migration {
+        transactional: true,
         version: "3".to_string(),
         description: "add widget size".to_string(),
         script_path: "V3__add_widget_size.sql".to_string(),
@@ -975,6 +992,7 @@ async fn test_sqlite_install_is_not_skipped_by_an_unrelated_migration() {
         .expect("valid config");
 
     let migration_one = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets".to_string(),
         script_path: "V1__create_widgets.sql".to_string(),
@@ -1158,12 +1176,14 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
 
     let migrations = vec![
         Migration {
+            transactional: true,
             version: "1".to_string(),
             description: "create widgets".to_string(),
             script_path: "V1__create_widgets.sql".to_string(),
             sql: "create table widgets (id integer primary key);".to_string(),
         },
         Migration {
+            transactional: true,
             version: "2".to_string(),
             description: "create gadgets".to_string(),
             script_path: "V2__create_gadgets.sql".to_string(),
@@ -1276,12 +1296,14 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
 
     let migrations = vec![
         Migration {
+            transactional: true,
             version: "1".to_string(),
             description: "create widgets".to_string(),
             script_path: "V1__create_widgets.sql".to_string(),
             sql: "create table widgets (id integer primary key);".to_string(),
         },
         Migration {
+            transactional: true,
             version: "2".to_string(),
             description: "create gadgets".to_string(),
             script_path: "V2__create_gadgets.sql".to_string(),
@@ -1357,6 +1379,7 @@ async fn test_sqlite_migrate_to_target_below_all_pending_is_a_noop() {
         .expect("valid config");
 
     let migration = Migration {
+        transactional: true,
         version: "5".to_string(),
         description: "create widgets".to_string(),
         script_path: "V5__create_widgets.sql".to_string(),
@@ -1400,12 +1423,14 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
 
     let migrations = vec![
         Migration {
+            transactional: true,
             version: "1".to_string(),
             description: "create widgets".to_string(),
             script_path: "V1__create_widgets.sql".to_string(),
             sql: "create table widgets (id integer primary key);".to_string(),
         },
         Migration {
+            transactional: true,
             version: "2".to_string(),
             description: "create gadgets".to_string(),
             script_path: "V2__create_gadgets.sql".to_string(),
@@ -1478,12 +1503,14 @@ async fn test_sqlite_dry_run_respects_target() {
 
     let migrations = vec![
         Migration {
+            transactional: true,
             version: "1".to_string(),
             description: "create widgets".to_string(),
             script_path: "V1__create_widgets.sql".to_string(),
             sql: "create table widgets (id integer primary key);".to_string(),
         },
         Migration {
+            transactional: true,
             version: "2".to_string(),
             description: "create gadgets".to_string(),
             script_path: "V2__create_gadgets.sql".to_string(),
@@ -1648,12 +1675,14 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
     // already exist for the foreign key to resolve.
     let migrations = vec![
         Migration {
+        transactional: true,
             version: "1".to_string(),
             description: "create customers".to_string(),
             script_path: "V1__create_customers.sql".to_string(),
             sql: "create table customers (id integer primary key autoincrement);\ninsert into customers (id) values (1);".to_string(),
         },
         Migration {
+        transactional: true,
             version: "2".to_string(),
             description: "create orders".to_string(),
             script_path: "V2__create_orders.sql".to_string(),
@@ -1881,4 +1910,214 @@ async fn test_sqlite_delete_failed_migrations_reports_how_many_rows_it_deleted()
         pool.delete_failed_migrations().await.expect("delete again"),
         0
     );
+}
+
+// ---- M18: running a migration outside a transaction ----
+
+fn sqlite_config(connection_string: &str) -> schema_installer::SchemaInstallerConfig {
+    SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.to_string())
+        .build()
+        .expect("valid config")
+}
+
+async fn sqlite_status_of(connection_string: &str, version: &str) -> Option<String> {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(connection_string)
+        .await
+        .expect("connect");
+    sqlx::query("SELECT status FROM schema_migration WHERE version = ?")
+        .bind(version)
+        .fetch_optional(&pool)
+        .await
+        .expect("query status")
+        .map(|row| row.get::<String, _>("status"))
+}
+
+fn embedded(sql: &str, transactional: bool) -> Box<EmbeddedMigrationSource> {
+    Box::new(EmbeddedMigrationSource {
+        migrations: vec![Migration {
+            transactional,
+            version: "1".to_string(),
+            description: "m18".to_string(),
+            script_path: "V1__m18.sql".to_string(),
+            sql: sql.to_string(),
+        }],
+    })
+}
+
+#[tokio::test]
+async fn test_sqlite_vacuum_fails_in_a_transaction_but_runs_with_execute_in_transaction_false() {
+    // SQLite refuses `VACUUM` inside a transaction - the same class of statement as
+    // PostgreSQL's `CREATE INDEX CONCURRENTLY`.
+    let temp_dir = TempDir::new().expect("create temp dir");
+
+    let tx_conn = sqlite_connection_string(&temp_dir, "m18_tx.db");
+    let result = Migrator::migrate(
+        &sqlite_config(&tx_conn),
+        embedded("create table t (id integer primary key); vacuum;", true),
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "vacuum inside the migration transaction must fail"
+    );
+    assert_eq!(
+        sqlite_status_of(&tx_conn, "1").await.as_deref(),
+        Some("failed")
+    );
+
+    let free_conn = sqlite_connection_string(&temp_dir, "m18_free.db");
+    Migrator::migrate(
+        &sqlite_config(&free_conn),
+        embedded("create table t (id integer primary key); vacuum;", false),
+    )
+    .await
+    .expect("vacuum should run when the migration is non-transactional");
+    assert_eq!(
+        sqlite_status_of(&free_conn, "1").await.as_deref(),
+        Some("success")
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_directory_source_reads_execute_in_transaction_from_sibling_conf() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let dir = temp_dir.path().join("migrations");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("V1__plain.sql"), "create table a (id integer);").unwrap();
+    std::fs::write(
+        dir.join("V2__vacuum.sql"),
+        "create table b (id integer); vacuum;",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("V2__vacuum.sql.conf"),
+        "# VACUUM cannot run in a transaction\nexecuteInTransaction=false\n",
+    )
+    .unwrap();
+
+    let conn = sqlite_connection_string(&temp_dir, "m18_dir.db");
+    Migrator::migrate(
+        &sqlite_config(&conn),
+        Box::new(DirectoryMigrationSource { path: dir }),
+    )
+    .await
+    .expect("V1 transactional and V2 non-transactional should both apply");
+    assert_eq!(
+        sqlite_status_of(&conn, "1").await.as_deref(),
+        Some("success")
+    );
+    assert_eq!(
+        sqlite_status_of(&conn, "2").await.as_deref(),
+        Some("success")
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_invalid_conf_is_a_hard_error() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let dir = temp_dir.path().join("migrations");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("V1__a.sql"), "create table a (id integer);").unwrap();
+    std::fs::write(dir.join("V1__a.sql.conf"), "executeInTransacton=false\n").unwrap();
+
+    let conn = sqlite_connection_string(&temp_dir, "m18_badconf.db");
+    let result = Migrator::migrate(
+        &sqlite_config(&conn),
+        Box::new(DirectoryMigrationSource { path: dir }),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(SchemaInstallerError::InvalidConfiguration(_))),
+        "a typo'd conf key must not be silently ignored, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_script_with_own_transaction_control_is_rejected_before_running() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let conn = sqlite_connection_string(&temp_dir, "m18_nested.db");
+
+    let result = Migrator::migrate(
+        &sqlite_config(&conn),
+        embedded(
+            "begin;\ncreate table widgets (id integer primary key);\ncommit;",
+            true,
+        ),
+    )
+    .await;
+    let message = match result {
+        Err(SchemaInstallerError::InvalidConfiguration(m)) => m,
+        other => panic!("expected InvalidConfiguration, got {other:?}"),
+    };
+    assert!(message.contains("executeInTransaction=false"), "{message}");
+
+    // Rejected up front: no tracking row, no table.
+    assert_eq!(sqlite_status_of(&conn, "1").await, None);
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&conn)
+        .await
+        .unwrap();
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn test_sqlite_non_transactional_script_may_manage_its_own_transaction() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let conn = sqlite_connection_string(&temp_dir, "m18_own_tx.db");
+
+    Migrator::migrate(
+        &sqlite_config(&conn),
+        embedded(
+            "begin;\ncreate table widgets (id integer primary key);\ncommit;",
+            false,
+        ),
+    )
+    .await
+    .expect("a non-transactional script is free to use BEGIN/COMMIT");
+    assert_eq!(
+        sqlite_status_of(&conn, "1").await.as_deref(),
+        Some("success")
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_non_transactional_failure_is_recorded_failed_and_keeps_earlier_statements() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let conn = sqlite_connection_string(&temp_dir, "m18_partial.db");
+
+    let result = Migrator::migrate(
+        &sqlite_config(&conn),
+        embedded(
+            "create table widgets (id integer primary key);\nthis is not valid sql;",
+            false,
+        ),
+    )
+    .await;
+    assert!(result.is_err());
+    assert_eq!(
+        sqlite_status_of(&conn, "1").await.as_deref(),
+        Some("failed")
+    );
+
+    // Documented trade-off of opting out: earlier statements were already committed.
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&conn)
+        .await
+        .unwrap();
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
 }

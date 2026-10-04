@@ -36,6 +36,76 @@ pub(crate) fn split_sql_statements(
     }
 }
 
+/// Returns the first statement that is itself transaction control (`BEGIN`, `START
+/// TRANSACTION`, `COMMIT`, `ROLLBACK`, ...), if any (M18). Run inside the migrator's own
+/// transaction, such a statement nests: the script's `COMMIT` closes the migrator's
+/// transaction, the final `tx.commit()` then fails, and a fully-applied migration is
+/// recorded `failed`. Callers reject the script up front instead.
+///
+/// SQL Server only matches the `TRAN`/`TRANSACTION` forms, since a bare `BEGIN` there opens
+/// a `BEGIN ... END` block, not a transaction.
+pub(crate) fn find_transaction_control(
+    statements: &[String],
+    database_type: &GeneratorType,
+) -> Option<String> {
+    let sql_server = matches!(database_type, GeneratorType::SqlServer);
+    statements
+        .iter()
+        .find(|statement| is_transaction_control(statement, sql_server))
+        .map(|statement| statement.lines().next().unwrap_or("").trim().to_string())
+}
+
+fn is_transaction_control(statement: &str, sql_server: bool) -> bool {
+    let mut words = leading_words(statement);
+    let first = match words.next() {
+        Some(w) => w,
+        None => return false,
+    };
+    let second = words.next();
+    match first.as_str() {
+        "commit" | "rollback" => true,
+        "abort" => !sql_server,
+        "start" => second.as_deref() == Some("transaction"),
+        "begin" if sql_server => matches!(second.as_deref(), Some("tran" | "transaction")),
+        "begin" => matches!(
+            second.as_deref(),
+            None | Some(
+                "transaction"
+                    | "work"
+                    | "deferred"
+                    | "immediate"
+                    | "exclusive"
+                    | "isolation"
+                    | "read"
+            )
+        ),
+        "end" if !sql_server => matches!(second.as_deref(), None | Some("transaction" | "work")),
+        _ => false,
+    }
+}
+
+/// Lowercased leading alphabetic words of a statement, skipping leading `--` and `/* */`
+/// comments and stopping at the first non-word token.
+fn leading_words(statement: &str) -> impl Iterator<Item = String> + '_ {
+    let mut rest = statement;
+    loop {
+        rest = rest.trim_start();
+        if let Some(after) = rest.strip_prefix("--") {
+            rest = after.split_once('\n').map_or("", |(_, tail)| tail);
+        } else if let Some(after) = rest.strip_prefix("/*") {
+            rest = after.split_once("*/").map_or("", |(_, tail)| tail);
+        } else {
+            break;
+        }
+    }
+    rest.split(|c: char| !c.is_ascii_alphabetic())
+        .take(2)
+        .map(|w| w.to_ascii_lowercase())
+        .take_while(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .into_iter()
+}
+
 #[derive(Clone, Copy)]
 struct Rules {
     nested_comments: bool,
@@ -456,6 +526,45 @@ fn go_batch_separator_count(line: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn detects_transaction_control_statements() {
+        use super::find_transaction_control;
+        let pg = GeneratorType::Postgresql;
+        let stmts = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for sql in [
+            "begin",
+            "BEGIN TRANSACTION",
+            "begin work",
+            "-- c\n  COMMIT",
+            "/* c */ rollback",
+            "start transaction isolation level serializable",
+            "end",
+            "abort",
+        ] {
+            assert!(
+                find_transaction_control(&stmts(&["create table t(id int)", sql]), &pg).is_some(),
+                "{sql}"
+            );
+        }
+        for sql in [
+            "create table begin_log (id int)",
+            "do $$ begin perform 1; end $$",
+            "create trigger t after insert on x begin select 1; end",
+            "insert into commit_log values (1)",
+            "savepoint a",
+        ] {
+            assert!(
+                find_transaction_control(&stmts(&[sql]), &pg).is_none(),
+                "{sql}"
+            );
+        }
+        let ss = GeneratorType::SqlServer;
+        assert!(find_transaction_control(&stmts(&["BEGIN TRAN"]), &ss).is_some());
+        assert!(find_transaction_control(&stmts(&["commit tran"]), &ss).is_some());
+        assert!(find_transaction_control(&stmts(&["begin\n select 1\nend"]), &ss).is_none());
+        assert!(find_transaction_control(&stmts(&["begin try select 1 end try"]), &ss).is_none());
+    }
+
     use super::*;
 
     #[test]

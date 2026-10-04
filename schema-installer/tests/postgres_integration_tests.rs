@@ -128,6 +128,7 @@ async fn test_postgres_failed_migration_rolls_back_partial_statements() {
     // wrapping, `widgets` would be left permanently in the schema despite the migration
     // being recorded as "failed".
     let bad_migration = Migration {
+        transactional: true,
         version: "1".to_string(),
         description: "create widgets then fail".to_string(),
         script_path: "V1__create_widgets_then_fail.sql".to_string(),
