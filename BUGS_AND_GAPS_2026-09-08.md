@@ -1139,6 +1139,8 @@ remediation plan) is worth more than any individual fix below.
   the row count and `repair` prints it (`Deleted 0 failed migration(s)`). `DirectoryMigrationSource`
   now warns about each skipped subdirectory instead of ignoring it silently; recursing like
   Flyway was not done, as it changes how `script_path` is derived.
+  **Still open:** recurse into subdirectories like Flyway (revisit; decide how `script_path`
+  and version ordering should work for nested files).
 - [x] **L14.** `xml_writer.rs:114` escapes only `&<>"'`, so a multi-line default expression keeps
   a literal newline inside an attribute value; XML attribute-value normalization turns it
   into a space on re-parse, altering the SQL. Needs `&#10;`.
