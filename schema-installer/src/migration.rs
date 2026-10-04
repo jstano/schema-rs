@@ -221,6 +221,16 @@ pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String,
         )));
     }
 
+    // A leading zero (`V01` vs `V1`) would compare Equal in `compare_versions` yet remain
+    // a distinct string for the "already applied" lookup, so both files would be applied
+    // in nondeterministic order. Reject rather than normalize (M19).
+    if version.split(['.', '_']).any(|part| part.len() > 1 && part.starts_with('0')) {
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Migration version segments must not have leading zeros (got '{}'): {}",
+            version, filename
+        )));
+    }
+
     // Version "0" is reserved for the legacy XML `install` command's tracking row (see
     // RESERVED_INSTALL_VERSION) and never corresponds to a real migration file. A user
     // migration named `V0__...sql` would collide with it, producing a confusing
@@ -235,21 +245,27 @@ pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String,
     Ok(Some((version, description)))
 }
 
+/// Compares two version strings segment by segment as arbitrary-length unsigned integers.
+/// Segments are compared as digit strings (after stripping leading zeros: shorter is
+/// smaller, else lexicographic) rather than parsed into a fixed-width integer, so a long
+/// timestamp version (e.g. 20 digits) can't overflow and silently drop out of the
+/// comparison (M19).
 pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
     // Version strings may use either `.` (e.g. "1.2") or `_` (e.g. "1_2", produced by a
     // filename like `V1_2__add_email_column.sql`) as the separator, so both must be
     // split on here, or multipart underscore versions silently compare as equal.
-    let split = |v: &str| -> Vec<u64> {
+    let split = |v: &str| -> Vec<String> {
         v.split(['.', '_'])
-            .filter_map(|p| p.parse::<u64>().ok())
+            .map(|p| p.trim_start_matches('0').to_string())
             .collect()
     };
     let v1_parts = split(v1);
     let v2_parts = split(v2);
 
     for (p1, p2) in v1_parts.iter().zip(v2_parts.iter()) {
-        if p1 != p2 {
-            return p1.cmp(p2);
+        let ord = p1.len().cmp(&p2.len()).then_with(|| p1.cmp(p2));
+        if ord != std::cmp::Ordering::Equal {
+            return ord;
         }
     }
 
@@ -337,6 +353,25 @@ mod tests {
 
         let err = parse_migration_filename("V1a__do_something.sql").unwrap_err();
         assert!(err.to_string().contains("must be a dot/underscore-separated list of numbers"));
+    }
+
+    #[test]
+    fn test_compare_versions_long_timestamp_does_not_overflow() {
+        // 20 digits, larger than u64::MAX (18446744073709551615).
+        let big = "99999999999999999999";
+        assert_eq!(compare_versions(big, "1"), std::cmp::Ordering::Greater);
+        assert_eq!(compare_versions("1", big), std::cmp::Ordering::Less);
+        assert_eq!(compare_versions(big, "20240115143022"), std::cmp::Ordering::Greater);
+        assert_eq!(compare_versions(big, big), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_parse_migration_filename_rejects_leading_zeros() {
+        assert!(parse_migration_filename("V01__x.sql").is_err());
+        assert!(parse_migration_filename("V1.02__x.sql").is_err());
+        assert!(parse_migration_filename("V1_007__x.sql").is_err());
+        // A bare "0" segment is still fine (e.g. 1.0).
+        assert!(parse_migration_filename("V1.0__x.sql").is_ok());
     }
 
     #[test]

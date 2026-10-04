@@ -798,12 +798,18 @@ remediation plan) is worth more than any individual fix below.
   Relatedly, a script with its own `BEGIN;`/`COMMIT;` nests, the inner `COMMIT` closes the
   outer transaction, `tx.commit()` fails, and a fully-applied migration is recorded
   `failed` → H9's wedge.
-- [ ] **M19. Version parsing and version comparison disagree.** `migration.rs:180` accepts any
+- [x] **M19. Version parsing and version comparison disagree.** `migration.rs:180` accepts any
   digit run but `:207` does `.parse::<u64>().ok()` → a 20-digit timestamp version (a standard
   Flyway convention) parses to nothing and sorts *before* `V1`, rejecting everything else as
   out-of-order. Leading zeros are worse: `V01` and `V1` compare `Equal` for sorting but are
   distinct strings for the "already applied" check, so **both** are applied, in
   nondeterministic order.
+  **Fixed 2026-10-03.** `compare_versions` now compares segments as digit strings (leading
+  zeros stripped, then length, then lexicographic) instead of `parse::<u64>()`, so a version
+  of any length (e.g. a 20-digit timestamp) sorts correctly instead of vanishing from the
+  comparison. `parse_migration_filename` now hard-errors on a segment with a leading zero
+  (`V01`, `V1.02`) rather than normalizing it, since that's the case where the comparator and
+  the string-based "already applied" check disagreed. Regression tests in `migration.rs`.
 - [ ] **M20. Errors are converted into "everything is pending"** (`migrator.rs:330-334`) —
   `ensure_migration_table(…).is_err()` → `return Ok(true)` and
   `get_applied_migrations().await.unwrap_or_default()`. A permissions failure makes
