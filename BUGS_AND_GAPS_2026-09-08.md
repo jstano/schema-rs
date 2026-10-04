@@ -1189,6 +1189,24 @@ remediation plan) is worth more than any individual fix below.
   `--dry-run`, `clean`, `undo`, repeatable migrations, or configurable history-table name.
   `migrator.rs:16,24` also leave a 9-minute unrecoverable window between the 60 s lock
   timeout and the 600 s stale-pending threshold, with no `--force`/`--lock-timeout` override.
+
+  **Status (2026-10-03): skipped at user's request, deferred.** Checked the code first; the
+  item text is partly stale:
+  - **Already present:** `migrate --target <version>` (`Migrator::migrate_to_target`),
+    `migrate --dry-run <file>` (`Migrator::dry_run`), and baseline, but only as
+    `install --baseline-version <v> --migrations-dir <dir>` (`SchemaInstaller::install_with_baseline`,
+    `Baseline` in `installer.rs`). There is no standalone `baseline` command for adopting an
+    existing database without running `install`.
+  - **Still missing:** standalone `baseline` command; `--out-of-order` (the default error is
+    correct, only the opt-in is absent); configurable history-table name (`schema_migration`
+    is hard-coded in `tracking.rs` and every query in `connection.rs`); `--lock-timeout` and a
+    `--force`/stale-after override for the 60 s / 600 s window (`LOCK_MAX_WAIT`,
+    `STALE_PENDING_THRESHOLD` in `migrator.rs`); `clean`; `undo`; repeatable (`R__`) migrations
+    (currently skipped with a warning, see H11).
+  - **Suggested order when picked up:** lock window + `--lock-timeout` (small, self-contained),
+    standalone `baseline`, `--out-of-order`, history-table name. `clean` (destructive) and `undo`
+    (a paid Flyway feature) are probably better declined and documented as out of scope;
+    repeatable migrations need re-run-on-checksum-change semantics and a design decision.
 - [ ] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
   while closing L13). `--migrations-dir` takes one flat directory and applies every `.sql` file
   in it to whatever database is connected. Flyway handles this with `locations=db/migration/{vendor}`;
