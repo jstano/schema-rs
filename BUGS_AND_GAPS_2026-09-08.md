@@ -747,17 +747,25 @@ remediation plan) is worth more than any individual fix below.
   itself, independent of any one dialect's current (lack of) override. Full
   `cargo test --workspace` passes (573 tests); `cargo clippy -p schema-sql-generator
   --all-targets` clean (only pre-existing unrelated warnings, see L19).
-- [ ] **M11. `Schema::validate()` gaps BUGS #32 left open, confirmed still open:** duplicate table
+- [x] **M11. `Schema::validate()` gaps BUGS #32 left open, confirmed still open:** duplicate table
   (H22) and column names, key/index columns existing on the table
   (`<primary><column name="Idd"/></primary>` → runtime error), relation *target column*
   existence (only the target *table* is checked, `database_model.rs:133-144`), and the
   `from_column` existence check runs only inside the `RelationType::SetNull` arm
   (`schema.rs:141-165`).
-- [ ] **M12. Schema-name lookup is case-sensitive while table/column lookup is not**
+  Fixed 2026-10-03: `Schema::validate()` now reports duplicate column names, key/index columns
+  missing from the table, and a missing `from_column` for every relation type (all pairs of a
+  composite relation); `DatabaseModel::validate()` reports a missing relation *target column*.
+  Duplicate tables were already covered by H22.
+- [x] **M12. Schema-name lookup is case-sensitive while table/column lookup is not**
   (`database_model.rs:50-60` uses `==`), contradicting the documented model contract.
   `find_table_by_qualified_name` (line 91) also treats any name without exactly two
   dot-separated parts as unqualified, so `db.schema.table` resolves to a table literally
   named `db.schema.table`.
+  Fixed 2026-10-03: schema lookup is case-insensitive everywhere (`find_schema`, `find_schema_mut`,
+  `resolve_enum_type`, `find_table_by_qualified_name_checked`, `find_table_mut_checked`). A
+  reference with more than one dot is now rejected (panic in `find_table_by_qualified_name`,
+  `None`/validation error in the checked path) instead of resolving as an unqualified name.
 
 ### Installer
 

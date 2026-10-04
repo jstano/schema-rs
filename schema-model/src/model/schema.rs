@@ -180,29 +180,54 @@ impl Schema {
                 ));
             }
 
+            let mut seen_column_names: HashMap<String, &str> = HashMap::new();
+            for column in table.columns() {
+                if seen_column_names.insert(column.name().to_lowercase(), column.name()).is_some() {
+                    errors.push(format!(
+                        "ERROR: table {} has duplicate column name '{}'; column names must be unique \
+                         within a table (comparison is case-insensitive)",
+                        table.name(),
+                        column.name()
+                    ));
+                }
+            }
+
+            let key_kinds = [("key", table.keys()), ("index", table.indexes())];
+            for (kind, keys) in key_kinds {
+                for key in keys {
+                    for key_column in key.columns() {
+                        if !table.has_column(key_column.name()) {
+                            errors.push(format!(
+                                "ERROR: table {} has a {} on column '{}', which does not exist",
+                                table.name(),
+                                kind,
+                                key_column.name()
+                            ));
+                        }
+                    }
+                }
+            }
+
             for relation in table.relations() {
-                if relation.relation_type() == RelationType::SetNull {
-                    let from_column_name = relation.from_column_name();
-                    match table.has_column(from_column_name) {
-                        true if table.column(from_column_name).is_required() => {
-                            errors.push(format!(
-                                "ERROR: {}.{} is required. The {}.{} relation specifies setnull, which is not allowed",
-                                table.name(),
-                                from_column_name,
-                                relation.to_table_name(),
-                                relation.to_column_name()
-                            ));
-                        }
-                        true => {}
-                        false => {
-                            errors.push(format!(
-                                "ERROR: {}.{} does not exist. The {}.{} relation refers to it as the source column",
-                                table.name(),
-                                from_column_name,
-                                relation.to_table_name(),
-                                relation.to_column_name()
-                            ));
-                        }
+                for (from_column_name, to_column_name) in relation.column_pairs() {
+                    if !table.has_column(from_column_name) {
+                        errors.push(format!(
+                            "ERROR: {}.{} does not exist. The {}.{} relation refers to it as the source column",
+                            table.name(),
+                            from_column_name,
+                            relation.to_table_name(),
+                            to_column_name
+                        ));
+                    } else if relation.relation_type() == RelationType::SetNull
+                        && table.column(from_column_name).is_required()
+                    {
+                        errors.push(format!(
+                            "ERROR: {}.{} is required. The {}.{} relation specifies setnull, which is not allowed",
+                            table.name(),
+                            from_column_name,
+                            relation.to_table_name(),
+                            to_column_name
+                        ));
                     }
                 }
             }
@@ -519,6 +544,55 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("duplicate table name"));
         assert!(errors[0].contains("users"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_duplicate_column_names() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "Name", CT::Int).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "name", CT::Int).build())
+            .build();
+        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("duplicate column name 'name'"));
+    }
+
+    #[test]
+    fn validate_reports_error_for_key_and_index_columns_that_do_not_exist() {
+        use crate::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+        use crate::model::types::KeyType;
+
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", CT::Int).required(true).build())
+            .add_key(KeyBuilder::new(KeyType::Primary).add_column("Idd").build())
+            .add_index(KeyBuilder::new(KeyType::Index).add_column("ID").add_column("nope").build())
+            .build();
+        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].contains("'Idd'"));
+        assert!(errors[1].contains("'nope'"));
+    }
+
+    #[test]
+    fn validate_reports_missing_from_column_for_non_setnull_relations() {
+        // M11: the existence check used to run only inside the SetNull arm.
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", CT::Int).build())
+            .add_relation(Relation::new("p", "id", "t", "missing", RelationType::Cascade, false))
+            .build();
+        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("t.missing does not exist"));
     }
 
     #[test]

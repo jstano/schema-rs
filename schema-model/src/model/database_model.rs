@@ -3,6 +3,31 @@ use crate::model::schema::Schema;
 use crate::model::table::Table;
 use crate::model::types::{BooleanMode, ForeignKeyMode};
 
+/// Schema names compare case-insensitively, like table and column names; `None` is the
+/// default schema and only matches `None`.
+fn schema_names_match(a: Option<&str>, b: Option<&str>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.to_lowercase() == b.to_lowercase(),
+        _ => false,
+    }
+}
+
+/// Splits `table` or `schema.table` into `(schema, table)`. Anything with more than one
+/// dot is rejected rather than guessed at (it used to silently resolve as a table
+/// literally named `a.b.c`).
+fn split_qualified_name(qualified_name: &str) -> Result<(Option<&str>, &str), String> {
+    let parts: Vec<&str> = qualified_name.split('.').collect();
+    match parts.as_slice() {
+        [table] => Ok((None, table)),
+        [schema, table] => Ok((Some(schema), table)),
+        _ => Err(format!(
+            "'{}' is not a valid table reference; expected 'table' or 'schema.table'",
+            qualified_name
+        )),
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseModel {
     foreign_key_mode: ForeignKeyMode,
@@ -54,9 +79,8 @@ impl DatabaseModel {
 
         self.schemas
             .iter()
-            .filter(|s| s.schema_name().is_some())
-            .find(|s| s.schema_name().unwrap() == schema_name.unwrap())
-            .expect("Schema not found")
+            .find(|s| schema_names_match(s.schema_name(), schema_name))
+            .unwrap_or_else(|| panic!("Schema '{}' not found", schema_name.unwrap()))
     }
 
     pub(crate) fn find_schema_mut(&mut self, schema_name: Option<&str>) -> &mut Schema {
@@ -66,9 +90,8 @@ impl DatabaseModel {
 
         self.schemas
             .iter_mut()
-            .filter(|s| s.schema_name().is_some())
-            .find(|s| s.schema_name().unwrap() == schema_name.unwrap())
-            .expect("Schema not found")
+            .find(|s| schema_names_match(s.schema_name(), schema_name))
+            .unwrap_or_else(|| panic!("Schema '{}' not found", schema_name.unwrap()))
     }
 
     /// Resolves the enum a column in `schema_name` refers to: the column's own schema
@@ -83,7 +106,7 @@ impl DatabaseModel {
         let in_schema = |name: Option<&str>| {
             self.schemas
                 .iter()
-                .find(|s| s.schema_name() == name)
+                .find(|s| schema_names_match(s.schema_name(), name))
                 .and_then(|s| s.get_optional_enum_type(enum_type).map(|found| (s.schema_name(), found)))
         };
         if schema_name.is_some()
@@ -113,12 +136,8 @@ impl DatabaseModel {
     }
 
     pub fn find_table_by_qualified_name(&self, qualified_name: &str) -> &Table {
-        let parts: Vec<&str> = qualified_name.split('.').collect();
-        let (schema_name, table_name) = if parts.len() == 2 {
-            (Some(parts[0]), parts[1])
-        } else {
-            (None, qualified_name)
-        };
+        let (schema_name, table_name) = split_qualified_name(qualified_name)
+            .unwrap_or_else(|e| panic!("{}", e));
 
         self.find_table(schema_name, table_name)
     }
@@ -127,16 +146,11 @@ impl DatabaseModel {
     /// when the schema or table doesn't exist - used by `validate()` to check relation
     /// targets without crashing on a dangling one.
     pub fn find_table_by_qualified_name_checked(&self, qualified_name: &str) -> Option<&Table> {
-        let parts: Vec<&str> = qualified_name.split('.').collect();
-        let (schema_name, table_name) = if parts.len() == 2 {
-            (Some(parts[0]), parts[1])
-        } else {
-            (None, qualified_name)
-        };
+        let (schema_name, table_name) = split_qualified_name(qualified_name).ok()?;
 
         self.schemas
             .iter()
-            .find(|s| s.schema_name() == schema_name)
+            .find(|s| schema_names_match(s.schema_name(), schema_name))
             .and_then(|s| s.get_optional_table(table_name))
     }
 
@@ -177,13 +191,36 @@ impl DatabaseModel {
 
         for table in self.all_tables() {
             for relation in table.relations() {
-                if self.find_table_by_qualified_name_checked(relation.to_table_name()).is_none() {
-                    errors.push(format!(
-                        "ERROR: {}.{} has a relation to '{}' which does not exist",
+                match split_qualified_name(relation.to_table_name()) {
+                    Err(e) => errors.push(format!(
+                        "ERROR: {}.{} has a relation with an invalid target: {}",
                         table.name(),
                         relation.from_column_name(),
-                        relation.to_table_name()
-                    ));
+                        e
+                    )),
+                    Ok(_) => match self.find_table_by_qualified_name_checked(relation.to_table_name()) {
+                        None => errors.push(format!(
+                            "ERROR: {}.{} has a relation to '{}' which does not exist",
+                            table.name(),
+                            relation.from_column_name(),
+                            relation.to_table_name()
+                        )),
+                        Some(target) => {
+                            for (from_column, to_column) in relation.column_pairs() {
+                                if !target.has_column(to_column) {
+                                    errors.push(format!(
+                                        "ERROR: {}.{} has a relation to {}.{}, but {} has no column '{}'",
+                                        table.name(),
+                                        from_column,
+                                        relation.to_table_name(),
+                                        to_column,
+                                        target.name(),
+                                        to_column
+                                    ));
+                                }
+                            }
+                        }
+                    },
                 }
             }
         }
@@ -201,7 +238,7 @@ impl DatabaseModel {
     /// possibly-malformed input, where a dangling reference should surface as an error
     /// rather than crash.
     pub fn find_table_mut_checked(&mut self, schema_name: Option<&str>, table_name: &str) -> Option<&mut Table> {
-        let schema = self.schemas.iter_mut().find(|s| s.schema_name() == schema_name)?;
+        let schema = self.schemas.iter_mut().find(|s| schema_names_match(s.schema_name(), schema_name))?;
         schema.get_table_mut_checked(table_name)
     }
 
@@ -310,5 +347,51 @@ mod tests {
         assert_eq!(model.resolve_enum_type(Some("app"), "SharedType").unwrap().0, None);
         assert_eq!(model.resolve_enum_type(None, "StatusType").unwrap().0, None);
         assert!(model.resolve_enum_type(None, "Missing").is_none());
+    }
+
+    fn id_table(schema: Option<&str>, name: &str) -> Table {
+        TableBuilder::new(schema, name)
+            .add_column(ColumnBuilder::new(schema, "id", ColumnType::Sequence).required(true).build())
+            .build()
+    }
+
+    #[test]
+    fn validate_reports_error_for_a_relation_whose_target_column_does_not_exist() {
+        // M11: only the target *table* used to be checked.
+        let parent = id_table(None, "parent");
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
+            .add_relation(Relation::new("parent", "idd", "child", "parent_id", RelationType::Cascade, false))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        let errors = model.validate();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("idd"));
+    }
+
+    #[test]
+    fn find_schema_is_case_insensitive() {
+        // M12: table and column lookups are case-insensitive; schema lookup must match.
+        let app = SchemaBuilder::new(Some("App")).add_table(id_table(Some("App"), "parent")).build();
+        let default_schema = SchemaBuilder::new(None::<&str>).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+
+        assert_eq!(model.find_schema(Some("app")).schema_name(), Some("App"));
+        assert_eq!(model.find_table_by_qualified_name("APP.Parent").name(), "parent");
+        assert!(model.find_table_by_qualified_name_checked("app.parent").is_some());
+    }
+
+    #[test]
+    fn three_part_qualified_name_is_rejected_not_treated_as_unqualified() {
+        // M12: `db.schema.table` used to resolve a table literally named `db.schema.table`.
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![SchemaBuilder::new(None::<&str>).add_table(id_table(None, "a.b.c")).build()],
+        );
+
+        assert!(model.find_table_by_qualified_name_checked("a.b.c").is_none());
     }
 }
