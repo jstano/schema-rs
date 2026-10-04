@@ -16,6 +16,25 @@ A small workspace that models database schemas (schema-model), parses/handles in
   
   If your goal is close to “feed a domain model and get vendor-specific SQL plus an installer,” you’ll likely combine a couple of tools (e.g., a model + SeaQuery/SeaORM/diesel for generation/migrations) or use this project’s components.
 
+## Generating Migrations with schema-migration-generator
+
+`schema-migration-generator` diffs two versions of an XML schema (via `schema-diff`) and writes the
+SQL migration that turns the old one into the new one. Each side is a file path or a git
+`<rev>:<path>` reference.
+
+```bash
+# Diff schema.xml on disk against its committed version, writing V{timestamp}__add_users.sql next to it
+schema-migration-generator \
+  --database-type postgresql \
+  --file schema.xml \
+  --auto-generate-name --description "add users"
+
+# Diff two explicit sources, printing to stdout
+schema-migration-generator \
+  --database-type sqlserver \
+  --old HEAD~1:schema.xml --new schema.xml
+```
+
 ## Using schema-installer for Migrations
 
 The `schema-installer` crate provides a Flyway-style migration system for applying versioned SQL scripts to your database.

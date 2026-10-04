@@ -978,9 +978,15 @@ remediation plan) is worth more than any individual fix below.
   `SET DEFAULT` (and any unknown rule) with an error instead of coercing it to `SET NULL`.
 - [ ] **M35. `schema-reverse-engineer` supports PostgreSQL only** while the rest of the workspace
   supports three dialects.
-- [ ] **M36. `schema-diff` and `schema-migration-generator` ship no binary.** Only four crates
+- [x] **M36. `schema-diff` and `schema-migration-generator` ship no binary.** Only four crates
   declare `[[bin]]`, so the diff→migration workflow is reachable only from tests — which is
   precisely why C7, H19 and H20 went unnoticed.
+  **Resolved 2026-10-03.** Already addressed by the time this was picked up: `schema-migration-generator`
+  declares a `[[bin]]` (`src/main.rs`) that parses two schema sources (files or git `<rev>:<path>`),
+  runs `SchemaDiffEngine`, and emits the migration, with `--auto-generate-name`/`--output-dir` for
+  Flyway-style file names. It is in the Justfile's release `binaries`. `schema-diff` itself stays a
+  library (its changes are meaningless without a dialect generator). The only gap left was
+  documentation; README now has a "Generating Migrations" section.
 - [x] **M37. PostgreSQL `ModifyColumn`/`DropColumn` don't account for dependent views.**
   (`postgresql/mod.rs` `ModifyColumn`/`DropColumn` arms) → `alter table ... alter column ...
   type ...` fails with "cannot alter type of a column used by a view or rule", and `drop
@@ -1221,7 +1227,7 @@ the crate is worth keeping in its current form.
   emission: there's no declarative signal in the XML format to key a rename off, and a
   heuristic risks a false-positive match silently renaming the wrong table.
 - [ ] Guard destructive statements behind a flag; wrap output in a transaction (M28).
-- [ ] Ship a binary, or fold the functionality into `schema-installer` (M36).
+- [x] Ship a binary, or fold the functionality into `schema-installer` (M36). (Resolved 2026-10-03: `schema-migration-generator` binary already exists; documented in README.)
 
 ### Step 7 — Model, diagrams, reverse engineer, hygiene
 - [x] H21: drop the `to_lowercase()` in `Table::column`/`has_column`; settle on one
