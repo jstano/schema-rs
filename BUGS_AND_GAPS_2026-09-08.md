@@ -1181,6 +1181,25 @@ remediation plan) is worth more than any individual fix below.
   `--dry-run`, `clean`, `undo`, repeatable migrations, or configurable history-table name.
   `migrator.rs:16,24` also leave a 9-minute unrecoverable window between the 60 s lock
   timeout and the 600 s stale-pending threshold, with no `--force`/`--lock-timeout` override.
+- [ ] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
+  while closing L13). `--migrations-dir` takes one flat directory and applies every `.sql` file
+  in it to whatever database is connected. Flyway handles this with `locations=db/migration/{vendor}`;
+  it has no filename-suffix convention.
+
+  **Workaround today:** one flat directory per database, each passed to its own run
+  (`migrations/postgresql/`, `migrations/sqlserver/`; versions are per database, so `V1` can
+  exist in both). Files that are identical everywhere can be generated per dialect with
+  `schema-sql-generator --database-type <db> --output-file migrations/<db>/V1__initial_schema.sql`.
+
+  **Idea:** `--migrations-dir migrations` automatically reads `migrations/{database-type}/`.
+
+  **Decided:** every directory stays flat (see L13; the vendor level is the only nesting), and a
+  missing vendor folder is an error, not an empty migration set. **Rejected:** a filename suffix
+  such as `V2__x.postgresql.sql`, which would put every dialect back into one directory.
+
+  **Open:** fall back to the given directory when there is no `{database-type}` subfolder, or
+  always require it? Support a shared `common/` folder as Flyway's multiple locations allow? If
+  so, versions become global across both and the duplicate-version check (H13) must cover them.
 
 ---
 
