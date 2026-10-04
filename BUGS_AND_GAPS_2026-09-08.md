@@ -969,10 +969,13 @@ remediation plan) is worth more than any individual fix below.
   hard failure) and `information_schema.views` excludes materialized views.
   `keys.rs:114-119` promotes a lone nullable `UNIQUE` to `PRIMARY KEY`, inventing a
   `NOT NULL` the source database doesn't have.
-- [ ] **M34. `ON DELETE` mapping is inconsistent across the three crates.** Create path:
+- [x] **M34. `ON DELETE` mapping is inconsistent across the three crates.** Create path:
   `DoNothing → "no action"`. Migration path: `DoNothing → "ON DELETE RESTRICT"`. Reverse
   engineer: `"SET DEFAULT" => SetNull` (`relations.rs:66-73`) — so a real `ON DELETE SET
   DEFAULT` round-trips as `SET NULL`, nulling the column instead of restoring the default.
+  **Fixed:** the Postgres and SQLite migration paths now emit `on delete no action` for
+  `DoNothing` (matching the create path and SQL Server). Reverse engineering rejects
+  `SET DEFAULT` (and any unknown rule) with an error instead of coercing it to `SET NULL`.
 - [ ] **M35. `schema-reverse-engineer` supports PostgreSQL only** while the rest of the workspace
   supports three dialects.
 - [ ] **M36. `schema-diff` and `schema-migration-generator` ship no binary.** Only four crates

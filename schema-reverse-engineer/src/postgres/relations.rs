@@ -87,7 +87,9 @@ fn group_foreign_key_rows(rows: Vec<ForeignKeyRow>) -> Result<HashMap<String, Ve
 
     let mut by_table: HashMap<String, Vec<Relation>> = HashMap::new();
     for (constraint_name, group) in groups {
-        let relation_type = map_delete_rule(&group.delete_rule);
+        let relation_type = map_delete_rule(&group.delete_rule).map_err(|e| {
+            SchemaReverseEngineerError::Introspection(format!("foreign key constraint '{constraint_name}': {e}"))
+        })?;
         let relation = if group.column_pairs.len() == 1 {
             let (from_column, to_column) = group.column_pairs.into_iter().next().unwrap();
             Relation::new(group.to_table, to_column, group.from_table.clone(), from_column, relation_type, false)
@@ -106,12 +108,14 @@ fn group_foreign_key_rows(rows: Vec<ForeignKeyRow>) -> Result<HashMap<String, Ve
     Ok(by_table)
 }
 
-fn map_delete_rule(delete_rule: &str) -> RelationType {
+/// `SET DEFAULT` has no `RelationType` equivalent; mapping it to `SetNull` would null the
+/// column instead of restoring its default, so it (and any unknown rule) is rejected.
+fn map_delete_rule(delete_rule: &str) -> Result<RelationType, String> {
     match delete_rule {
-        "CASCADE" => RelationType::Cascade,
-        "SET NULL" | "SET DEFAULT" => RelationType::SetNull,
-        "RESTRICT" | "NO ACTION" => RelationType::Enforce,
-        _ => RelationType::DoNothing,
+        "CASCADE" => Ok(RelationType::Cascade),
+        "SET NULL" => Ok(RelationType::SetNull),
+        "RESTRICT" | "NO ACTION" => Ok(RelationType::Enforce),
+        other => Err(format!("unsupported ON DELETE rule '{other}' (supported: CASCADE, SET NULL, RESTRICT, NO ACTION)")),
     }
 }
 
@@ -128,6 +132,13 @@ mod tests {
             to_column: to_column.to_string(),
             delete_rule: delete_rule.to_string(),
         }
+    }
+
+    #[test]
+    fn set_default_delete_rule_is_rejected() {
+        let rows = vec![row("fk_a", "child", "a_id", "parent_a", "id", "SET DEFAULT")];
+        let err = group_foreign_key_rows(rows).unwrap_err().to_string();
+        assert!(err.contains("SET DEFAULT"), "got: {err}");
     }
 
     #[test]

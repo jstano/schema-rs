@@ -388,7 +388,7 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(),
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " on delete cascade",
         RelationType::SetNull => " on delete set null",
-        RelationType::DoNothing => " on delete restrict",
+        RelationType::DoNothing => " on delete no action",
         RelationType::Enforce => "",
     };
     let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
