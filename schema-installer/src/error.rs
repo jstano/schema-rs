@@ -8,9 +8,6 @@ pub enum SchemaInstallerError {
     #[error("Schema parse error: {0}")]
     Parse(String),
 
-    #[error("SQL generation error: {0}")]
-    Generation(String),
-
     #[error("SQL execution error: {0}")]
     Execution(String),
 

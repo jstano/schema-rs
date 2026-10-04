@@ -87,6 +87,16 @@ impl MigrationSource for DirectoryMigrationSource {
             let entry = entry.map_err(SchemaInstallerError::Io)?;
             let path = entry.path();
 
+            if path.is_dir() {
+                // Flyway recurses into subdirectories by default; this scan doesn't, so say
+                // so rather than silently ignoring whatever migrations live in there.
+                eprintln!(
+                    "Warning: skipping subdirectory {} (migration subdirectories are not scanned)",
+                    path.display()
+                );
+                continue;
+            }
+
             if !path.is_file() {
                 continue;
             }

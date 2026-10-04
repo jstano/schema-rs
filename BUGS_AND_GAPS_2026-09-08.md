@@ -1093,29 +1093,59 @@ remediation plan) is worth more than any individual fix below.
 
   **Fixed 2026-10-03.** `KeyBuilder::new(KeyType::Unique)` now starts with `unique = true`
   (Index/Primary unchanged), so `is_unique()` is correct without a redundant `.unique(true)`.
-- [ ] **L8.** `MigrationStatus` (`migration.rs:32-56`) is exported and used by nothing — every
+- [x] **L8.** `MigrationStatus` (`migration.rs:32-56`) is exported and used by nothing — every
   status is a bare `"success"`/`"failed"`/`"pending"` string literal, exactly the typo class
   the enum would prevent. `SchemaInstallerError::Generation` is never constructed.
-- [ ] **L9.** `installer.rs:49-70` writes generated SQL to a predictable path in the shared
+
+  **Fixed 2026-10-03.** Every non-test status literal in `installer.rs`/`migrator.rs`/
+  `connection.rs` now goes through `MigrationStatus::as_str()` (and `wait_for_slot` matches on
+  `MigrationStatus::from_str`). The never-constructed `SchemaInstallerError::Generation`
+  variant was deleted.
+- [x] **L9.** `installer.rs:49-70` writes generated SQL to a predictable path in the shared
   `temp_dir()` with `File::create` (no `O_EXCL`) and discards the cleanup failure — a local
   attacker can pre-create/symlink it and have arbitrary DDL executed with migration
   privileges. `tempfile` is already a dev-dependency. Related: `PrintWriter`'s `BufWriter` is
   flushed only by `Drop`, which ignores errors, so a failed flush yields **truncated** SQL
   that is then checksummed and executed as if complete.
-- [ ] **L10.** `migrator.rs:243` uses `split('/').next_back()` — on Windows paths `info` prints
+
+  **Fixed 2026-10-03.** `install` no longer writes the generated SQL to a file at all: it
+  generates into an in-memory `SharedBuffer`, so there is no path to pre-create or symlink and
+  no cleanup to fail. The `PrintWriter` is now flushed explicitly (panicking loudly on error)
+  before the buffer is read, so a failed flush can no longer yield truncated SQL that is then
+  checksummed and executed. `temp_install_file_name` and its tests were removed.
+- [x] **L10.** `migrator.rs:243` uses `split('/').next_back()` — on Windows paths `info` prints
   the whole path and wrecks the `{:<30}` column. Use `Path::file_name()`.
-- [ ] **L11.** `connection.rs:167,194,222` `ORDER BY installed_at`, but SQLite's
+
+  **Already fixed** before this pass: `applied_description` uses `rsplit(['/', '\\'])`, and no
+  `split('/')` remains in the installer.
+- [x] **L11.** `connection.rs:167,194,222` `ORDER BY installed_at`, but SQLite's
   `CURRENT_TIMESTAMP` has 1-second resolution → same-second migrations return in arbitrary
   order. `ORDER BY id` is deterministic and free.
-- [ ] **L12.** `sql_split.rs:313` requires the line to be exactly `GO`; T-SQL's `GO 5` and
+
+  **Fixed 2026-10-03.** All three `get_applied_migrations` queries now `ORDER BY id`. Test:
+  `test_sqlite_applied_migrations_are_returned_in_insertion_order`.
+- [x] **L12.** `sql_split.rs:313` requires the line to be exactly `GO`; T-SQL's `GO 5` and
   `GO -- comment` are sent verbatim. `sql_split.rs:137-149` allows a leading digit in a
   dollar-quote tag, which PostgreSQL does not, so `$1$…$1$` swallows statements.
-- [ ] **L13.** `repair` prints "Deleted failed migrations" unconditionally even when zero rows
+
+  **Fixed 2026-10-03.** `GO` separators now accept a trailing `-- comment` and a repeat count
+  (`GO 5` repeats the batch 5 times); `GO foo`, `GO 0` and `GO5` are still not separators.
+  Dollar-quote tags can no longer start with a digit, so `$1$` is not an opening tag.
+- [x] **L13.** `repair` prints "Deleted failed migrations" unconditionally even when zero rows
   matched (`migrator.rs:356-363`). `migration.rs:89` silently skips subdirectories (Flyway
   recurses by default).
-- [ ] **L14.** `xml_writer.rs:114` escapes only `&<>"'`, so a multi-line default expression keeps
+
+  **Fixed 2026-10-03.** `delete_failed_migrations` / `delete_stale_pending_migrations` return
+  the row count and `repair` prints it (`Deleted 0 failed migration(s)`). `DirectoryMigrationSource`
+  now warns about each skipped subdirectory instead of ignoring it silently; recursing like
+  Flyway was not done, as it changes how `script_path` is derived.
+- [x] **L14.** `xml_writer.rs:114` escapes only `&<>"'`, so a multi-line default expression keeps
   a literal newline inside an attribute value; XML attribute-value normalization turns it
   into a space on re-parse, altering the SQL. Needs `&#10;`.
+
+  **Fixed 2026-10-03.** New `xml_escape_attr` writes `\n`/`\r`/`\t` as `&#10;`/`&#13;`/`&#9;` in
+  every attribute value (`<check>` text content keeps plain `xml_escape`). Round-trip test
+  through the real parser: `multi_line_default_expression_round_trips_through_the_real_parser`.
 - [x] **L15a.** [v] `diff_engine.rs:14-35` never inspects triggers, functions, procedures,
   `other_sql`, `enum_types` or `initial_data` — so adding a value to an enum produces an
   empty change set and `ALTER TYPE … ADD VALUE` can never be generated. Fixed: `schema-diff`

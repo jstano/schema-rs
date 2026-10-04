@@ -1,7 +1,7 @@
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::migration::{MigrationSource, compare_versions, compute_checksum};
+use crate::migration::{MigrationSource, MigrationStatus, compare_versions, compute_checksum};
 use schema_parser::parse_database_xml;
 use schema_sql_generator::common::generate_options::GenerateOptions;
 use schema_sql_generator::common::generator_type::GeneratorType;
@@ -75,16 +75,15 @@ impl SchemaInstaller {
             return Err(SchemaInstallerError::ValidationFailed(dialect_errors.join("\n")));
         }
 
-        // Generate SQL by writing to temp file
-        // (PrintWriter's BufWriter makes it difficult to extract bytes in memory)
-        let temp_file = std::env::temp_dir().join(temp_install_file_name());
-        let file = std::fs::File::create(&temp_file)
-            .map_err(SchemaInstallerError::Io)?;
-
-        let writer_temp = PrintWriter::new(Box::new(file));
+        // Generate SQL into an in-memory buffer. This used to go through a file at a
+        // predictable path in the shared temp dir (L9): another local user could pre-create
+        // or symlink it and have their DDL executed with migration privileges. A buffer has
+        // no path to hijack, and nothing for a failed cleanup to leave behind.
+        let buffer = SharedBuffer::default();
+        let writer = Rc::new(RefCell::new(PrintWriter::new(Box::new(buffer.clone()))));
         let generate_options = GenerateOptions {
             database_model: Rc::new(database_model),
-            writer: Rc::new(RefCell::new(writer_temp)),
+            writer: writer.clone(),
             boolean_mode: config.boolean_mode,
             foreign_key_mode: config.foreign_key_mode,
             output_mode: OutputMode::All,
@@ -96,10 +95,13 @@ impl SchemaInstaller {
 
         config.database_type.generate(generate_options);
 
-        let sql = std::fs::read_to_string(&temp_file)
-            .map_err(SchemaInstallerError::Io)?;
+        // `PrintWriter` buffers internally and is otherwise only flushed by `Drop`, which
+        // swallows errors - an unflushed tail would be checksummed and executed as if the
+        // script were complete. Flush explicitly so a failure is loud, not truncated SQL.
+        writer.borrow_mut().flush();
 
-        let _ = std::fs::remove_file(&temp_file);
+        let sql = String::from_utf8(buffer.take())
+            .map_err(|e| SchemaInstallerError::Execution(format!("generated SQL is not valid UTF-8: {e}")))?;
 
         // Record migration under a fixed, reserved version so it can never collide
         // with real migration versions (which start at V1+).
@@ -115,7 +117,7 @@ impl SchemaInstaller {
         pool.delete_failed_migration_by_version(install_version).await?;
 
         let migration_id = pool
-            .insert_migration(install_version, script_name, "install schema", &checksum, 0, "pending", tool_version)
+            .insert_migration(install_version, script_name, "install schema", &checksum, 0, MigrationStatus::Pending.as_str(), tool_version)
             .await?;
 
         // Execute all statements and record "success" as one transaction (H14): the
@@ -142,7 +144,7 @@ impl SchemaInstaller {
             }
             Err(e) => {
                 let elapsed_ms = start.elapsed().as_millis() as i64;
-                pool.update_migration_status(migration_id, "failed", elapsed_ms)
+                pool.update_migration_status(migration_id, MigrationStatus::Failed.as_str(), elapsed_ms)
                     .await?;
                 Err(e)
             }
@@ -177,7 +179,7 @@ impl SchemaInstaller {
                 &migration.description,
                 &checksum,
                 0,
-                "success",
+                MigrationStatus::Success.as_str(),
                 tool_version,
             )
             .await?;
@@ -208,7 +210,7 @@ impl SchemaInstaller {
         let migrations = pool.get_applied_migrations().await?;
         let latest = migrations
             .iter()
-            .filter(|m| m.status == "success")
+            .filter(|m| m.status == MigrationStatus::Success.as_str())
             .max_by(|a, b| crate::migration::compare_versions(&a.version, &b.version));
         Ok(latest.map(|m| m.version.clone()))
     }
@@ -221,7 +223,7 @@ impl SchemaInstaller {
         // `ensure_tracking_tables` first.
         let migrations = pool.get_applied_migrations().await?;
         Ok(migrations.iter().any(|m| {
-            m.status == "success" && m.version == crate::migration::RESERVED_INSTALL_VERSION
+            m.status == MigrationStatus::Success.as_str() && m.version == crate::migration::RESERVED_INSTALL_VERSION
         }))
     }
 
@@ -231,23 +233,26 @@ impl SchemaInstaller {
     }
 }
 
-/// Builds a temp filename for the generated install SQL. Combines the full (not just
-/// sub-second) nanosecond timestamp, the process id, and a per-process monotonic
-/// counter: `subsec_nanos()` alone (discarding the seconds component, with no PID or
-/// counter) could collide between two concurrent `install()` calls on the same host
-/// started moments apart, letting one overwrite or read the other's generated SQL
-/// mid-flight - and the timestamp alone isn't safe either, since two calls on a coarser
-/// clock (or simply fast enough back-to-back) can still land on the same nanosecond
-/// reading. The counter guarantees uniqueness within a process regardless of clock
-/// resolution; the PID guarantees it across processes.
-fn temp_install_file_name() -> String {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    format!("schema_install_temp_{}_{}_{}.sql", std::process::id(), nanos, count)
+/// A cloneable in-memory `Write` sink: the generator takes ownership of one clone (boxed
+/// into its `PrintWriter`) while the installer keeps another to read the SQL back out.
+#[derive(Clone, Default)]
+struct SharedBuffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl SharedBuffer {
+    fn take(&self) -> Vec<u8> {
+        std::mem::take(&mut *self.0.lock().unwrap())
+    }
+}
+
+impl std::io::Write for SharedBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -255,18 +260,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn temp_install_file_name_embeds_the_process_id() {
-        let name = temp_install_file_name();
-        assert!(name.starts_with(&format!("schema_install_temp_{}_", std::process::id())));
-        assert!(name.ends_with(".sql"));
-    }
-
-    #[test]
-    fn temp_install_file_name_is_unique_across_calls() {
-        // A cheap proxy for the concurrency fix: two calls (even back-to-back, so the
-        // PID is identical) must not produce the same filename, since the nanosecond
-        // timestamp component differs.
-        let names: std::collections::HashSet<String> = (0..20).map(|_| temp_install_file_name()).collect();
-        assert_eq!(names.len(), 20, "expected all 20 generated names to be unique");
+    fn shared_buffer_collects_writes_from_every_clone() {
+        use std::io::Write;
+        let buffer = SharedBuffer::default();
+        let mut writer = buffer.clone();
+        writer.write_all(b"create table t (").unwrap();
+        writer.write_all(b"id int);").unwrap();
+        assert_eq!(buffer.take(), b"create table t (id int);");
+        assert!(buffer.take().is_empty());
     }
 }

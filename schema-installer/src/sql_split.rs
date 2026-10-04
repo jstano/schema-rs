@@ -191,6 +191,11 @@ fn split_on_semicolons(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
 fn try_match_dollar_tag_open(chars: &[char], pos: usize) -> Option<(String, usize)> {
     let mut j = pos + 1;
     let mut tag = String::new();
+    // PostgreSQL tags follow identifier rules: the first character can't be a digit, so
+    // `$1$` is a positional parameter followed by a `$`, not a dollar-quote opening.
+    if j < chars.len() && chars[j].is_ascii_digit() {
+        return None;
+    }
     while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
         tag.push(chars[j]);
         j += 1;
@@ -246,8 +251,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
     let mut line_start_in_normal = true;
 
     let finish_line = |batches: &mut Vec<String>, current: &mut String, current_line: &mut String, line_start_in_normal: bool| {
-        if line_start_in_normal && is_go_batch_separator(current_line) {
-            batches.push(std::mem::take(current));
+        if line_start_in_normal && let Some(count) = go_batch_separator_count(current_line) {
+            // `GO n` runs the preceding batch n times.
+            let batch = std::mem::take(current);
+            for _ in 0..count {
+                batches.push(batch.clone());
+            }
         } else {
             current.push_str(current_line);
             current.push('\n');
@@ -377,10 +386,25 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
         .collect())
 }
 
-/// A line is a `GO` batch separator iff, once trimmed of surrounding
-/// whitespace, it is exactly `GO` in any letter case.
-fn is_go_batch_separator(line: &str) -> bool {
-    line.trim().eq_ignore_ascii_case("go")
+/// If `line` is a `GO` batch separator, returns how many times the preceding batch runs.
+/// A separator is `GO`, in any letter case, optionally followed by a repeat count (`GO 5`)
+/// and/or a trailing `--` line comment, with surrounding whitespace ignored. Anything else
+/// after `GO` (e.g. `GO foo`, `GO 0`) means the line is not a separator.
+fn go_batch_separator_count(line: &str) -> Option<usize> {
+    let line = line.split("--").next().unwrap_or("").trim();
+    let rest = line.get(..2).filter(|head| head.eq_ignore_ascii_case("go"))?;
+    let after_go = &line[rest.len()..];
+    let rest = after_go.trim();
+    if rest.is_empty() {
+        return Some(1);
+    }
+    if !after_go.starts_with(char::is_whitespace) {
+        return None;
+    }
+    match rest.parse::<usize>() {
+        Ok(n) if n > 0 => Some(n),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -480,6 +504,38 @@ mod tests {
         let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("'$5'"));
+    }
+
+    #[test]
+    fn dollar_quote_tag_cannot_start_with_a_digit() {
+        // `$1$` is a positional parameter then a stray `$`, not a dollar-quote opening, so
+        // the `;` between the two statements must still split them.
+        let sql = "SELECT $1$; SELECT 2$1$; SELECT 3;";
+        let result = split_sql_statements(sql, &GeneratorType::Postgresql).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn go_with_trailing_comment_is_a_batch_separator() {
+        let sql = "CREATE TABLE t1 (id INT)\nGO -- end of batch\nCREATE TABLE t2 (id INT)\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
+        assert_eq!(result, vec!["CREATE TABLE t1 (id INT)", "CREATE TABLE t2 (id INT)"]);
+    }
+
+    #[test]
+    fn go_with_repeat_count_repeats_the_batch() {
+        let sql = "INSERT INTO t VALUES (1)\nGO 3\nSELECT 1\nGO";
+        let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
+        assert_eq!(result, vec!["INSERT INTO t VALUES (1)"; 3].into_iter().chain(["SELECT 1"]).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn go_followed_by_other_text_is_not_a_batch_separator() {
+        for line in ["GO foo", "GO 0", "GO5", "GOTO label"] {
+            assert_eq!(go_batch_separator_count(line), None, "{line}");
+        }
+        assert_eq!(go_batch_separator_count("  go  "), Some(1));
+        assert_eq!(go_batch_separator_count("GO 12 -- twelve"), Some(12));
     }
 
     #[test]

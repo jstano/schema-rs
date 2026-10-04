@@ -1,5 +1,5 @@
 use crate::error::SchemaInstallerError;
-use crate::migration::AppliedMigration;
+use crate::migration::{AppliedMigration, MigrationStatus};
 use crate::tracking::SchemaMigrationDdl;
 use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::{Pool, Postgres, Sqlite, postgres::PgPoolOptions, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
@@ -300,7 +300,7 @@ impl AnyPool {
             AnyPool::Postgresql(pool) => {
                 let rows: Vec<(i64, String, String, String, String, i32, chrono::DateTime<chrono::Utc>, String, String)> =
                     sqlx::query_as(
-                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY id"
                     )
                     .fetch_all(pool)
                     .await
@@ -328,7 +328,7 @@ impl AnyPool {
             AnyPool::Sqlite(pool) => {
                 let rows: Vec<(i64, String, String, String, String, i64, String, String, String)> =
                     sqlx::query_as(
-                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at"
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY id"
                     )
                     .fetch_all(pool)
                     .await
@@ -357,7 +357,7 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 let results = client
                     .query(
-                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY installed_at",
+                        "SELECT id, version, script_path, description, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_migration ORDER BY id",
                         &[],
                     )
                     .await
@@ -536,31 +536,33 @@ impl AnyPool {
         Ok(())
     }
 
-    pub async fn delete_failed_migrations(&self) -> Result<(), SchemaInstallerError> {
+    pub async fn delete_failed_migrations(&self) -> Result<u64, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                sqlx::query("DELETE FROM schema_migration WHERE status = $1")
-                    .bind("failed")
+                let rows_affected = sqlx::query("DELETE FROM schema_migration WHERE status = $1")
+                    .bind(MigrationStatus::Failed.as_str())
                     .execute(pool)
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .rows_affected();
+                Ok(rows_affected)
             }
             AnyPool::Sqlite(pool) => {
-                sqlx::query("DELETE FROM schema_migration WHERE status = ?")
-                    .bind("failed")
+                let rows_affected = sqlx::query("DELETE FROM schema_migration WHERE status = ?")
+                    .bind(MigrationStatus::Failed.as_str())
                     .execute(pool)
                     .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .rows_affected();
+                Ok(rows_affected)
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
-                client
-                    .execute("DELETE FROM schema_migration WHERE status = @P1", &[&"failed"])
+                let result = client
+                    .execute("DELETE FROM schema_migration WHERE status = @P1", &[&MigrationStatus::Failed.as_str()])
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                Ok(result.total())
             }
         }
     }
@@ -571,40 +573,42 @@ impl AnyPool {
     /// that window means the owning process crashed or was killed mid-migration and
     /// never got to mark it "success"/"failed", which would otherwise wedge every future
     /// `migrate()` call behind the lock-wait timeout forever with no way to recover.
-    pub async fn delete_stale_pending_migrations(&self, older_than_seconds: i64) -> Result<(), SchemaInstallerError> {
+    pub async fn delete_stale_pending_migrations(&self, older_than_seconds: i64) -> Result<u64, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                sqlx::query(
+                let rows_affected = sqlx::query(
                     "DELETE FROM schema_migration WHERE status = $1 AND installed_at < now() - ($2 || ' seconds')::interval",
                 )
-                .bind("pending")
+                .bind(MigrationStatus::Pending.as_str())
                 .bind(older_than_seconds.to_string())
                 .execute(pool)
                 .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                .rows_affected();
+                Ok(rows_affected)
             }
             AnyPool::Sqlite(pool) => {
-                sqlx::query(
+                let rows_affected = sqlx::query(
                     "DELETE FROM schema_migration WHERE status = ? AND installed_at < datetime('now', '-' || ? || ' seconds')",
                 )
-                .bind("pending")
+                .bind(MigrationStatus::Pending.as_str())
                 .bind(older_than_seconds)
                 .execute(pool)
                 .await
-                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                .rows_affected();
+                Ok(rows_affected)
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
-                client
+                let result = client
                     .execute(
                         "DELETE FROM schema_migration WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, SYSUTCDATETIME())",
-                        &[&"pending", &(older_than_seconds as i32)],
+                        &[&MigrationStatus::Pending.as_str(), &(older_than_seconds as i32)],
                     )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
-                Ok(())
+                Ok(result.total())
             }
         }
     }
@@ -622,7 +626,7 @@ impl AnyPool {
             AnyPool::Postgresql(pool) => {
                 sqlx::query("DELETE FROM schema_migration WHERE version = $1 AND status = $2")
                     .bind(version)
-                    .bind("failed")
+                    .bind(MigrationStatus::Failed.as_str())
                     .execute(pool)
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
@@ -631,7 +635,7 @@ impl AnyPool {
             AnyPool::Sqlite(pool) => {
                 sqlx::query("DELETE FROM schema_migration WHERE version = ? AND status = ?")
                     .bind(version)
-                    .bind("failed")
+                    .bind(MigrationStatus::Failed.as_str())
                     .execute(pool)
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
@@ -642,7 +646,7 @@ impl AnyPool {
                 client
                     .execute(
                         "DELETE FROM schema_migration WHERE version = @P1 AND status = @P2",
-                        &[&version, &"failed"],
+                        &[&version, &MigrationStatus::Failed.as_str()],
                     )
                     .await
                     .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;

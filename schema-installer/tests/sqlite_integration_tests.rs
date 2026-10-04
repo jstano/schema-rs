@@ -1578,3 +1578,54 @@ async fn test_sqlite_is_installed_and_version_on_fresh_database() {
         None
     );
 }
+
+#[tokio::test]
+async fn test_sqlite_applied_migrations_are_returned_in_insertion_order() {
+    // L11: ordered by `installed_at`, whose SQLite default (`CURRENT_TIMESTAMP`) only has
+    // 1-second resolution, so rows inserted in the same second came back in arbitrary
+    // order. `id` is monotonic, so insertion order is deterministic.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_applied_order.db");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite).await.expect("create tracking table");
+
+    // Versions deliberately not in lexical or numeric order, so only `id` explains the result.
+    for version in ["3", "1", "2"] {
+        pool.insert_migration(version, &format!("V{version}__x.sql"), "x", "sum", 0, "success", "t")
+            .await
+            .expect("insert");
+    }
+
+    let versions: Vec<String> = pool
+        .get_applied_migrations()
+        .await
+        .expect("read")
+        .into_iter()
+        .map(|m| m.version)
+        .collect();
+    assert_eq!(versions, vec!["3", "1", "2"]);
+}
+
+#[tokio::test]
+async fn test_sqlite_delete_failed_migrations_reports_how_many_rows_it_deleted() {
+    // L13: `repair` printed "Deleted failed migrations" even when nothing matched.
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_delete_failed_count.db");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
+        .await
+        .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite).await.expect("create tracking table");
+
+    assert_eq!(pool.delete_failed_migrations().await.expect("delete"), 0);
+
+    pool.insert_migration("1", "V1__a.sql", "a", "sum", 0, "failed", "t").await.expect("insert");
+    pool.insert_migration("2", "V2__b.sql", "b", "sum", 0, "failed", "t").await.expect("insert");
+    pool.insert_migration("3", "V3__c.sql", "c", "sum", 0, "success", "t").await.expect("insert");
+
+    assert_eq!(pool.delete_failed_migrations().await.expect("delete"), 2);
+    assert_eq!(pool.delete_failed_migrations().await.expect("delete again"), 0);
+}

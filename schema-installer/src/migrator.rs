@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::migration::{Migration, MigrationSource, RESERVED_INSTALL_VERSION, compare_versions, compute_checksum};
+use crate::migration::{Migration, MigrationSource, MigrationStatus, RESERVED_INSTALL_VERSION, compare_versions, compute_checksum};
 
 /// How often to re-check a colliding migration's status while waiting for whichever
 /// process is currently applying it to finish.
@@ -69,9 +69,9 @@ async fn wait_for_slot(
             loop {
                 let applied = pool.get_applied_migrations().await?;
                 if let Some(existing) = applied.iter().find(|m| m.version == version) {
-                    match existing.status.as_str() {
-                        "success" => return Ok(Slot::AlreadyApplied),
-                        "failed" => {
+                    match MigrationStatus::from_str(&existing.status) {
+                        Some(MigrationStatus::Success) => return Ok(Slot::AlreadyApplied),
+                        Some(MigrationStatus::Failed) => {
                             return Err(SchemaInstallerError::MigrationFailed {
                                 version: version.clone(),
                                 error: "a concurrent process already attempted this migration and it failed; run `repair` before retrying".to_string(),
@@ -97,7 +97,7 @@ async fn insert_pending(
     checksum: &str,
     tool_version: &str,
 ) -> Result<i64, SchemaInstallerError> {
-    pool.insert_migration(&migration.version, &migration.script_path, &migration.description, checksum, 0, "pending", tool_version)
+    pool.insert_migration(&migration.version, &migration.script_path, &migration.description, checksum, 0, MigrationStatus::Pending.as_str(), tool_version)
         .await
 }
 
@@ -171,7 +171,7 @@ impl Migrator {
                 }
                 Err(e) => {
                     let elapsed_ms = start.elapsed().as_millis() as i64;
-                    pool.update_migration_status(migration_id, "failed", elapsed_ms)
+                    pool.update_migration_status(migration_id, MigrationStatus::Failed.as_str(), elapsed_ms)
                         .await?;
                     return Err(SchemaInstallerError::MigrationFailed {
                         version: migration.version,
@@ -241,7 +241,7 @@ impl Migrator {
         let applied = pool.get_applied_migrations().await?;
         let applied_versions: HashSet<String> = applied
             .iter()
-            .filter(|m| m.status == "success")
+            .filter(|m| m.status == MigrationStatus::Success.as_str())
             .map(|m| m.version.clone())
             .collect();
 
@@ -253,7 +253,7 @@ impl Migrator {
         source_migrations.sort_by(|a, b| compare_versions(&a.version, &b.version));
 
         for applied_migration in &applied {
-            if applied_migration.status != "success" {
+            if applied_migration.status != MigrationStatus::Success.as_str() {
                 continue;
             }
 
@@ -355,7 +355,7 @@ impl Migrator {
         // ordinary "Pending" otherwise - matching Flyway's own "Ignored" state in `info`.
         let highest_applied = applied
             .iter()
-            .filter(|m| m.status == "success")
+            .filter(|m| m.status == MigrationStatus::Success.as_str())
             .map(|m| m.version.clone())
             .max_by(|a, b| compare_versions(a, b));
 
@@ -404,12 +404,12 @@ impl Migrator {
 
         let applied_versions: HashSet<String> = applied
             .iter()
-            .filter(|m| m.status == "success")
+            .filter(|m| m.status == MigrationStatus::Success.as_str())
             .map(|m| m.version.clone())
             .collect();
 
         for applied_migration in &applied {
-            if applied_migration.status != "success" {
+            if applied_migration.status != MigrationStatus::Success.as_str() {
                 // `migrate` never treats these as harmless: a "failed" row makes the next
                 // `migrate` attempt collide and abort ("run `repair` before retrying"), and
                 // a "pending" row does the same after `LOCK_MAX_WAIT`. Reporting them here
@@ -496,7 +496,7 @@ impl Migrator {
         let applied = pool.get_applied_migrations().await?;
         let applied_versions: HashSet<String> = applied
             .iter()
-            .filter(|m| m.status == "success")
+            .filter(|m| m.status == MigrationStatus::Success.as_str())
             .map(|m| m.version.clone())
             .collect();
 
@@ -517,13 +517,15 @@ impl Migrator {
         pool.ensure_migration_table(&config.database_type)
             .await?;
 
-        pool.delete_failed_migrations().await?;
-        println!("Deleted failed migrations");
+        let failed = pool.delete_failed_migrations().await?;
+        println!("Deleted {} failed migration(s)", failed);
 
-        pool.delete_stale_pending_migrations(STALE_PENDING_THRESHOLD.as_secs() as i64)
+        let stale = pool
+            .delete_stale_pending_migrations(STALE_PENDING_THRESHOLD.as_secs() as i64)
             .await?;
         println!(
-            "Deleted pending migrations stuck for over {} seconds (likely abandoned by a crashed process)",
+            "Deleted {} pending migration(s) stuck for over {} seconds (likely abandoned by a crashed process)",
+            stale,
             STALE_PENDING_THRESHOLD.as_secs()
         );
 
@@ -531,7 +533,7 @@ impl Migrator {
         let source_migrations = source.migrations()?;
 
         for applied_migration in applied {
-            if applied_migration.status != "success" {
+            if applied_migration.status != MigrationStatus::Success.as_str() {
                 continue;
             }
 
