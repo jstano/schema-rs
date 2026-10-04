@@ -19,6 +19,13 @@ const EMPTY_SCHEMA_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 pub fn main() {
+    if let Err(error) = run() {
+        eprintln!("Error: {}", error);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
     let mut cmd = Command::new("schema")
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
@@ -85,70 +92,69 @@ pub fn main() {
             .unwrap_or("schema.xml");
 
         if Path::new(schema_file).exists() {
-            eprintln!("Error: file '{}' already exists. Use a different path or delete the existing file.", schema_file);
-            std::process::exit(1);
+            return Err(format!(
+                "file '{}' already exists. Use a different path or delete the existing file.",
+                schema_file
+            ));
         }
 
         fs::write(schema_file, EMPTY_SCHEMA_TEMPLATE)
-            .expect("Failed to write schema file");
+            .map_err(|e| format!("failed to write schema file '{}': {}", schema_file, e))?;
         println!("Created empty schema file: {}", schema_file);
-        return;
+        return Ok(());
     }
 
     let empty = String::new();
     let database_type = match arguments.get_one::<String>("database-type") {
         Some(db) => db,
         None => {
-            eprintln!("Error: --database-type is required unless --new-schema is set");
             cmd.print_help().ok();
-            std::process::exit(1);
+            return Err("--database-type is required unless --new-schema is set".to_string());
         }
     };
     let schema_file = match arguments.get_one::<String>("schema-file") {
         Some(file) => file,
         None => {
-            eprintln!("Error: --schema-file is required unless --new-schema is set");
             cmd.print_help().ok();
-            std::process::exit(1);
+            return Err("--schema-file is required unless --new-schema is set".to_string());
         }
     };
     let foreign_key_mode = arguments.get_one::<String>("foreign-key-mode").unwrap_or(&empty);
     let boolean_mode = arguments.get_one::<String>("boolean-mode").unwrap_or(&empty);
     let output_mode = arguments.get_one::<String>("output-mode").unwrap_or(&empty);
-    let target_postgres_version: u32 = arguments
-        .get_one::<String>("postgresql-version")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let target_sqlserver_version: u32 = arguments
-        .get_one::<String>("sqlserver-version")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let target_postgres_version = parse_version(&arguments, "postgresql-version")?;
+    let target_sqlserver_version = parse_version(&arguments, "sqlserver-version")?;
     let schema_path = Path::new(schema_file);
     let output_path = match arguments.get_one::<String>("output-file") {
         Some(path) => path.clone(),
-        None => build_output_path(schema_path, database_type.to_string().to_lowercase()),
+        None => build_output_path(schema_path, database_type.to_string().to_lowercase())?,
     };
-    if let Some(parent) = Path::new(&output_path).parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).expect("failed to create output directory");
-        }
-    }
-    let output_file = File::create(output_path).expect("");
-    let print_writer = PrintWriter::new(Box::new(output_file));
-    let generator_type: GeneratorType = database_type.parse().unwrap();
-    let database_model = load_schema(schema_path);
+    let generator_type: GeneratorType = database_type.parse()?;
+    // Load and validate before touching the output path, so a bad schema doesn't leave an
+    // empty or truncated output file behind.
+    let database_model = load_schema(schema_path)?;
 
     // Dialect-specific checks `database_model.validate()` (inside `load_schema`) can't make
     // on its own, since it has no notion of which dialect is about to render this model -
     // one schema.xml is meant to target all three databases (H23).
     let dialect_errors = generator_type.validate_for_dialect(&database_model);
     if !dialect_errors.is_empty() {
-        eprintln!("Error: the schema file is invalid for --database-type {}:", database_type);
-        for error in &dialect_errors {
-            eprintln!("  {}", error);
-        }
-        std::process::exit(1);
+        return Err(format!(
+            "the schema file is invalid for --database-type {}:\n{}",
+            database_type,
+            indented(&dialect_errors)
+        ));
     }
+
+    if let Some(parent) = Path::new(&output_path).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+    }
+    let output_file = File::create(&output_path)
+        .map_err(|e| format!("failed to create output file '{}': {}", output_path, e))?;
+    let print_writer = PrintWriter::new(Box::new(output_file));
 
     // `--boolean-mode` is an override; absent that flag, the schema file's own `booleanMode`
     // attribute (defaulting to `Native` when unset - see `schema-parser/convert.rs`) wins,
@@ -171,11 +177,30 @@ pub fn main() {
     };
 
     generator_type.generate(options);
+    Ok(())
 }
 
-fn load_schema(schema_path: &Path) -> DatabaseModel {
-    let contents = fs::read_to_string(schema_path).expect("failed to read the schema file");
-    let database_model = parse_database_xml(contents.as_str()).expect("failed to parse the schema");
+/// Parses an optional numeric version flag; absent means `0` ("unspecified"), but a present
+/// value that isn't a non-negative integer is an error rather than silently becoming `0`.
+fn parse_version(arguments: &clap::ArgMatches, name: &str) -> Result<u32, String> {
+    match arguments.get_one::<String>(name) {
+        None => Ok(0),
+        Some(value) => value
+            .trim()
+            .parse()
+            .map_err(|_| format!("--{} must be a non-negative integer, got '{}'", name, value)),
+    }
+}
+
+fn indented(errors: &[String]) -> String {
+    errors.iter().map(|e| format!("  {}", e)).collect::<Vec<_>>().join("\n")
+}
+
+fn load_schema(schema_path: &Path) -> Result<DatabaseModel, String> {
+    let contents = fs::read_to_string(schema_path)
+        .map_err(|e| format!("failed to read the schema file '{}': {}", schema_path.display(), e))?;
+    let database_model = parse_database_xml(contents.as_str())
+        .map_err(|e| format!("failed to parse the schema '{}': {}", schema_path.display(), e))?;
 
     // Catches dangling relation targets and enum-type references up front, with a clear
     // message - several generator code paths (`find_enum_type`, `find_table_by_qualified_name`,
@@ -183,20 +208,21 @@ fn load_schema(schema_path: &Path) -> DatabaseModel {
     // already validated.
     let errors = database_model.validate();
     if !errors.is_empty() {
-        eprintln!("Error: the schema file is invalid:");
-        for error in &errors {
-            eprintln!("  {}", error);
-        }
-        std::process::exit(1);
+        return Err(format!("the schema file is invalid:\n{}", indented(&errors)));
     }
 
-    database_model
+    Ok(database_model)
 }
 
-fn build_output_path(path: &Path, database_type: String) -> String {
-    let parent = path.parent().expect("Path has no parent");
-    let stem = path.file_stem().expect("No file stem").to_string_lossy();
+fn build_output_path(path: &Path, database_type: String) -> Result<String, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("schema file path '{}' has no parent directory", path.display()))?;
+    let stem = path
+        .file_stem()
+        .ok_or_else(|| format!("schema file path '{}' has no file name", path.display()))?
+        .to_string_lossy();
     let new_filename = format!("{}-{}.sql", stem, database_type);
 
-    parent.join(new_filename).to_string_lossy().to_string()
+    Ok(parent.join(new_filename).to_string_lossy().to_string())
 }

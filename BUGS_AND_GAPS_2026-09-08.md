@@ -1020,11 +1020,34 @@ remediation plan) is worth more than any individual fix below.
 
 ## Low / hygiene
 
-- [ ] **L1.** `schema-sql-generator/src/main.rs` is panic-driven: `File::create(output_path).expect("")`
+- [x] **L1.** `schema-sql-generator/src/main.rs` is panic-driven: `File::create(output_path).expect("")`
   (line 116, empty message), `database_type.parse().unwrap()` (118),
   `.expect("failed to parse the schema")` (136); a bad `--postgresql-version` silently
   becomes `0` (110-113). `schema-diagram-generator/src/main.rs:56-64` is the same, also
   panicking on `--schema-file ""` and silently overwriting a neighbouring file (no `--output`).
+
+  **Fixed 2026-10-03.** Both `main.rs` files now delegate to a `run() -> Result<(), String>`;
+  `main` prints `Error: ...` and exits 1. Every `expect`/`unwrap` is gone: file read/write,
+  `create_dir_all`, schema parse, `database_type` parse, and `build_output_path` on an empty or
+  parent-less path (`--schema-file ""`) all return a descriptive error. A present but
+  non-numeric `--postgresql-version`/`--sqlserver-version` is now an error instead of silently
+  becoming `0` (absent still means `0`), per [[prefer-error-over-silent-coercion]].
+  `schema-sql-generator` also loads/validates the schema *before* creating the output file, so a
+  bad schema no longer leaves an empty `.sql` behind. `schema-diagram-generator` gained
+  `--output-file` (mirroring `schema-sql-generator`) so the default neighbouring-file path can be
+  overridden; the default is unchanged. Verified by running the binaries: bad version, missing
+  schema, and empty path each exit 1 with a message and create no output file. The "L1" line in the
+  remediation-plan checklist is flipped too.
+
+  **Extended the same day to every other `main`** (the item only named two files).
+  `schema-migration-generator`: same `run() -> Result` shape; its `expect`/`panic!` calls, the
+  silent-`0` version flags, and `source.rs` (`read_schema_source`/`read_file_against_head`, which
+  called `process::exit` from inside library code) now return `Result<_, String>`; `--output-file`
+  also creates missing parent directories, like the other two tools. `schema-installer`: `main`
+  now prints `Error: ...` instead of the `Debug`-formatted `Error: InvalidConfiguration("...")`,
+  and the three `parse_*` helpers return `Err` instead of calling `process::exit`; the
+  `pending-check` exit code 1 is kept, since that is its documented contract.
+  `schema-reverse-engineer` needed no change.
 - [ ] **L2.** The checked-in reference SQL (`schema-parser/tests/resources/schema-parser-test-schema.sql`)
   is stale and contains the broken C3 and C5 output — no test compares against it.
 - [ ] **L3.** `Relation::disable_usage_checking()` has **no** call site anywhere:
@@ -1253,7 +1276,7 @@ the crate is worth keeping in its current form.
   skip unsupported column types with a warning.
 - [ ] M33/M34: cross-schema FKs, expression/partial/covering indexes, materialized views, and
   align the `ON DELETE` mapping across all three crates.
-- [ ] L1: convert both panicking `main.rs` files to `Result`-returning, like the other binaries.
+- [x] L1: convert both panicking `main.rs` files to `Result`-returning, like the other binaries.
 - [ ] L16: add a GitHub Actions workflow — `cargo fmt --check`,
   `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, plus a services job
   for the integration tests.

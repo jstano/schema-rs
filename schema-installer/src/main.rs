@@ -70,13 +70,20 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
+    if let Err(error) = run().await {
+        eprintln!("Error: {}", error);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let database_type_str = args.database_type.as_ref()
-        .ok_or("Error: --database-type is required")?;
+        .ok_or("--database-type is required")?;
     let connection_string = args.connection_string.as_ref()
-        .ok_or("Error: --connection-string is required")?;
+        .ok_or("--connection-string is required")?;
 
     let database_type = parse_database_type(database_type_str)?;
     let boolean_mode = parse_boolean_mode(&args.boolean_mode)?;
@@ -168,10 +175,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match (&baseline_version, &migrations_dir) {
                 (Some(_), None) => {
-                    return Err("Error: --baseline-version requires --migrations-dir".into());
+                    return Err("--baseline-version requires --migrations-dir".into());
                 }
                 (None, Some(_)) => {
-                    return Err("Error: --migrations-dir has no effect without --baseline-version".into());
+                    return Err("--migrations-dir has no effect without --baseline-version".into());
                 }
                 (Some(version), Some(dir)) => {
                     let source = DirectoryMigrationSource { path: dir.clone() };
@@ -193,10 +200,7 @@ fn parse_database_type(db_type: &str) -> Result<GeneratorType, Box<dyn std::erro
         "postgresql" => Ok(GeneratorType::Postgresql),
         "sqlite" => Ok(GeneratorType::Sqlite),
         "sqlserver" | "mssql" => Ok(GeneratorType::SqlServer),
-        _ => {
-            eprintln!("Error: Unknown database type '{}'. Supported: postgresql, sqlite, sqlserver", db_type);
-            std::process::exit(1);
-        }
+        _ => Err(format!("Unknown database type '{}'. Supported: postgresql, sqlite, sqlserver", db_type).into()),
     }
 }
 
@@ -205,10 +209,7 @@ fn parse_boolean_mode(mode: &str) -> Result<BooleanMode, Box<dyn std::error::Err
         "native" => Ok(BooleanMode::Native),
         "yesno" | "yes_no" => Ok(BooleanMode::YesNo),
         "yn" => Ok(BooleanMode::YN),
-        _ => {
-            eprintln!("Error: Unknown boolean mode '{}'. Supported: native, yesno, yn", mode);
-            std::process::exit(1);
-        }
+        _ => Err(format!("Unknown boolean mode '{}'. Supported: native, yesno, yn", mode).into()),
     }
 }
 
@@ -217,9 +218,6 @@ fn parse_foreign_key_mode(mode: &str) -> Result<ForeignKeyMode, Box<dyn std::err
         "none" => Ok(ForeignKeyMode::None),
         "relations" => Ok(ForeignKeyMode::Relations),
         "triggers" => Ok(ForeignKeyMode::Triggers),
-        _ => {
-            eprintln!("Error: Unknown foreign key mode '{}'. Supported: none, relations, triggers", mode);
-            std::process::exit(1);
-        }
+        _ => Err(format!("Unknown foreign key mode '{}'. Supported: none, relations, triggers", mode).into()),
     }
 }

@@ -17,15 +17,12 @@ enum GitAvailability {
 /// a git repository, a value that looks like `<rev>:<path>` is treated as a
 /// plain file path too, so the resulting "file not found" error stays
 /// accurate about what was actually tried.
-pub fn read_schema_source(source: &str) -> String {
+pub fn read_schema_source(source: &str) -> Result<String, String> {
     if let Some((rev, path)) = maybe_git_ref(source) {
         return read_from_git(rev, path, source);
     }
 
-    fs::read_to_string(source).unwrap_or_else(|err| {
-        eprintln!("Error: failed to read schema file '{}': {}", source, err);
-        std::process::exit(1);
-    })
+    fs::read_to_string(source).map_err(|err| format!("failed to read schema file '{}': {}", source, err))
 }
 
 /// Reads `path` from disk and its `HEAD` version from git, for the `--file`
@@ -33,31 +30,25 @@ pub fn read_schema_source(source: &str) -> String {
 /// caller explicitly asked to compare against HEAD), so a missing git
 /// binary or missing repository is reported as a clear, specific error
 /// instead of silently falling back to reading a literal `HEAD:<path>` file.
-pub fn read_file_against_head(path: &str) -> (String, String) {
+pub fn read_file_against_head(path: &str) -> Result<(String, String), String> {
     match check_git_availability() {
         GitAvailability::NotInstalled => {
-            eprintln!("Error: --file requires git, but the 'git' command was not found on PATH.");
-            std::process::exit(1);
+            return Err("--file requires git, but the 'git' command was not found on PATH.".to_string());
         }
         GitAvailability::NotARepo => {
-            eprintln!("Error: --file requires a git repository, but the current directory is not inside one.");
-            std::process::exit(1);
+            return Err("--file requires a git repository, but the current directory is not inside one.".to_string());
         }
         GitAvailability::Available => {}
     }
 
     if !git_rev_exists("HEAD") {
-        eprintln!("Error: --file requires a commit at HEAD, but this repository has no commits yet.");
-        std::process::exit(1);
+        return Err("--file requires a commit at HEAD, but this repository has no commits yet.".to_string());
     }
 
     let source = format!("HEAD:{}", path);
-    let old = read_from_git("HEAD", path, &source);
-    let new = fs::read_to_string(path).unwrap_or_else(|err| {
-        eprintln!("Error: failed to read schema file '{}': {}", path, err);
-        std::process::exit(1);
-    });
-    (old, new)
+    let old = read_from_git("HEAD", path, &source)?;
+    let new = fs::read_to_string(path).map_err(|err| format!("failed to read schema file '{}': {}", path, err))?;
+    Ok((old, new))
 }
 
 fn maybe_git_ref(source: &str) -> Option<(&str, &str)> {
@@ -90,26 +81,19 @@ fn git_rev_exists(rev: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn read_from_git(rev: &str, path: &str, source: &str) -> String {
+fn read_from_git(rev: &str, path: &str, source: &str) -> Result<String, String> {
     let output = Command::new("git")
         .args(["show", &format!("{}:{}", rev, path)])
         .output()
-        .unwrap_or_else(|err| {
-            eprintln!("Error: failed to run git for '{}': {}", source, err);
-            std::process::exit(1);
-        });
+        .map_err(|err| format!("failed to run git for '{}': {}", source, err))?;
 
     if !output.status.success() {
-        eprintln!(
-            "Error: failed to read '{}' from git: {}",
+        return Err(format!(
+            "failed to read '{}' from git: {}",
             source,
             String::from_utf8_lossy(&output.stderr).trim()
-        );
-        std::process::exit(1);
+        ));
     }
 
-    String::from_utf8(output.stdout).unwrap_or_else(|err| {
-        eprintln!("Error: '{}' is not valid UTF-8: {}", source, err);
-        std::process::exit(1);
-    })
+    String::from_utf8(output.stdout).map_err(|err| format!("'{}' is not valid UTF-8: {}", source, err))
 }

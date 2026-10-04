@@ -8,6 +8,13 @@ use std::path::Path;
 use std::rc::Rc;
 
 pub fn main() {
+    if let Err(error) = run() {
+        eprintln!("Error: {}", error);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
     let arguments = Command::new("schema-diagram-generator")
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
@@ -29,37 +36,61 @@ pub fn main() {
                 .required(true)
                 .help("Sets the schema file location"),
         )
+        .arg(
+            Arg::new("output-file")
+                .long("output-file")
+                .value_name("FILE")
+                .help("Sets the exact output file path (default: {schema-stem}.{mmd|puml} next to --schema-file)"),
+        )
         .get_matches();
 
     let format_str = arguments
         .get_one::<String>("format")
-        .expect("required argument --format missing");
+        .ok_or("--format is required")?;
     let schema_file = arguments
         .get_one::<String>("schema-file")
-        .expect("required argument --schema-file missing");
+        .ok_or("--schema-file is required")?;
 
     let schema_path = Path::new(schema_file);
-    let diagram_format: DiagramFormat = format_str.parse().expect("Invalid diagram format");
-    let output_path = build_output_path(schema_path, diagram_format.file_extension());
+    let diagram_format: DiagramFormat = format_str.parse()?;
+    let output_path = match arguments.get_one::<String>("output-file") {
+        Some(path) => path.clone(),
+        None => build_output_path(schema_path, diagram_format.file_extension())?,
+    };
 
-    let database_model = load_schema(schema_path);
+    let database_model = load_schema(schema_path)?;
     let options = DiagramGenerateOptions {
         database_model: Rc::new(database_model),
     };
 
     let output = diagram_format.generate(options);
-    fs::write(&output_path, &output).expect("Failed to write output file");
+    if let Some(parent) = Path::new(&output_path).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+    }
+    fs::write(&output_path, &output)
+        .map_err(|e| format!("failed to write output file '{}': {}", output_path, e))?;
     println!("{}", output_path);
+    Ok(())
 }
 
-fn load_schema(schema_path: &Path) -> DatabaseModel {
-    let contents = fs::read_to_string(schema_path).expect("failed to read the schema file");
-    parse_database_xml(contents.as_str()).expect("failed to parse the schema")
+fn load_schema(schema_path: &Path) -> Result<DatabaseModel, String> {
+    let contents = fs::read_to_string(schema_path)
+        .map_err(|e| format!("failed to read the schema file '{}': {}", schema_path.display(), e))?;
+    parse_database_xml(contents.as_str())
+        .map_err(|e| format!("failed to parse the schema '{}': {}", schema_path.display(), e))
 }
 
-fn build_output_path(path: &Path, extension: &str) -> String {
-    let parent = path.parent().expect("Path has no parent");
-    let stem = path.file_stem().expect("No file stem").to_string_lossy();
+fn build_output_path(path: &Path, extension: &str) -> Result<String, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("schema file path '{}' has no parent directory", path.display()))?;
+    let stem = path
+        .file_stem()
+        .ok_or_else(|| format!("schema file path '{}' has no file name", path.display()))?
+        .to_string_lossy();
     let new_filename = format!("{}.{}", stem, extension);
-    parent.join(new_filename).to_string_lossy().to_string()
+    Ok(parent.join(new_filename).to_string_lossy().to_string())
 }

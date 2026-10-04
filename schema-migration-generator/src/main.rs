@@ -12,6 +12,13 @@ use schema_migration_generator::source::{read_file_against_head, read_schema_sou
 use schema_migration_generator::{create_generator_with_versions, generate_migration_path};
 
 pub fn main() {
+    if let Err(error) = run() {
+        eprintln!("Error: {}", error);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
     let arguments = Command::new("schema-migration-generator")
         .version("1.0")
         .author("Jeff Stano <jeff@stano.com>")
@@ -102,38 +109,32 @@ pub fn main() {
 
     let database_type_str = arguments
         .get_one::<String>("database-type")
-        .expect("required argument --database-type missing");
+        .ok_or("--database-type is required")?;
     let ((old_label, old_contents), (new_label, new_contents)) = match file_arg {
         Some(file) => {
-            let (old, new) = read_file_against_head(file);
+            let (old, new) = read_file_against_head(file)?;
             ((format!("HEAD:{}", file), old), (file.clone(), new))
         }
         None => {
-            let old_source = arguments.get_one::<String>("old").expect("required argument --old missing");
-            let new_source = arguments.get_one::<String>("new").expect("required argument --new missing");
-            ((old_source.clone(), read_schema_source(old_source)), (new_source.clone(), read_schema_source(new_source)))
+            let old_source = arguments.get_one::<String>("old").ok_or("--old is required")?;
+            let new_source = arguments.get_one::<String>("new").ok_or("--new is required")?;
+            ((old_source.clone(), read_schema_source(old_source)?), (new_source.clone(), read_schema_source(new_source)?))
         }
     };
 
-    let database_type = parse_database_type(database_type_str);
-    let old_model = load_schema(&old_label, old_contents);
-    let new_model = load_schema(&new_label, new_contents);
+    let database_type = parse_database_type(database_type_str)?;
+    let old_model = load_schema(&old_label, old_contents)?;
+    let new_model = load_schema(&new_label, new_contents)?;
 
     let change_set = diff_models(&old_model, &new_model);
 
-    let target_postgres_version: u32 = arguments
-        .get_one::<String>("postgresql-version")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let target_sqlserver_version: u32 = arguments
-        .get_one::<String>("sqlserver-version")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let target_postgres_version = parse_version(&arguments, "postgresql-version")?;
+    let target_sqlserver_version = parse_version(&arguments, "sqlserver-version")?;
     let generator = create_generator_with_versions(database_type, target_postgres_version, target_sqlserver_version);
     let mut output = Vec::new();
     generator
         .generate(&change_set, &new_model, &mut output)
-        .expect("failed to generate migration");
+        .map_err(|e| format!("failed to generate migration: {}", e))?;
     let output = normalize_trailing_newline(output);
 
     if arguments.get_flag("auto-generate-name") {
@@ -143,21 +144,43 @@ pub fn main() {
         if let Some(parent) = output_path.parent()
             && !parent.as_os_str().is_empty()
         {
-            fs::create_dir_all(parent).expect("failed to create output directory");
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
         }
-        fs::write(&output_path, &output).expect("failed to write output file");
+        fs::write(&output_path, &output)
+            .map_err(|e| format!("failed to write output file '{}': {}", output_path.display(), e))?;
         println!("Wrote migration to {}", output_path.display());
-        return;
+        return Ok(());
     }
 
     match arguments.get_one::<String>("output-file") {
         Some(output_file) => {
-            fs::write(output_file, &output).expect("failed to write output file");
+            if let Some(parent) = std::path::Path::new(output_file).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+            }
+            fs::write(output_file, &output)
+                .map_err(|e| format!("failed to write output file '{}': {}", output_file, e))?;
             println!("Wrote migration to {}", output_file);
         }
         None => {
             print!("{}", String::from_utf8_lossy(&output));
         }
+    }
+    Ok(())
+}
+
+/// Parses an optional numeric version flag; absent means `0` ("unspecified"), but a present
+/// value that isn't a non-negative integer is an error rather than silently becoming `0`.
+fn parse_version(arguments: &clap::ArgMatches, name: &str) -> Result<u32, String> {
+    match arguments.get_one::<String>(name) {
+        None => Ok(0),
+        Some(value) => value
+            .trim()
+            .parse()
+            .map_err(|_| format!("--{} must be a non-negative integer, got '{}'", name, value)),
     }
 }
 
@@ -174,29 +197,26 @@ fn normalize_trailing_newline(output: Vec<u8>) -> Vec<u8> {
     output
 }
 
-fn parse_database_type(value: &str) -> DatabaseType {
+fn parse_database_type(value: &str) -> Result<DatabaseType, String> {
     match value.to_lowercase().as_str() {
-        "postgresql" => DatabaseType::Postgresql,
-        "sqlite" => DatabaseType::Sqlite,
-        "sqlserver" => DatabaseType::SqlServer,
-        other => panic!("Unsupported database type: {}", other),
+        "postgresql" => Ok(DatabaseType::Postgresql),
+        "sqlite" => Ok(DatabaseType::Sqlite),
+        "sqlserver" => Ok(DatabaseType::SqlServer),
+        other => Err(format!("Unsupported database type: {}", other)),
     }
 }
 
-fn load_schema(source: &str, contents: String) -> DatabaseModel {
+fn load_schema(source: &str, contents: String) -> Result<DatabaseModel, String> {
     let database_model = parse_database_xml(contents.as_str())
-        .unwrap_or_else(|err| panic!("failed to parse the schema '{}': {}", source, err));
+        .map_err(|err| format!("failed to parse the schema '{}': {}", source, err))?;
 
     let errors = database_model.validate();
     if !errors.is_empty() {
-        eprintln!("Error: the schema '{}' is invalid:", source);
-        for error in &errors {
-            eprintln!("  {}", error);
-        }
-        std::process::exit(1);
+        let details: Vec<String> = errors.iter().map(|e| format!("  {}", e)).collect();
+        return Err(format!("the schema '{}' is invalid:\n{}", source, details.join("\n")));
     }
 
-    database_model
+    Ok(database_model)
 }
 
 fn diff_models(old_model: &DatabaseModel, new_model: &DatabaseModel) -> ChangeSet {
