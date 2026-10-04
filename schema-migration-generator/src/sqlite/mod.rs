@@ -385,6 +385,9 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
 }
 
 fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(), MigrationGeneratorError> {
+    if !relation.creates_foreign_key_constraint() {
+        return Ok(());
+    }
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " on delete cascade",
         RelationType::SetNull => " on delete set null",

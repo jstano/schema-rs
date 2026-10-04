@@ -90,8 +90,19 @@ impl Relation {
         self.relation_type
     }
 
+    /// Consumer-facing hint only: tells an application's own "where is this row used?"
+    /// checker (e.g. the Java `EntityUsageChecker` this attribute came from) to skip this
+    /// relation. It has no effect on generated DDL, migrations or diffs, by design - no
+    /// generator reads it.
     pub fn disable_usage_checking(&self) -> bool {
         self.disable_usage_checking
+    }
+
+    /// Whether this relation is backed by a real `FOREIGN KEY` constraint in
+    /// `ForeignKeyMode::Relations`. `DoNothing` means "enforce nothing" (the trigger
+    /// generators already emit nothing for it), so it gets no constraint at all.
+    pub fn creates_foreign_key_constraint(&self) -> bool {
+        self.relation_type != RelationType::DoNothing
     }
 }
 

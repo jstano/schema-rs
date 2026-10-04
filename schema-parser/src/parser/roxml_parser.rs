@@ -159,8 +159,8 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
 }
 
 fn parse_check_node(node: Node) -> CheckXml {
-    let text = node.text().map(|s| s.trim()).filter(|s| !s.is_empty());
-    CheckXml { value: text.map(|s| s.to_string()) }
+    let text = collect_text(node);
+    CheckXml { value: if text.is_empty() { None } else { Some(text) } }
 }
 
 fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
@@ -481,6 +481,18 @@ mod tests {
         let db = parse_database_roxml(&xml).expect("parsed");
         assert!(!db.tables.is_empty());
         assert!(db.schemas.is_empty() || !db.schemas[0].tables.is_empty());
+    }
+
+    #[test]
+    fn parse_check_node_joins_text_around_comments() {
+        let doc = Document::parse(
+            r#"<check xmlns="http://stano.com/database">a<!-- note -->b</check>"#,
+        )
+        .unwrap();
+        assert_eq!(parse_check_node(doc.root_element()).value.as_deref(), Some("ab"));
+
+        let empty = Document::parse(r#"<check xmlns="http://stano.com/database">  </check>"#).unwrap();
+        assert_eq!(parse_check_node(empty.root_element()).value, None);
     }
 
     #[test]

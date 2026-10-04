@@ -1048,21 +1048,51 @@ remediation plan) is worth more than any individual fix below.
   and the three `parse_*` helpers return `Err` instead of calling `process::exit`; the
   `pending-check` exit code 1 is kept, since that is its documented contract.
   `schema-reverse-engineer` needed no change.
-- [ ] **L2.** The checked-in reference SQL (`schema-parser/tests/resources/schema-parser-test-schema.sql`)
+- [x] **L2.** The checked-in reference SQL (`schema-parser/tests/resources/schema-parser-test-schema.sql`)
   is stale and contains the broken C3 and C5 output — no test compares against it.
-- [ ] **L3.** `Relation::disable_usage_checking()` has **no** call site anywhere:
+
+  **Fixed 2026-10-03.** The file was an orphan, not a stale reference: an old SQL Server dump
+  from before the `{stem}-{database-type}.sql` naming scheme, superseded by
+  `schema-parser-test-schema-sqlserver.sql` and referenced by nothing. Deleted it. The three
+  per-dialect references were regenerated and are byte-identical to the checked-in ones.
+- [x] **L3.** `Relation::disable_usage_checking()` has **no** call site anywhere:
   `disableUsageChecking="true"` is parsed, validated, stored and ignored (`convert.rs:306-317`).
-- [ ] **L4.** `common/relation_generator.rs:80-91` never emits an `on update` clause, and
+
+  **Resolved 2026-10-03 as intentional - no behavior change.** In the original Java consumer
+  (`EntityUsageChecker`) the flag tells an application-level "where is this row used?" query
+  builder to skip a relation; it is metadata for model consumers, not DDL. Documented on
+  `Relation::disable_usage_checking` that no generator/diff reads it by design.
+- [x] **L4.** `common/relation_generator.rs:80-91` never emits an `on update` clause, and
   `DoNothing` maps to `"no action"` — identical to `Enforce`, so the two declared relation
   types are indistinguishable in output.
-- [ ] **L5.** `postgres_trigger_generator.rs:52-54` gates on `table.primary_key().is_some()`, so
+
+  **Fixed 2026-10-03.** `donothing` now means "no foreign key constraint" under
+  `--foreign-key-mode relations` (matching triggers mode, which already enforced nothing for
+  it) - user's choice. New `Relation::creates_foreign_key_constraint()` gates the
+  `alter table ... add constraint` output, SQLite's inline FKs, and all three migration
+  generators (add, drop, and SQL Server's cycle-around-`ALTER COLUMN`). FK names keep their
+  positional ordinals, so a skipped relation does not renumber its siblings. `on update` is
+  still not emitted: the model has no update-action attribute, and the SQL default is already
+  `no action`. Behavior change: schemas using `donothing` (e.g. taps) lose those FK constraints
+  on regeneration.
+- [x] **L5.** `postgres_trigger_generator.rs:52-54` gates on `table.primary_key().is_some()`, so
   an explicit `<delete>` trigger on a PK-less table is silently dropped even though the
   emitted body never uses the PK.
-- [ ] **L6.** `roxml_parser.rs:161-164` — `parse_check_node` uses `node.text()` (first text child
+
+  **Fixed 2026-10-03.** Removed the `primary_key().is_some()` gate from the delete-trigger
+  branch in both the PostgreSQL and SQL Server trigger generators (SQL Server had the same
+  gate). Neither body references the PK.
+- [x] **L6.** `roxml_parser.rs:161-164` — `parse_check_node` uses `node.text()` (first text child
   only) while everything else uses `collect_text`, so `<check>a<!-- note -->b</check>` yields
   only `a`.
-- [ ] **L7.** `KeyBuilder::new(KeyType::Unique)` (`builder/key.rs:53-63`) produces a `Key` whose
+
+  **Fixed 2026-10-03.** `parse_check_node` now uses `collect_text`, so text on either side of
+  a comment is joined (`a<!-- note -->b` -> `ab`).
+- [x] **L7.** `KeyBuilder::new(KeyType::Unique)` (`builder/key.rs:53-63`) produces a `Key` whose
   `is_unique()` is `false` — a trap for any future code keying off `is_unique()`.
+
+  **Fixed 2026-10-03.** `KeyBuilder::new(KeyType::Unique)` now starts with `unique = true`
+  (Index/Primary unchanged), so `is_unique()` is correct without a redundant `.unique(true)`.
 - [ ] **L8.** `MigrationStatus` (`migration.rs:32-56`) is exported and used by nothing — every
   status is a bare `"success"`/`"failed"`/`"pending"` string literal, exactly the typo class
   the enum would prevent. `SchemaInstallerError::Generation` is never constructed.

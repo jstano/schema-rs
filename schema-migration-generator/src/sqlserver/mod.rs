@@ -386,6 +386,9 @@ fn dependent_relations<'a>(database_model: &'a DatabaseModel, table_name: &str, 
 
     for owning_table in database_model.all_tables() {
         for (index, relation) in owning_table.relations().iter().enumerate() {
+            if !relation.creates_foreign_key_constraint() {
+                continue;
+            }
             let ordinal = index + 1;
             let from_matches = owning_table.name().eq_ignore_ascii_case(table_name)
                 && relation.column_pairs().iter().any(|(from, _)| from.eq_ignore_ascii_case(column_name));
@@ -751,6 +754,9 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
 }
 
 fn write_drop_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    if !relation.creates_foreign_key_constraint() {
+        return Ok(());
+    }
     let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), ordinal);
     write_guarded(
         writer,
@@ -760,6 +766,9 @@ fn write_drop_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usi
 }
 
 fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    if !relation.creates_foreign_key_constraint() {
+        return Ok(());
+    }
     let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), ordinal);
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " on delete cascade",

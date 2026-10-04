@@ -65,7 +65,7 @@ impl TriggerGenerator for PostgresTriggerGenerator {
     fn output_triggers_for_table(&self, table: &Table) {
         let separator = self.context.settings().statement_separator();
 
-        if self.should_output_delete_trigger(table) && table.primary_key().is_some() {
+        if self.should_output_delete_trigger(table) {
             self.output_delete_trigger(table, separator);
         }
 
@@ -338,6 +338,24 @@ mod tests {
 
         let output = buffer.contents();
         assert!(output.contains("was not found in the public.parent table"));
+    }
+
+    #[test]
+    fn output_triggers_emits_explicit_delete_trigger_for_table_without_primary_key() {
+        use schema_model::model::trigger::Trigger;
+        let table = TableBuilder::new(None::<&str>, "log")
+            .add_column(ColumnBuilder::new(None::<&str>, "msg", ColumnType::Int).build())
+            .add_trigger(Trigger::new("   -- audit", TriggerType::Delete, DatabaseType::Postgresql))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::Postgresql, ForeignKeyMode::Relations);
+
+        PostgresTriggerGenerator::new(ctx).output_triggers();
+
+        let output = buffer.contents();
+        assert!(output.contains("create or replace function public.log_delete()"), "{output}");
+        assert!(output.contains("-- audit"));
     }
 
     #[test]

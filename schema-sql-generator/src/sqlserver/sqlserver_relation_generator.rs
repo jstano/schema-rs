@@ -36,7 +36,7 @@ mod tests {
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::DoNothing, false))
+            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Enforce, false))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)

@@ -705,6 +705,9 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
 }
 
 fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+    if !relation.creates_foreign_key_constraint() {
+        return Ok(());
+    }
     let fk_name = foreign_key_name(DatabaseType::Postgresql, relation.from_table_name(), ordinal);
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " on delete cascade",

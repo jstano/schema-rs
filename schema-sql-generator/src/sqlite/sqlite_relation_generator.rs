@@ -32,6 +32,7 @@ impl SqliteRelationGenerator {
             .relations()
             .iter()
             .enumerate()
+            .filter(|(_, relation)| relation.creates_foreign_key_constraint())
             .map(|(relation_index, relation)| {
                 let constraint_name = self.relation_generator.relation_constraint_name(table, relation_index);
                 let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
@@ -105,6 +106,22 @@ mod tests {
         generator.output_relations();
 
         assert_eq!(buffer.contents(), "");
+    }
+
+    #[test]
+    fn inline_foreign_key_constraints_skips_donothing_relations() {
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
+            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::DoNothing, false))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child.clone()).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
+
+        assert!(SqliteRelationGenerator::new(ctx).inline_foreign_key_constraints(&child).is_empty());
     }
 
     #[test]

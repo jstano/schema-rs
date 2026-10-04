@@ -10,6 +10,10 @@ pub trait RelationGenerator {
     fn output_relations(&self);
 }
 
+fn has_foreign_key_relations(table: &&Table) -> bool {
+    table.relations().iter().any(Relation::creates_foreign_key_constraint)
+}
+
 pub struct DefaultRelationGenerator {
     context: GeneratorContext,
 }
@@ -29,6 +33,9 @@ impl DefaultRelationGenerator {
         let database_model = self.context.settings().database_model();
 
         for (relation_index, relation) in table.relations().iter().enumerate() {
+            if !relation.creates_foreign_key_constraint() {
+                continue;
+            }
             let relation_name = self.relation_constraint_name(table, relation_index);
             self.output_relation(writer, &relation_name, database_model, table, relation);
         }
@@ -92,14 +99,14 @@ impl DefaultRelationGenerator {
 impl RelationGenerator for DefaultRelationGenerator {
     fn output_relations(&self) {
         let database_model = self.context.settings().database_model();
-        let has_relations = database_model.all_tables().iter().any(|table| {!table.relations().is_empty()});
+        let has_relations = database_model.all_tables().iter().any(has_foreign_key_relations);
 
         if has_relations {
             self.context.with_writer(|writer| {
                 writer.println("/* relations */");
 
                 database_model.all_tables().iter().filter(|table| {
-                    !table.relations().is_empty()
+                    has_foreign_key_relations(table)
                 }).for_each(|table| {
                     self.output_relation_for_table(writer, table);
                 });
@@ -146,6 +153,48 @@ mod tests {
         let constraint_start = output.find("add constraint ").unwrap() + "add constraint ".len();
         let constraint_name = &output[constraint_start..].split_whitespace().next().unwrap();
         assert!(constraint_name.len() <= 63, "constraint name '{}' exceeds postgres's 63 char limit", constraint_name);
+    }
+
+    #[test]
+    fn output_relations_skips_donothing_relations_but_keeps_ordinals_stable() {
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "a_id", ColumnType::Int).build())
+            .add_column(ColumnBuilder::new(None::<&str>, "b_id", ColumnType::Int).build())
+            .add_relation(Relation::new("parent", "id", "child", "a_id", RelationType::DoNothing, false))
+            .add_relation(Relation::new("parent", "id", "child", "b_id", RelationType::Enforce, false))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        DefaultRelationGenerator::new(ctx).output_relations();
+
+        let output = buffer.contents();
+        assert!(!output.contains("a_id"), "donothing relation must emit no constraint: {output}");
+        assert!(output.contains("foreign key (b_id)"));
+        // Still the second relation, so its name keeps ordinal 2.
+        assert!(output.contains("fk_child2"), "{output}");
+    }
+
+    #[test]
+    fn output_relations_emits_nothing_when_every_relation_is_donothing() {
+        let parent = TableBuilder::new(None::<&str>, "parent")
+            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .build();
+        let child = TableBuilder::new(None::<&str>, "child")
+            .add_column(ColumnBuilder::new(None::<&str>, "a_id", ColumnType::Int).build())
+            .add_relation(Relation::new("parent", "id", "child", "a_id", RelationType::DoNothing, false))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
+        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
+
+        DefaultRelationGenerator::new(ctx).output_relations();
+
+        assert_eq!(buffer.contents(), "");
     }
 
     #[test]

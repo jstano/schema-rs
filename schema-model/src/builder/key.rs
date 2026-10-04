@@ -20,7 +20,8 @@ impl KeyBuilder {
             columns: Vec::new(),
             cluster: false,
             compress: false,
-            unique: false,
+            // A unique key is unique by definition; only an index needs `.unique(true)`.
+            unique: key_type == KeyType::Unique,
             include: None,
             filter: None,
         }
@@ -91,6 +92,14 @@ mod tests {
         assert_eq!(k.columns().len(), 2);
         assert!(k.is_compress());
         assert_eq!(k.include(), Some("x"));
+    }
+
+    #[test]
+    fn unique_key_is_unique_without_calling_unique() {
+        let k = KeyBuilder::new(KeyType::Unique).add_column("a").build();
+        assert!(k.is_unique());
+        assert!(!KeyBuilder::new(KeyType::Index).add_column("a").build().is_unique());
+        assert!(!KeyBuilder::new(KeyType::Primary).add_column("a").build().is_unique());
     }
 
     #[test]

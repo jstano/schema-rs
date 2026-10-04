@@ -2004,3 +2004,20 @@ fn postgresql_drop_column_cycles_select_star_view() {
     let create_view = sql.find("create or replace view public.all_orders as").expect(&sql);
     assert!(drop_view < drop_col && drop_col < create_view, "{}", sql);
 }
+
+#[test]
+fn add_relation_donothing_emits_no_foreign_key_on_any_dialect() {
+    for database_type in [DatabaseType::Postgresql, DatabaseType::SqlServer, DatabaseType::Sqlite] {
+        let mut cs = ChangeSet::new();
+        cs.add_change(SchemaChange::AddRelation {
+            relation: Relation::new("customers", "id", "orders", "customer_id", RelationType::DoNothing, false),
+            ordinal: 1,
+        });
+
+        let generator = create_generator(database_type);
+        let mut output = Vec::new();
+        generator.generate(&cs, &default_model(), &mut output).unwrap();
+        let sql = String::from_utf8(output).unwrap();
+        assert!(!sql.contains("foreign key"), "{:?}: donothing must not emit an FK, got: {}", database_type, sql);
+    }
+}
