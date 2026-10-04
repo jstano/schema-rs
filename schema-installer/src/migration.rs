@@ -88,10 +88,8 @@ impl MigrationSource for DirectoryMigrationSource {
             let path = entry.path();
 
             if path.is_dir() {
-                // TODO(L13): recurse like Flyway does; needs a decision on `script_path` for
-                // nested files. Until then, say so rather than silently ignoring them.
-                // Flyway recurses into subdirectories by default; this scan doesn't, so say
-                // so rather than silently ignoring whatever migrations live in there.
+                // Deliberately flat (L13): one directory sorted by version shows the whole
+                // history at a glance. Warn rather than silently ignore nested migrations.
                 eprintln!(
                     "Warning: skipping subdirectory {} (migration subdirectories are not scanned)",
                     path.display()
