@@ -11,6 +11,7 @@ use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::{BooleanMode, DatabaseType, KeyType, RelationType};
+use schema_model::model::view::View;
 use schema_model::naming::{foreign_key_name, index_name, primary_key_name, unique_key_name};
 use schema_sql_generator::common::column_type_generator::ColumnTypeGenerator;
 use schema_sql_generator::common::generator_context::{BufferSink, GeneratorContext};
@@ -122,12 +123,24 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                             writeln!(writer, "--   alter table {} rename column {} to {};", table_name, column_name, candidate)?;
                         }
                     }
+                    let dependent_views = dependent_views(database_model, table_name, column_name);
+                    write_drop_views(writer, &dependent_views)?;
                     writeln!(writer, "alter table {} drop column if exists {};", table_name, column_name)?;
                     writeln!(writer)?;
+                    write_recreate_views(writer, &dependent_views)?;
                 }
                 SchemaChange::ModifyColumn { table_name, old_column, new_column } => {
                     let (new_type, new_is_sequence) = alter_column_type_sql(new_column, &type_generator, &dummy_table);
                     let (old_type, _) = alter_column_type_sql(old_column, &type_generator, &dummy_table);
+                    // Postgres refuses `alter column type` on a column a view reads
+                    // ("cannot alter type of a column used by a view or rule"), so any
+                    // dependent view is dropped first and recreated after the whole change.
+                    let dependent_views = if new_type != old_type {
+                        dependent_views(database_model, table_name, old_column.name())
+                    } else {
+                        Vec::new()
+                    };
+                    write_drop_views(writer, &dependent_views)?;
                     if new_type != old_type {
                         if new_is_sequence {
                             writeln!(
@@ -188,6 +201,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                         }
                     }
                     writeln!(writer)?;
+                    write_recreate_views(writer, &dependent_views)?;
                 }
                 SchemaChange::AddKey { table_name, key, ordinal } => {
                     write_add_key(writer, table_name, key, *ordinal)?;
@@ -320,6 +334,68 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
 
         Ok(())
     }
+}
+
+/// Views in the new model that read `table_name.column_name`, transitively (a view built on a
+/// dependent view is dependent too), in model order. Views carry only raw SQL, so dependence is
+/// a word-boundary text match: the view must mention the table and either the column or `*`.
+/// Over-matching only costs a harmless drop + recreate; under-matching would fail the `ALTER`.
+fn dependent_views(database_model: &DatabaseModel, table_name: &str, column_name: &str) -> Vec<View> {
+    let bare_table = table_name.rsplit('.').next().unwrap_or(table_name).to_lowercase();
+    let column = column_name.to_lowercase();
+    let all: Vec<View> = database_model
+        .schemas()
+        .iter()
+        .flat_map(|schema| schema.views(DatabaseType::Postgresql))
+        .collect();
+    let mut selected = vec![false; all.len()];
+    for (i, view) in all.iter().enumerate() {
+        let sql = view.sql().to_lowercase();
+        selected[i] = contains_word(&sql, &bare_table) && (contains_word(&sql, &column) || sql.contains('*'));
+    }
+    loop {
+        let mut changed = false;
+        for i in 0..all.len() {
+            if selected[i] {
+                continue;
+            }
+            let sql = all[i].sql().to_lowercase();
+            if (0..all.len()).any(|j| selected[j] && contains_word(&sql, &all[j].name().to_lowercase())) {
+                selected[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    all.into_iter().zip(selected).filter(|(_, s)| *s).map(|(v, _)| v).collect()
+}
+
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    haystack.match_indices(needle).any(|(start, _)| {
+        let before_ok = haystack[..start].chars().next_back().is_none_or(|c| !is_ident(c));
+        let after_ok = haystack[start + needle.len()..].chars().next().is_none_or(|c| !is_ident(c));
+        before_ok && after_ok
+    })
+}
+
+/// Drops in reverse model order so a view is dropped before the views it depends on.
+fn write_drop_views(writer: &mut dyn Write, views: &[View]) -> Result<(), MigrationGeneratorError> {
+    for view in views.iter().rev() {
+        writeln!(writer, "drop view if exists {};", view.fully_qualified_view_name(DatabaseType::Postgresql))?;
+    }
+    Ok(())
+}
+
+fn write_recreate_views(writer: &mut dyn Write, views: &[View]) -> Result<(), MigrationGeneratorError> {
+    for view in views {
+        writeln!(writer, "create or replace view {} as", view.fully_qualified_view_name(DatabaseType::Postgresql))?;
+        writeln!(writer, "{};", view.sql())?;
+        writeln!(writer)?;
+    }
+    Ok(())
 }
 
 /// Renders a brand-new table's `CREATE TABLE` by routing it through

@@ -1937,3 +1937,70 @@ fn add_column_type_matches_create_table_type_on_every_dialect() {
         }
     }
 }
+
+fn model_with_views(views: &[(&str, &str)]) -> DatabaseModel {
+    let mut builder = SchemaBuilder::new(None::<&str>);
+    for (name, sql) in views {
+        builder = builder.add_view(schema_model::model::view::View::new(None::<&str>, name, sql, None));
+    }
+    DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![builder.build()])
+}
+
+fn postgresql_sql(cs: &ChangeSet, model: &DatabaseModel) -> String {
+    let mut output = Vec::new();
+    create_generator(DatabaseType::Postgresql).generate(cs, model, &mut output).unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+#[test]
+fn postgresql_modify_column_type_cycles_dependent_views() {
+    let model = model_with_views(&[
+        ("order_totals", "select quantity from orders"),
+        ("big_orders", "select * from order_totals"),
+        ("unrelated", "select id from customers"),
+    ]);
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyColumn {
+        table_name: "orders".to_string(),
+        old_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Varchar).length(20).build(),
+        new_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int).build(),
+    });
+
+    let sql = postgresql_sql(&cs, &model);
+    let drop_big = sql.find("drop view if exists public.big_orders;").expect(&sql);
+    let drop_totals = sql.find("drop view if exists public.order_totals;").expect(&sql);
+    let alter = sql.find("alter table orders alter column quantity type").expect(&sql);
+    let create_totals = sql.find("create or replace view public.order_totals as").expect(&sql);
+    let create_big = sql.find("create or replace view public.big_orders as").expect(&sql);
+    assert!(drop_big < drop_totals && drop_totals < alter && alter < create_totals && create_totals < create_big, "{}", sql);
+    assert!(!sql.contains("unrelated"), "{}", sql);
+}
+
+#[test]
+fn postgresql_modify_column_without_type_change_leaves_views_alone() {
+    let model = model_with_views(&[("order_totals", "select quantity from orders")]);
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyColumn {
+        table_name: "orders".to_string(),
+        old_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int).build(),
+        new_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int).required(true).build(),
+    });
+    assert!(!postgresql_sql(&cs, &model).contains("view"));
+}
+
+#[test]
+fn postgresql_drop_column_cycles_select_star_view() {
+    let model = model_with_views(&[("all_orders", "select * from orders")]);
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::DropColumn {
+        table_name: "orders".to_string(),
+        column_name: "legacy".to_string(),
+        rename_candidates: vec![],
+    });
+
+    let sql = postgresql_sql(&cs, &model);
+    let drop_view = sql.find("drop view if exists public.all_orders;").expect(&sql);
+    let drop_col = sql.find("alter table orders drop column if exists legacy;").expect(&sql);
+    let create_view = sql.find("create or replace view public.all_orders as").expect(&sql);
+    assert!(drop_view < drop_col && drop_col < create_view, "{}", sql);
+}

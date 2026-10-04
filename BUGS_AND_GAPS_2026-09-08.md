@@ -981,7 +981,7 @@ remediation plan) is worth more than any individual fix below.
 - [ ] **M36. `schema-diff` and `schema-migration-generator` ship no binary.** Only four crates
   declare `[[bin]]`, so the diff→migration workflow is reachable only from tests — which is
   precisely why C7, H19 and H20 went unnoticed.
-- [ ] **M37. PostgreSQL `ModifyColumn`/`DropColumn` don't account for dependent views.**
+- [x] **M37. PostgreSQL `ModifyColumn`/`DropColumn` don't account for dependent views.**
   (`postgresql/mod.rs` `ModifyColumn`/`DropColumn` arms) → `alter table ... alter column ...
   type ...` fails with "cannot alter type of a column used by a view or rule", and `drop
   column if exists` fails with "cannot drop column ... because other objects depend on it",
@@ -992,6 +992,13 @@ remediation plan) is worth more than any individual fix below.
   `DropView`/`AddView` handling only fires when a view's own definition changes, not when an
   untouched view happens to depend on a column being altered elsewhere, so this is currently
   unhandled in both `ModifyColumn` and `DropColumn`.
+  **Fixed 2026-10-03.** `postgresql/mod.rs` now finds the new model's views that read the
+  altered column (`dependent_views`: word-boundary text match on table name plus column name
+  or `*`, closed transitively over view-on-view dependencies) and wraps the change in
+  `drop view if exists` (reverse order) ... `create or replace view` (model order). `ModifyColumn`
+  only cycles views when the column's type actually changes (the only case Postgres refuses);
+  `DropColumn` always does. Views carry only raw SQL, so matching is textual and deliberately
+  over-inclusive (a needless drop + recreate is harmless; a missed one fails the ALTER).
 
 ---
 
