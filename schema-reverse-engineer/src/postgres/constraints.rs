@@ -18,7 +18,11 @@ pub async fn list_constraints(
         by_table
             .entry(row.table_name)
             .or_default()
-            .push(Constraint::new(row.name, row.definition, DatabaseType::Postgresql));
+            .push(Constraint::new(
+                row.name,
+                row.definition,
+                DatabaseType::Postgresql,
+            ));
     }
     Ok(by_table)
 }
@@ -45,7 +49,10 @@ struct ConstraintRow {
     definition: String,
 }
 
-async fn raw_constraint_rows(pool: &PgPool, db_schema: &str) -> Result<Vec<ConstraintRow>, SchemaReverseEngineerError> {
+async fn raw_constraint_rows(
+    pool: &PgPool,
+    db_schema: &str,
+) -> Result<Vec<ConstraintRow>, SchemaReverseEngineerError> {
     sqlx::query_as::<_, ConstraintRow>(
         "SELECT c.relname AS table_name, con.conname AS name, con.contype::text AS contype, \
                 pg_get_constraintdef(con.oid) AS definition \

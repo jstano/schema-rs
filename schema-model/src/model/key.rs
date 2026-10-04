@@ -113,7 +113,9 @@ impl Key {
 
     pub fn contains_column(&self, column_name: &str) -> bool {
         let lower = column_name.to_lowercase();
-        self.columns.iter().any(|c| c.name().to_lowercase() == lower)
+        self.columns
+            .iter()
+            .any(|c| c.name().to_lowercase() == lower)
     }
 
     pub fn columns_as_string(&self) -> String {

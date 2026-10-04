@@ -1,4 +1,6 @@
-use crate::common::column_constraint_generator::{ColumnConstraintGenerator, DefaultColumnConstraintGenerator};
+use crate::common::column_constraint_generator::{
+    ColumnConstraintGenerator, DefaultColumnConstraintGenerator,
+};
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::table::Table;
 
@@ -16,7 +18,8 @@ impl SqlServerColumnConstraintGenerator {
 
 impl ColumnConstraintGenerator for SqlServerColumnConstraintGenerator {
     fn column_check_constraints(&self, table: &Table) -> Vec<String> {
-        self.column_constraint_generator.column_check_constraints(table)
+        self.column_constraint_generator
+            .column_check_constraints(table)
     }
 }
 
@@ -40,8 +43,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerColumnConstraintGenerator::new(ctx);
@@ -56,7 +62,10 @@ mod tests {
         // Unlike PostgresColumnConstraintGenerator (which excludes enum columns because it
         // uses native postgres enum types), SQL Server has no native enum type, so it must
         // keep the generic "check(... in (...))" constraint for enum columns.
-        let enum_type = EnumType::new("status_type", vec![EnumValue::new("ACTIVE", Some("A".to_string()))]);
+        let enum_type = EnumType::new(
+            "status_type",
+            vec![EnumValue::new("ACTIVE", Some("A".to_string()))],
+        );
         let table = TableBuilder::new(None::<&str>, "accounts")
             .add_column(
                 ColumnBuilder::new(None::<&str>, "status", ColumnType::Enum)
@@ -68,7 +77,8 @@ mod tests {
             .add_table(table.clone())
             .add_enum_type(enum_type)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerColumnConstraintGenerator::new(ctx);

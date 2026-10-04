@@ -22,7 +22,7 @@ impl SqlGeneratorSettings {
     pub fn new(database_type: DatabaseType, options: &GenerateOptions) -> Self {
         Self {
             database_type,
-            database_model : options.database_model.clone(),
+            database_model: options.database_model.clone(),
             statement_separator: database_type.statement_separator().to_string(),
             foreign_key_mode: options.foreign_key_mode,
             boolean_mode: options.boolean_mode,
@@ -88,7 +88,8 @@ mod tests {
     fn statement_separator_matches_database_type_per_dialect() {
         // Postgres and SQLite batch statements with ";"; SQL Server uses "go" batches.
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             std::rc::Rc::new(model),
             std::rc::Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
@@ -101,6 +102,9 @@ mod tests {
         assert_eq!(postgres_settings.statement_separator(), ";");
         assert_eq!(sqlite_settings.statement_separator(), ";");
         assert_eq!(sqlserver_settings.statement_separator(), "\ngo");
-        assert_eq!(sqlserver_settings.statement_separator(), DatabaseType::SqlServer.statement_separator());
+        assert_eq!(
+            sqlserver_settings.statement_separator(),
+            DatabaseType::SqlServer.statement_separator()
+        );
     }
 }

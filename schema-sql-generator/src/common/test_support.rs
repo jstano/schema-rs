@@ -35,11 +35,16 @@ impl Write for SharedBuffer {
     }
 }
 
-pub fn make_context(model: DatabaseModel, database_type: DatabaseType) -> (GeneratorContext, SharedBuffer) {
+pub fn make_context(
+    model: DatabaseModel,
+    database_type: DatabaseType,
+) -> (GeneratorContext, SharedBuffer) {
     let buffer = SharedBuffer::new();
     let options = GenerateOptions::new(
         Rc::new(model),
-        Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+            buffer.clone(),
+        )))),
     );
     let settings = SqlGeneratorSettings::new(database_type, &options);
     let writer = SqlWriter::new(options.writer.clone());
@@ -54,7 +59,9 @@ pub fn make_context_with_fk_mode(
     let buffer = SharedBuffer::new();
     let mut options = GenerateOptions::new(
         Rc::new(model),
-        Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+            buffer.clone(),
+        )))),
     );
     options.foreign_key_mode = foreign_key_mode;
     let settings = SqlGeneratorSettings::new(database_type, &options);

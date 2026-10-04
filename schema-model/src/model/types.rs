@@ -32,7 +32,9 @@ impl DatabaseType {
 
     pub fn qualified_name(&self, schema_name: Option<&str>, name: &str) -> String {
         let resolved = match schema_name {
-            Some(s) if *self == DatabaseType::SqlServer && s.eq_ignore_ascii_case("public") => Some("dbo"),
+            Some(s) if *self == DatabaseType::SqlServer && s.eq_ignore_ascii_case("public") => {
+                Some("dbo")
+            }
             Some(s) => Some(s),
             None => self.default_schema(),
         };
@@ -56,15 +58,13 @@ pub enum RelationType {
     DoNothing,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum BooleanMode {
     #[default]
     Native,
     YesNo,
     YN,
 }
-
 
 impl FromStr for BooleanMode {
     type Err = String;
@@ -79,15 +79,13 @@ impl FromStr for BooleanMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ForeignKeyMode {
     None,
     #[default]
     Relations,
     Triggers,
 }
-
 
 impl FromStr for ForeignKeyMode {
     type Err = String;
@@ -128,15 +126,13 @@ pub enum KeyType {
     Index,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LockEscalation {
     #[default]
     Auto,
     Disable,
     Table,
 }
-
 
 impl FromStr for LockEscalation {
     type Err = String;
@@ -204,15 +200,27 @@ mod tests {
 
     #[test]
     fn qualified_name_uses_default_schema_when_none() {
-        assert_eq!(DatabaseType::Postgresql.qualified_name(None, "users"), "public.users");
-        assert_eq!(DatabaseType::SqlServer.qualified_name(None, "users"), "dbo.users");
+        assert_eq!(
+            DatabaseType::Postgresql.qualified_name(None, "users"),
+            "public.users"
+        );
+        assert_eq!(
+            DatabaseType::SqlServer.qualified_name(None, "users"),
+            "dbo.users"
+        );
         assert_eq!(DatabaseType::Sqlite.qualified_name(None, "users"), "users");
     }
 
     #[test]
     fn qualified_name_preserves_explicit_non_default_schema() {
-        assert_eq!(DatabaseType::Postgresql.qualified_name(Some("app"), "users"), "app.users");
-        assert_eq!(DatabaseType::SqlServer.qualified_name(Some("app"), "users"), "app.users");
+        assert_eq!(
+            DatabaseType::Postgresql.qualified_name(Some("app"), "users"),
+            "app.users"
+        );
+        assert_eq!(
+            DatabaseType::SqlServer.qualified_name(Some("app"), "users"),
+            "app.users"
+        );
     }
 
     #[test]
@@ -220,14 +228,26 @@ mod tests {
         // SQLite has no schema concept - `app.users` would be parsed as a reference to an
         // ATTACHed database named `app`. Flatten to `app_users` instead of emitting SQL that
         // can never execute.
-        assert_eq!(DatabaseType::Sqlite.qualified_name(Some("app"), "users"), "app_users");
+        assert_eq!(
+            DatabaseType::Sqlite.qualified_name(Some("app"), "users"),
+            "app_users"
+        );
         assert_eq!(DatabaseType::Sqlite.qualified_name(None, "users"), "users");
     }
 
     #[test]
     fn qualified_name_maps_public_to_dbo_on_sql_server() {
-        assert_eq!(DatabaseType::SqlServer.qualified_name(Some("public"), "users"), "dbo.users");
-        assert_eq!(DatabaseType::SqlServer.qualified_name(Some("PUBLIC"), "users"), "dbo.users");
-        assert_eq!(DatabaseType::Postgresql.qualified_name(Some("public"), "users"), "public.users");
+        assert_eq!(
+            DatabaseType::SqlServer.qualified_name(Some("public"), "users"),
+            "dbo.users"
+        );
+        assert_eq!(
+            DatabaseType::SqlServer.qualified_name(Some("PUBLIC"), "users"),
+            "dbo.users"
+        );
+        assert_eq!(
+            DatabaseType::Postgresql.qualified_name(Some("public"), "users"),
+            "public.users"
+        );
     }
 }

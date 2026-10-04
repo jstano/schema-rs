@@ -23,18 +23,23 @@ async fn test_sqlite_migration_flow() {
         .build()
         .expect("valid config");
 
-    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/sqlite");
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sqlite");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("migration should succeed");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
-    assert!(!Migrator::has_pending_migrations(&config, source)
-        .await
-        .expect("has_pending_migrations should succeed"));
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
+    assert!(
+        !Migrator::has_pending_migrations(&config, source)
+            .await
+            .expect("has_pending_migrations should succeed")
+    );
 }
 
 #[tokio::test]
@@ -48,15 +53,18 @@ async fn test_sqlite_validate_detects_checksum_mismatch() {
         .build()
         .expect("valid config");
 
-    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/sqlite");
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sqlite");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("initial migration should succeed");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
     Migrator::validate(&config, source)
         .await
         .expect("validate should succeed");
@@ -73,23 +81,30 @@ async fn test_sqlite_rerunning_migrate_is_noop() {
         .build()
         .expect("valid config");
 
-    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/sqlite");
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sqlite");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("first migration should succeed");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("second migration should succeed");
 
-    let source = Box::new(DirectoryMigrationSource { path: fixtures_dir.clone() });
-    assert!(!Migrator::has_pending_migrations(&config, source)
-        .await
-        .expect("has_pending_migrations should succeed"));
+    let source = Box::new(DirectoryMigrationSource {
+        path: fixtures_dir.clone(),
+    });
+    assert!(
+        !Migrator::has_pending_migrations(&config, source)
+            .await
+            .expect("has_pending_migrations should succeed")
+    );
 }
 
 #[tokio::test]
@@ -254,9 +269,11 @@ async fn test_sqlite_concurrent_migrate_calls_converge_without_duplicates() {
     let source_check = Box::new(DirectoryMigrationSource {
         path: fixtures_dir.clone(),
     });
-    assert!(!Migrator::has_pending_migrations(&config_a, source_check)
-        .await
-        .expect("has_pending_migrations should succeed"));
+    assert!(
+        !Migrator::has_pending_migrations(&config_a, source_check)
+            .await
+            .expect("has_pending_migrations should succeed")
+    );
 }
 
 #[tokio::test]
@@ -359,9 +376,17 @@ async fn test_sqlite_validate_exempts_reserved_install_version() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("0", "V0__install_schema.sql", "install schema", "deadbeef", 0, "success", "test")
-        .await
-        .expect("insert reserved install row");
+    pool.insert_migration(
+        "0",
+        "V0__install_schema.sql",
+        "install schema",
+        "deadbeef",
+        0,
+        "success",
+        "test",
+    )
+    .await
+    .expect("insert reserved install row");
 
     // No migration files at all; the reserved version must not be flagged as missing.
     let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
@@ -392,9 +417,17 @@ async fn test_sqlite_validate_detects_failed_migration() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "failed", "test")
-        .await
-        .expect("insert failed migration row");
+    pool.insert_migration(
+        "1",
+        "V1__create_widgets.sql",
+        "create widgets",
+        "deadbeef",
+        0,
+        "failed",
+        "test",
+    )
+    .await
+    .expect("insert failed migration row");
 
     let migration_one = Migration {
         version: "1".to_string(),
@@ -554,7 +587,10 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
     });
     let result = Migrator::migrate(&config, source).await;
     assert!(
-        matches!(result, Err(SchemaInstallerError::OutOfOrderMigration { .. })),
+        matches!(
+            result,
+            Err(SchemaInstallerError::OutOfOrderMigration { .. })
+        ),
         "migrate should reject V1 as out-of-order once V2 is already applied: {:?}",
         result
     );
@@ -602,12 +638,17 @@ async fn test_sqlite_migrate_applies_embedded_migrations_in_version_order_not_so
         .connect(&connection_string)
         .await
         .expect("connect to verify schema");
-    let row = sqlx::query("SELECT COUNT(*) as count FROM pragma_table_info('widgets') WHERE name = 'extra'")
-        .fetch_one(&check_pool)
-        .await
-        .expect("query pragma_table_info");
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM pragma_table_info('widgets') WHERE name = 'extra'",
+    )
+    .fetch_one(&check_pool)
+    .await
+    .expect("query pragma_table_info");
     let count: i64 = row.get("count");
-    assert_eq!(count, 1, "widgets.extra should exist once both migrations applied in order");
+    assert_eq!(
+        count, 1,
+        "widgets.extra should exist once both migrations applied in order"
+    );
 }
 
 #[tokio::test]
@@ -632,7 +673,15 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
+        .insert_migration(
+            "1",
+            "V1__create_widgets.sql",
+            "create widgets",
+            "deadbeef",
+            0,
+            "pending",
+            "test",
+        )
         .await
         .expect("insert pending row");
 
@@ -641,21 +690,24 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
         .connect(&connection_string)
         .await
         .expect("connect to backdate row");
-    sqlx::query("UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?")
-        .bind(id)
-        .execute(&check_pool)
-        .await
-        .expect("backdate installed_at");
+    sqlx::query(
+        "UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&check_pool)
+    .await
+    .expect("backdate installed_at");
 
     let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
     Migrator::repair(&config, empty_source)
         .await
         .expect("repair should succeed");
 
-    let row = sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
-        .fetch_one(&check_pool)
-        .await
-        .expect("query schema_migration");
+    let row =
+        sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
+            .fetch_one(&check_pool)
+            .await
+            .expect("query schema_migration");
     let count: i64 = row.get("count");
     assert_eq!(count, 0, "repair should have deleted the stale pending row");
 }
@@ -683,7 +735,15 @@ async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
+        .insert_migration(
+            "1",
+            "V1__create_widgets.sql",
+            "create widgets",
+            "deadbeef",
+            0,
+            "pending",
+            "test",
+        )
         .await
         .expect("insert pending row");
 
@@ -692,14 +752,15 @@ async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
         .connect(&connection_string)
         .await
         .expect("connect to backdate row");
-    sqlx::query("UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?")
-        .bind(id)
-        .execute(&check_pool)
-        .await
-        .expect("backdate installed_at");
+    sqlx::query(
+        "UPDATE schema_migration SET installed_at = datetime('now', '-700 seconds') WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&check_pool)
+    .await
+    .expect("backdate installed_at");
 
-    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/sqlite");
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sqlite");
     let source = Box::new(DirectoryMigrationSource { path: fixtures_dir });
     Migrator::migrate(&config, source)
         .await
@@ -710,7 +771,10 @@ async fn test_sqlite_migrate_self_heals_stale_pending_migration() {
         .await
         .expect("query schema_migration");
     let status: String = row.get("status");
-    assert_eq!(status, "success", "migrate should have re-applied and succeeded for version 1");
+    assert_eq!(
+        status, "success",
+        "migrate should have re-applied and succeeded for version 1"
+    );
 }
 
 #[tokio::test]
@@ -733,9 +797,17 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
-        .await
-        .expect("insert pending row");
+    pool.insert_migration(
+        "1",
+        "V1__create_widgets.sql",
+        "create widgets",
+        "deadbeef",
+        0,
+        "pending",
+        "test",
+    )
+    .await
+    .expect("insert pending row");
 
     let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
     Migrator::repair(&config, empty_source)
@@ -746,12 +818,16 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
         .connect(&connection_string)
         .await
         .expect("connect to verify row survives");
-    let row = sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
-        .fetch_one(&check_pool)
-        .await
-        .expect("query schema_migration");
+    let row =
+        sqlx::query("SELECT COUNT(*) as count FROM schema_migration WHERE status = 'pending'")
+            .fetch_one(&check_pool)
+            .await
+            .expect("query schema_migration");
     let count: i64 = row.get("count");
-    assert_eq!(count, 1, "repair should not delete a recently-inserted pending row");
+    assert_eq!(
+        count, 1,
+        "repair should not delete a recently-inserted pending row"
+    );
 }
 
 #[tokio::test]
@@ -809,7 +885,9 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
         script_path: "V1__create_widgets.sql".to_string(),
         sql: "create table widgets (id integer primary key);".to_string(),
     };
-    let source = Box::new(EmbeddedMigrationSource { migrations: vec![migration_one.clone()] });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration_one.clone()],
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("migration should succeed");
@@ -930,7 +1008,10 @@ async fn test_sqlite_install_is_not_skipped_by_an_unrelated_migration() {
     .await
     .expect("query sqlite_master");
     let count: i64 = row.get("count");
-    assert_eq!(count, 1, "install should have created the schema's users table");
+    assert_eq!(
+        count, 1,
+        "install should have created the schema's users table"
+    );
 }
 
 #[tokio::test]
@@ -970,9 +1051,17 @@ async fn test_sqlite_install_can_be_retried_after_a_failed_attempt() {
     pool.ensure_migration_table(&GeneratorType::Sqlite)
         .await
         .expect("ensure migration table");
-    pool.insert_migration("0", "V0__install_schema.sql", "install schema", "deadbeef", 0, "failed", "test")
-        .await
-        .expect("simulate leftover failed install row");
+    pool.insert_migration(
+        "0",
+        "V0__install_schema.sql",
+        "install schema",
+        "deadbeef",
+        0,
+        "failed",
+        "test",
+    )
+    .await
+    .expect("simulate leftover failed install row");
 
     let config = SchemaInstallerConfigBuilder::new()
         .database_type(GeneratorType::Sqlite)
@@ -996,7 +1085,10 @@ async fn test_sqlite_install_can_be_retried_after_a_failed_attempt() {
     .await
     .expect("query sqlite_master");
     let count: i64 = row.get("count");
-    assert_eq!(count, 1, "retried install should have created the schema's users table");
+    assert_eq!(
+        count, 1,
+        "retried install should have created the schema's users table"
+    );
 }
 
 #[tokio::test]
@@ -1007,7 +1099,8 @@ async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gon
     // as a loud error rather than silently succeeding with the migration's completion
     // never actually recorded.
     let temp_dir = TempDir::new().expect("create temp dir");
-    let connection_string = sqlite_connection_string(&temp_dir, "test_update_status_missing_row.db");
+    let connection_string =
+        sqlite_connection_string(&temp_dir, "test_update_status_missing_row.db");
 
     let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
@@ -1016,7 +1109,15 @@ async fn test_sqlite_update_migration_status_errors_when_the_tracking_row_is_gon
         .await
         .expect("ensure migration table");
     let id = pool
-        .insert_migration("1", "V1__create_widgets.sql", "create widgets", "deadbeef", 0, "pending", "test")
+        .insert_migration(
+            "1",
+            "V1__create_widgets.sql",
+            "create widgets",
+            "deadbeef",
+            0,
+            "pending",
+            "test",
+        )
         .await
         .expect("insert pending row");
 
@@ -1069,22 +1170,29 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
             sql: "create table gadgets (id integer primary key);".to_string(),
         },
     ];
-    let source = EmbeddedMigrationSource { migrations: migrations.clone() };
+    let source = EmbeddedMigrationSource {
+        migrations: migrations.clone(),
+    };
 
-    SchemaInstaller::install_with_baseline(&config, Some(Baseline { version: "1", source: &source }))
-        .await
-        .expect("install with baseline should succeed");
+    SchemaInstaller::install_with_baseline(
+        &config,
+        Some(Baseline {
+            version: "1",
+            source: &source,
+        }),
+    )
+    .await
+    .expect("install with baseline should succeed");
 
     let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
         .connect(&connection_string)
         .await
         .expect("connect to verify baseline rows");
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT version, status FROM schema_migration ORDER BY version",
-    )
-    .fetch_all(&check_pool)
-    .await
-    .expect("query schema_migration");
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT version, status FROM schema_migration ORDER BY version")
+            .fetch_all(&check_pool)
+            .await
+            .expect("query schema_migration");
     assert_eq!(
         rows,
         vec![
@@ -1108,7 +1216,10 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
     .await
     .expect("query sqlite_master");
     let count: i64 = row.get("count");
-    assert_eq!(count, 1, "migrate should have applied V2 (gadgets), the migration past the baseline");
+    assert_eq!(
+        count, 1,
+        "migrate should have applied V2 (gadgets), the migration past the baseline"
+    );
 
     let row = sqlx::query(
         "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'widgets'",
@@ -1117,13 +1228,17 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
     .await
     .expect("query sqlite_master");
     let count: i64 = row.get("count");
-    assert_eq!(count, 0, "migrate must not replay V1 (widgets) - it was baselined, not applied");
+    assert_eq!(
+        count, 0,
+        "migrate must not replay V1 (widgets) - it was baselined, not applied"
+    );
 }
 
 #[tokio::test]
 async fn test_sqlite_install_with_baseline_rejects_reserved_version() {
     let temp_dir = TempDir::new().expect("create temp dir");
-    let connection_string = sqlite_connection_string(&temp_dir, "test_install_baseline_reserved.db");
+    let connection_string =
+        sqlite_connection_string(&temp_dir, "test_install_baseline_reserved.db");
 
     let config = SchemaInstallerConfigBuilder::new()
         .database_type(GeneratorType::Sqlite)
@@ -1133,7 +1248,14 @@ async fn test_sqlite_install_with_baseline_rejects_reserved_version() {
         .expect("valid config");
 
     let source = EmbeddedMigrationSource { migrations: vec![] };
-    let result = SchemaInstaller::install_with_baseline(&config, Some(Baseline { version: "0", source: &source })).await;
+    let result = SchemaInstaller::install_with_baseline(
+        &config,
+        Some(Baseline {
+            version: "0",
+            source: &source,
+        }),
+    )
+    .await;
 
     assert!(
         matches!(result, Err(SchemaInstallerError::InvalidConfiguration(_))),
@@ -1166,7 +1288,9 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
             sql: "create table gadgets (id integer primary key);".to_string(),
         },
     ];
-    let source = Box::new(EmbeddedMigrationSource { migrations: migrations.clone() });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: migrations.clone(),
+    });
 
     Migrator::migrate_to_target(&config, source, Some("1"))
         .await
@@ -1183,7 +1307,11 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
     .fetch_one(&check_pool)
     .await
     .expect("query sqlite_master");
-    assert_eq!(row.get::<i64, _>("count"), 1, "V1 (widgets) is at the target and should be applied");
+    assert_eq!(
+        row.get::<i64, _>("count"),
+        1,
+        "V1 (widgets) is at the target and should be applied"
+    );
 
     let row = sqlx::query(
         "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'gadgets'",
@@ -1191,7 +1319,11 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
     .fetch_one(&check_pool)
     .await
     .expect("query sqlite_master");
-    assert_eq!(row.get::<i64, _>("count"), 0, "V2 (gadgets) is past the target and must not be applied");
+    assert_eq!(
+        row.get::<i64, _>("count"),
+        0,
+        "V2 (gadgets) is past the target and must not be applied"
+    );
 
     // Running migrate without a target afterward should pick up exactly the migration
     // the target held back, not re-attempt V1.
@@ -1206,7 +1338,11 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
     .fetch_one(&check_pool)
     .await
     .expect("query sqlite_master");
-    assert_eq!(row.get::<i64, _>("count"), 1, "V2 (gadgets) should now be applied with no target restricting it");
+    assert_eq!(
+        row.get::<i64, _>("count"),
+        1,
+        "V2 (gadgets) should now be applied with no target restricting it"
+    );
 }
 
 #[tokio::test]
@@ -1226,7 +1362,9 @@ async fn test_sqlite_migrate_to_target_below_all_pending_is_a_noop() {
         script_path: "V5__create_widgets.sql".to_string(),
         sql: "create table widgets (id integer primary key);".to_string(),
     };
-    let source = Box::new(EmbeddedMigrationSource { migrations: vec![migration] });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![migration],
+    });
 
     Migrator::migrate_to_target(&config, source, Some("1"))
         .await
@@ -1242,7 +1380,11 @@ async fn test_sqlite_migrate_to_target_below_all_pending_is_a_noop() {
     .fetch_one(&check_pool)
     .await
     .expect("query sqlite_master");
-    assert_eq!(row.get::<i64, _>("count"), 0, "V5 is past the target and must not be applied");
+    assert_eq!(
+        row.get::<i64, _>("count"),
+        0,
+        "V5 is past the target and must not be applied"
+    );
 }
 
 #[tokio::test]
@@ -1270,7 +1412,9 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
             sql: "create table gadgets (id integer primary key);".to_string(),
         },
     ];
-    let source = Box::new(EmbeddedMigrationSource { migrations: migrations.clone() });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: migrations.clone(),
+    });
     let output_path = temp_dir.path().join("dry-run.sql");
 
     Migrator::dry_run(&config, source, None, &output_path)
@@ -1278,10 +1422,22 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
         .expect("dry_run should succeed");
 
     let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
-    assert!(contents.contains("create table widgets"), "dry-run output should contain V1's SQL");
-    assert!(contents.contains("create table gadgets"), "dry-run output should contain V2's SQL");
-    assert!(contents.contains("V1"), "dry-run output should identify each migration by version");
-    assert!(contents.contains("V2"), "dry-run output should identify each migration by version");
+    assert!(
+        contents.contains("create table widgets"),
+        "dry-run output should contain V1's SQL"
+    );
+    assert!(
+        contents.contains("create table gadgets"),
+        "dry-run output should contain V2's SQL"
+    );
+    assert!(
+        contents.contains("V1"),
+        "dry-run output should identify each migration by version"
+    );
+    assert!(
+        contents.contains("V2"),
+        "dry-run output should identify each migration by version"
+    );
 
     // Nothing should actually have been applied or recorded.
     let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -1294,7 +1450,11 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
     .fetch_one(&check_pool)
     .await
     .expect("query sqlite_master");
-    assert_eq!(row.get::<i64, _>("count"), 0, "dry_run must not create any table");
+    assert_eq!(
+        row.get::<i64, _>("count"),
+        0,
+        "dry_run must not create any table"
+    );
 
     let source = Box::new(EmbeddedMigrationSource { migrations });
     assert!(
@@ -1338,8 +1498,14 @@ async fn test_sqlite_dry_run_respects_target() {
         .expect("dry_run should succeed");
 
     let contents = std::fs::read_to_string(&output_path).expect("read dry-run output");
-    assert!(contents.contains("create table widgets"), "V1 is at the target and should be included");
-    assert!(!contents.contains("create table gadgets"), "V2 is past the target and must be excluded");
+    assert!(
+        contents.contains("create table widgets"),
+        "V1 is at the target and should be included"
+    );
+    assert!(
+        !contents.contains("create table gadgets"),
+        "V2 is past the target and must be excluded"
+    );
 }
 
 #[tokio::test]
@@ -1381,34 +1547,68 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
     use schema_model::model::database_model::DatabaseModel;
     use schema_model::model::initial_data::InitialData;
     use schema_model::model::relation::Relation;
-    use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType};
+    use schema_model::model::types::{
+        BooleanMode, DatabaseType, ForeignKeyMode, KeyType, RelationType,
+    };
     use sqlx::Row;
     use sqlx::sqlite::SqlitePoolOptions;
 
     let customers_table = || {
         TableBuilder::new(None::<&str>, "customers")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build()
     };
 
-    let old_schema = SchemaBuilder::new(None::<&str>).add_table(customers_table()).build();
+    let old_schema = SchemaBuilder::new(None::<&str>)
+        .add_table(customers_table())
+        .build();
     let new_schema = SchemaBuilder::new(None::<&str>)
         .add_table(customers_table())
         .add_table(
             TableBuilder::new(None::<&str>, "orders")
-                .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-                .add_column(ColumnBuilder::new(None::<&str>, "customer_id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                        .required(true)
+                        .build(),
+                )
+                .add_column(
+                    ColumnBuilder::new(None::<&str>, "customer_id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
-                .add_index(KeyBuilder::new(KeyType::Index).add_column("customer_id").build())
-                .add_relation(Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false))
-                .add_initial_data(InitialData::new("insert into orders (id, customer_id) values (1, 1)", None))
+                .add_index(
+                    KeyBuilder::new(KeyType::Index)
+                        .add_column("customer_id")
+                        .build(),
+                )
+                .add_relation(Relation::new(
+                    "customers",
+                    "id",
+                    "orders",
+                    "customer_id",
+                    RelationType::Cascade,
+                    false,
+                ))
+                .add_initial_data(InitialData::new(
+                    "insert into orders (id, customer_id) values (1, 1)",
+                    None,
+                ))
                 .build(),
         )
         .build();
 
     let change_set = SchemaDiffEngine::diff(&old_schema, &new_schema);
-    let database_model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![new_schema]);
+    let database_model = DatabaseModel::new(
+        BooleanMode::Native,
+        ForeignKeyMode::Relations,
+        vec![new_schema],
+    );
 
     let generator = create_generator(DatabaseType::Sqlite);
     let mut sql_bytes = Vec::new();
@@ -1419,8 +1619,16 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
 
     // Regression assertions for C7 - the old behavior fabricated an `id integer primary key
     // autoincrement)` column that isn't in the model at all.
-    assert!(migration_sql.contains("create table if not exists orders"), "got: {}", migration_sql);
-    assert!(migration_sql.contains("customer_id"), "expected the real 'customer_id' column, got: {}", migration_sql);
+    assert!(
+        migration_sql.contains("create table if not exists orders"),
+        "got: {}",
+        migration_sql
+    );
+    assert!(
+        migration_sql.contains("customer_id"),
+        "expected the real 'customer_id' column, got: {}",
+        migration_sql
+    );
     assert!(
         !migration_sql.contains("id integer primary key autoincrement)"),
         "must not fabricate an autoincrement id column, got: {}",
@@ -1453,7 +1661,9 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
         },
     ];
     let source = Box::new(EmbeddedMigrationSource { migrations });
-    Migrator::migrate(&config, source).await.expect("migration should succeed against a real SQLite database");
+    Migrator::migrate(&config, source)
+        .await
+        .expect("migration should succeed against a real SQLite database");
 
     let pool = SqlitePoolOptions::new()
         .connect(&connection_string)
@@ -1465,7 +1675,10 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
         .await
         .expect("the row inserted by the migration's initial data should be queryable");
     let customer_id: i64 = row.get("customer_id");
-    assert_eq!(customer_id, 1, "the foreign key column should hold the real inserted value");
+    assert_eq!(
+        customer_id, 1,
+        "the foreign key column should hold the real inserted value"
+    );
 }
 
 #[tokio::test]
@@ -1488,11 +1701,18 @@ async fn test_sqlite_records_filename_and_description_not_absolute_path() {
     )
     .unwrap();
 
-    Migrator::migrate(&config, Box::new(DirectoryMigrationSource { path: migrations_dir }))
-        .await
-        .expect("migrate");
+    Migrator::migrate(
+        &config,
+        Box::new(DirectoryMigrationSource {
+            path: migrations_dir,
+        }),
+    )
+    .await
+    .expect("migrate");
 
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false).await.unwrap();
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
+        .await
+        .unwrap();
     let applied = pool.get_applied_migrations().await.unwrap();
     assert_eq!(applied.len(), 1);
     assert_eq!(applied[0].script_path, "V1__create_users.sql");
@@ -1505,7 +1725,9 @@ async fn test_sqlite_ensure_migration_table_adds_description_to_legacy_table() {
     // upgraded in place, keeping its rows (with an empty description).
     let temp_dir = TempDir::new().expect("create temp dir");
     let connection_string = sqlite_connection_string(&temp_dir, "test_legacy_table.db");
-    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false).await.unwrap();
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
+        .await
+        .unwrap();
 
     pool.execute_sql(
         "CREATE TABLE schema_migration (
@@ -1529,9 +1751,13 @@ async fn test_sqlite_ensure_migration_table_adds_description_to_legacy_table() {
     .await
     .unwrap();
 
-    pool.ensure_migration_table(&GeneratorType::Sqlite).await.unwrap();
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .unwrap();
     // Running it again must be a no-op, not a duplicate-column error.
-    pool.ensure_migration_table(&GeneratorType::Sqlite).await.unwrap();
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .unwrap();
 
     let applied = pool.get_applied_migrations().await.unwrap();
     assert_eq!(applied.len(), 1);
@@ -1572,9 +1798,15 @@ async fn test_sqlite_is_installed_and_version_on_fresh_database() {
         .expect("valid config");
 
     // No schema_migration table yet: must bootstrap it, not surface a missing-table error (M22).
-    assert!(!SchemaInstaller::is_installed(&config).await.expect("is_installed on fresh db"));
+    assert!(
+        !SchemaInstaller::is_installed(&config)
+            .await
+            .expect("is_installed on fresh db")
+    );
     assert_eq!(
-        SchemaInstaller::get_installed_version(&config).await.expect("version on fresh db"),
+        SchemaInstaller::get_installed_version(&config)
+            .await
+            .expect("version on fresh db"),
         None
     );
 }
@@ -1590,13 +1822,23 @@ async fn test_sqlite_applied_migrations_are_returned_in_insertion_order() {
     let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
-    pool.ensure_migration_table(&GeneratorType::Sqlite).await.expect("create tracking table");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("create tracking table");
 
     // Versions deliberately not in lexical or numeric order, so only `id` explains the result.
     for version in ["3", "1", "2"] {
-        pool.insert_migration(version, &format!("V{version}__x.sql"), "x", "sum", 0, "success", "t")
-            .await
-            .expect("insert");
+        pool.insert_migration(
+            version,
+            &format!("V{version}__x.sql"),
+            "x",
+            "sum",
+            0,
+            "success",
+            "t",
+        )
+        .await
+        .expect("insert");
     }
 
     let versions: Vec<String> = pool
@@ -1618,14 +1860,25 @@ async fn test_sqlite_delete_failed_migrations_reports_how_many_rows_it_deleted()
     let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
         .await
         .expect("connect");
-    pool.ensure_migration_table(&GeneratorType::Sqlite).await.expect("create tracking table");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("create tracking table");
 
     assert_eq!(pool.delete_failed_migrations().await.expect("delete"), 0);
 
-    pool.insert_migration("1", "V1__a.sql", "a", "sum", 0, "failed", "t").await.expect("insert");
-    pool.insert_migration("2", "V2__b.sql", "b", "sum", 0, "failed", "t").await.expect("insert");
-    pool.insert_migration("3", "V3__c.sql", "c", "sum", 0, "success", "t").await.expect("insert");
+    pool.insert_migration("1", "V1__a.sql", "a", "sum", 0, "failed", "t")
+        .await
+        .expect("insert");
+    pool.insert_migration("2", "V2__b.sql", "b", "sum", 0, "failed", "t")
+        .await
+        .expect("insert");
+    pool.insert_migration("3", "V3__c.sql", "c", "sum", 0, "success", "t")
+        .await
+        .expect("insert");
 
     assert_eq!(pool.delete_failed_migrations().await.expect("delete"), 2);
-    assert_eq!(pool.delete_failed_migrations().await.expect("delete again"), 0);
+    assert_eq!(
+        pool.delete_failed_migrations().await.expect("delete again"),
+        0
+    );
 }

@@ -34,9 +34,14 @@ impl SqliteRelationGenerator {
             .enumerate()
             .filter(|(_, relation)| relation.creates_foreign_key_constraint())
             .map(|(relation_index, relation)| {
-                let constraint_name = self.relation_generator.relation_constraint_name(table, relation_index);
-                let to_table = database_model.find_table_by_qualified_name(relation.to_table_name());
-                let operation = self.relation_generator.relation_operation_type(relation.relation_type());
+                let constraint_name = self
+                    .relation_generator
+                    .relation_constraint_name(table, relation_index);
+                let to_table =
+                    database_model.find_table_by_qualified_name(relation.to_table_name());
+                let operation = self
+                    .relation_generator
+                    .relation_operation_type(relation.relation_type());
                 let from_columns = relation
                     .column_pairs()
                     .iter()
@@ -83,17 +88,33 @@ mod tests {
 
     fn build_model_with_relation() -> (DatabaseModel, Table) {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         (model, child)
     }
 
@@ -111,17 +132,36 @@ mod tests {
     #[test]
     fn inline_foreign_key_constraints_skips_donothing_relations() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::DoNothing, false))
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::DoNothing,
+                false,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
-        assert!(SqliteRelationGenerator::new(ctx).inline_foreign_key_constraints(&child).is_empty());
+        assert!(
+            SqliteRelationGenerator::new(ctx)
+                .inline_foreign_key_constraints(&child)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -141,12 +181,28 @@ mod tests {
     #[test]
     fn inline_foreign_key_constraints_renders_composite_clause_for_relation() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_relation(
                 Relation::new_composite(
                     "parent",
@@ -162,22 +218,29 @@ mod tests {
             .add_table(parent)
             .add_table(child.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
         let generator = SqliteRelationGenerator::new(ctx);
 
         let clauses = generator.inline_foreign_key_constraints(&child);
 
         assert_eq!(clauses.len(), 1);
-        assert!(clauses[0].contains("foreign key (parent_id, tenant_id) references parent(id, tenant_id)"));
+        assert!(
+            clauses[0]
+                .contains("foreign key (parent_id, tenant_id) references parent(id, tenant_id)")
+        );
         assert!(clauses[0].contains("on delete cascade"));
     }
 
     #[test]
     fn inline_foreign_key_constraints_empty_when_table_has_no_relations() {
         let table = TableBuilder::new(None::<&str>, "solo").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteRelationGenerator::new(ctx);
@@ -188,18 +251,35 @@ mod tests {
     #[test]
     fn inline_foreign_key_constraints_empty_when_foreign_key_mode_is_not_relations() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let (ctx, _buffer) = make_context_with_fk_mode(model, DatabaseType::Sqlite, ForeignKeyMode::None);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) =
+            make_context_with_fk_mode(model, DatabaseType::Sqlite, ForeignKeyMode::None);
 
         let generator = SqliteRelationGenerator::new(ctx);
 

@@ -1,6 +1,6 @@
-use schema_model::model::table::Table;
 use crate::common::generator_context::GeneratorContext;
 use crate::common::key_generator::{DefaultKeyGenerator, KeyGenerator};
+use schema_model::model::table::Table;
 
 pub struct PostgresKeyGenerator {
     key_generator: DefaultKeyGenerator,

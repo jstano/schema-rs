@@ -4,14 +4,12 @@ use schema_model::model::column::Column;
 use schema_model::model::schema::Schema;
 
 pub struct SqliteColumnTypeGenerator {
-    context: GeneratorContext
+    context: GeneratorContext,
 }
 
 impl SqliteColumnTypeGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context
-        }
+        Self { context }
     }
 }
 
@@ -128,7 +126,9 @@ mod tests {
         let (ctx, table_builder) = make_context(model);
         let generator = SqliteColumnTypeGenerator::new(ctx);
         let table = table_builder.build();
-        let col = ColumnBuilder::new(None::<&str>, "col", column_type).length(length).build();
+        let col = ColumnBuilder::new(None::<&str>, "col", column_type)
+            .length(length)
+            .build();
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 

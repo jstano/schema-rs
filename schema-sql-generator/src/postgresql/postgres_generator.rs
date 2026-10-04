@@ -32,7 +32,7 @@ impl PostgresGenerator {
         );
 
         Self {
-            context : context.clone(),
+            context: context.clone(),
             sql_generator,
         }
     }
@@ -117,7 +117,12 @@ impl PostgresGenerator {
 
         self.context.with_writer(|writer| {
             for schema_name in schema_names {
-                sql_println!(writer, "create schema if not exists {}{}", schema_name, separator);
+                sql_println!(
+                    writer,
+                    "create schema if not exists {}{}",
+                    schema_name,
+                    separator
+                );
             }
             sql_println!(writer, "");
         });
@@ -129,7 +134,8 @@ impl PostgresGenerator {
 
         for schema in database_model.schemas() {
             for enum_type in schema.enum_types() {
-                let enum_type_name = qualified_enum_type_name(schema.schema_name(), enum_type.name());
+                let enum_type_name =
+                    qualified_enum_type_name(schema.schema_name(), enum_type.name());
                 let values = enum_type
                     .values()
                     .iter()
@@ -138,8 +144,19 @@ impl PostgresGenerator {
                     .join(",");
 
                 self.context.with_writer(|writer| {
-                    sql_println!(writer, "drop type if exists {} cascade{}", enum_type_name, separator);
-                    sql_println!(writer, "create type {} as enum ({}){}", enum_type_name, values, separator);
+                    sql_println!(
+                        writer,
+                        "drop type if exists {} cascade{}",
+                        enum_type_name,
+                        separator
+                    );
+                    sql_println!(
+                        writer,
+                        "create type {} as enum ({}){}",
+                        enum_type_name,
+                        values,
+                        separator
+                    );
                     sql_println!(writer, "");
                 });
             }
@@ -215,15 +232,24 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    fn make_context_with_version(model: DatabaseModel, target_postgres_version: u32) -> (GeneratorContext, SharedBuffer) {
+    fn make_context_with_version(
+        model: DatabaseModel,
+        target_postgres_version: u32,
+    ) -> (GeneratorContext, SharedBuffer) {
         make_context(model, target_postgres_version, true)
     }
 
-    fn make_context(model: DatabaseModel, target_postgres_version: u32, emit_postgres_extensions: bool) -> (GeneratorContext, SharedBuffer) {
+    fn make_context(
+        model: DatabaseModel,
+        target_postgres_version: u32,
+        emit_postgres_extensions: bool,
+    ) -> (GeneratorContext, SharedBuffer) {
         let buffer = SharedBuffer::new();
         let mut options = GenerateOptions::new(
             Rc::new(model),
-            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+                buffer.clone(),
+            )))),
         );
         options.target_postgres_version = target_postgres_version;
         options.emit_postgres_extensions = emit_postgres_extensions;
@@ -235,7 +261,8 @@ mod tests {
     #[test]
     fn output_header_includes_uuid_function_before_postgres_18() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 17);
 
         let generator = PostgresGenerator::new(ctx);
@@ -248,7 +275,8 @@ mod tests {
     #[test]
     fn output_header_omits_uuid_function_on_postgres_18_and_later() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -267,8 +295,11 @@ mod tests {
                 EnumValue::new("INACTIVE", Some("I".to_string())),
             ],
         );
-        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(enum_type)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -281,7 +312,8 @@ mod tests {
     #[test]
     fn output_header_omits_enum_ddl_when_no_enums_defined() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -295,7 +327,11 @@ mod tests {
     fn output_header_creates_non_default_schemas() {
         let default_schema = SchemaBuilder::new(None::<&str>).build();
         let app_schema = SchemaBuilder::new(Some("app")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app_schema]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app_schema],
+        );
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -310,7 +346,8 @@ mod tests {
         // `public` always exists in Postgres; emitting `create schema if not exists public`
         // is harmless but noisy, so it's skipped.
         let schema = SchemaBuilder::new(Some("public")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -323,7 +360,8 @@ mod tests {
     #[test]
     fn output_header_omits_schema_creation_when_only_default_schema_present() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -336,7 +374,8 @@ mod tests {
     #[test]
     fn output_header_includes_extensions_block_by_default() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -350,7 +389,8 @@ mod tests {
     #[test]
     fn output_header_includes_pgcrypto_before_postgres_18() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 17);
 
         let generator = PostgresGenerator::new(ctx);
@@ -363,7 +403,8 @@ mod tests {
     #[test]
     fn output_header_omits_pgcrypto_on_postgres_18_and_later() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -376,7 +417,8 @@ mod tests {
     #[test]
     fn output_header_omits_extensions_block_when_disabled() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, 18, false);
 
         let generator = PostgresGenerator::new(ctx);
@@ -389,7 +431,8 @@ mod tests {
     #[test]
     fn output_header_checks_current_user_by_default() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -402,11 +445,14 @@ mod tests {
     #[test]
     fn output_header_checks_configured_extension_user() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let buffer = SharedBuffer::new();
         let mut options = GenerateOptions::new(
             Rc::new(model),
-            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+                buffer.clone(),
+            )))),
         );
         options.target_postgres_version = 18;
         options.extension_check_user = Some("schema_admin".to_string());
@@ -427,11 +473,14 @@ mod tests {
         // Regression test: an unescaped embedded quote would break the generated SQL
         // string literal (or worse, let the value's content escape it).
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let buffer = SharedBuffer::new();
         let mut options = GenerateOptions::new(
             Rc::new(model),
-            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+            Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+                buffer.clone(),
+            )))),
         );
         options.target_postgres_version = 18;
         options.extension_check_user = Some("o'brien".to_string());
@@ -454,8 +503,11 @@ mod tests {
             "status_type",
             vec![EnumValue::new("PRIME", Some("O'Brien".to_string()))],
         );
-        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(enum_type)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         let generator = PostgresGenerator::new(ctx);
@@ -470,12 +522,22 @@ mod tests {
         // M4: two schemas declaring a same-named enum must not collide (an unqualified
         // `drop type ... cascade` in the second would remove the first).
         let default_schema = SchemaBuilder::new(None::<&str>)
-            .add_enum_type(EnumType::new("StatusType", vec![EnumValue::new("A", None::<String>)]))
+            .add_enum_type(EnumType::new(
+                "StatusType",
+                vec![EnumValue::new("A", None::<String>)],
+            ))
             .build();
         let app = SchemaBuilder::new(Some("app"))
-            .add_enum_type(EnumType::new("StatusType", vec![EnumValue::new("B", None::<String>)]))
+            .add_enum_type(EnumType::new(
+                "StatusType",
+                vec![EnumValue::new("B", None::<String>)],
+            ))
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app],
+        );
         let (ctx, buffer) = make_context_with_version(model, 18);
 
         PostgresGenerator::new(ctx).output_header();

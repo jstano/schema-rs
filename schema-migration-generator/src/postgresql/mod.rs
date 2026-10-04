@@ -37,7 +37,9 @@ pub struct PostgresqlMigrationGenerator {
 
 impl PostgresqlMigrationGenerator {
     pub fn new(target_postgres_version: u32) -> Self {
-        Self { target_postgres_version }
+        Self {
+            target_postgres_version,
+        }
     }
 }
 
@@ -54,17 +56,19 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
             self.target_postgres_version,
         );
         let type_generator = PostgresColumnTypeGenerator::new(context.clone());
-        let (trigger_context, trigger_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
-            Rc::new(database_model.clone()),
-            DatabaseType::Postgresql,
-            self.target_postgres_version,
-        );
+        let (trigger_context, trigger_buffer) =
+            GeneratorContext::for_model_with_buffer_and_target_version(
+                Rc::new(database_model.clone()),
+                DatabaseType::Postgresql,
+                self.target_postgres_version,
+            );
         let trigger_generator = PostgresTriggerGenerator::new(trigger_context);
-        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
-            Rc::new(database_model.clone()),
-            DatabaseType::Postgresql,
-            self.target_postgres_version,
-        );
+        let (table_context, table_buffer) =
+            GeneratorContext::for_model_with_buffer_and_target_version(
+                Rc::new(database_model.clone()),
+                DatabaseType::Postgresql,
+                self.target_postgres_version,
+            );
         let table_generator = PostgresTableGenerator::new(table_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
         let mut triggers_regenerated: HashSet<String> = HashSet::new();
@@ -79,14 +83,22 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::AddColumn { table_name, column } => {
-                    let type_sql = format!(" {}", type_generator.column_type_sql(&dummy_table, column));
+                    let type_sql =
+                        format!(" {}", type_generator.column_type_sql(&dummy_table, column));
                     let default_value = default_sql(database_model, column);
 
                     if column.required() && default_value.is_none() {
-                        write_not_null_column_with_backfill_guard(writer, table_name, column.name(), &type_sql)?;
+                        write_not_null_column_with_backfill_guard(
+                            writer,
+                            table_name,
+                            column.name(),
+                            &type_sql,
+                        )?;
                     } else {
                         let not_null = if column.required() { " not null" } else { "" };
-                        let default = default_value.map(|d| format!(" default {}", d)).unwrap_or_default();
+                        let default = default_value
+                            .map(|d| format!(" default {}", d))
+                            .unwrap_or_default();
                         writeln!(
                             writer,
                             "alter table {} add column if not exists {}{}{}{};",
@@ -105,33 +117,58 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     // emulate enums with a plain string column plus a CHECK constraint (see
                     // `PostgresColumnConstraintGenerator`'s matching exclusion).
                     if column.column_type() != ColumnType::Enum
-                        && let Some(check_sql) = check_constraint::check_constraint_sql(&context, column)
+                        && let Some(check_sql) =
+                            check_constraint::check_constraint_sql(&context, column)
                     {
                         let name = check_constraint::constraint_name(table_name, column.name());
                         write_guarded_add_constraint(
                             writer,
                             table_name,
                             &name,
-                            &format!("alter table {} add constraint {} {};", table_name, name, check_sql),
+                            &format!(
+                                "alter table {} add constraint {} {};",
+                                table_name, name, check_sql
+                            ),
                         )?;
                     }
                 }
-                SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
+                SchemaChange::DropColumn {
+                    table_name,
+                    column_name,
+                    rename_candidates,
+                } => {
                     if !rename_candidates.is_empty() {
-                        writeln!(writer, "-- TODO: possible rename? Consider replacing the DROP + ADD below with:")?;
+                        writeln!(
+                            writer,
+                            "-- TODO: possible rename? Consider replacing the DROP + ADD below with:"
+                        )?;
                         for candidate in rename_candidates {
-                            writeln!(writer, "--   alter table {} rename column {} to {};", table_name, column_name, candidate)?;
+                            writeln!(
+                                writer,
+                                "--   alter table {} rename column {} to {};",
+                                table_name, column_name, candidate
+                            )?;
                         }
                     }
                     let dependent_views = dependent_views(database_model, table_name, column_name);
                     write_drop_views(writer, &dependent_views)?;
-                    writeln!(writer, "alter table {} drop column if exists {};", table_name, column_name)?;
+                    writeln!(
+                        writer,
+                        "alter table {} drop column if exists {};",
+                        table_name, column_name
+                    )?;
                     writeln!(writer)?;
                     write_recreate_views(writer, &dependent_views)?;
                 }
-                SchemaChange::ModifyColumn { table_name, old_column, new_column } => {
-                    let (new_type, new_is_sequence) = alter_column_type_sql(new_column, &type_generator, &dummy_table);
-                    let (old_type, _) = alter_column_type_sql(old_column, &type_generator, &dummy_table);
+                SchemaChange::ModifyColumn {
+                    table_name,
+                    old_column,
+                    new_column,
+                } => {
+                    let (new_type, new_is_sequence) =
+                        alter_column_type_sql(new_column, &type_generator, &dummy_table);
+                    let (old_type, _) =
+                        alter_column_type_sql(old_column, &type_generator, &dummy_table);
                     // Postgres refuses `alter column type` on a column a view reads
                     // ("cannot alter type of a column used by a view or rule"), so any
                     // dependent view is dropped first and recreated after the whole change.
@@ -203,13 +240,24 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer)?;
                     write_recreate_views(writer, &dependent_views)?;
                 }
-                SchemaChange::AddKey { table_name, key, ordinal } => {
+                SchemaChange::AddKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_add_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::DropKey { table_name, key, ordinal } => {
+                SchemaChange::DropKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_drop_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::AddConstraint { table_name, constraint } if constraint.database_type() == DatabaseType::Postgresql => {
+                SchemaChange::AddConstraint {
+                    table_name,
+                    constraint,
+                } if constraint.database_type() == DatabaseType::Postgresql => {
                     // `constraint.sql()` is already the full `check (...)` clause - same
                     // convention as `DefaultTableConstraintGenerator` on the create path
                     // (`constraint {name} {sql}`, no wrapper added) - so this must not
@@ -227,7 +275,11 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     )?;
                 }
                 SchemaChange::AddConstraint { .. } => {}
-                SchemaChange::DropConstraint { table_name, constraint_name, database_type } if *database_type == DatabaseType::Postgresql => {
+                SchemaChange::DropConstraint {
+                    table_name,
+                    constraint_name,
+                    database_type,
+                } if *database_type == DatabaseType::Postgresql => {
                     writeln!(
                         writer,
                         "alter table {} drop constraint if exists {};",
@@ -240,7 +292,11 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     write_add_relation(writer, relation, *ordinal)?;
                 }
                 SchemaChange::DropRelation { relation, ordinal } => {
-                    let fk_name = foreign_key_name(DatabaseType::Postgresql, relation.from_table_name(), *ordinal);
+                    let fk_name = foreign_key_name(
+                        DatabaseType::Postgresql,
+                        relation.from_table_name(),
+                        *ordinal,
+                    );
                     writeln!(
                         writer,
                         "alter table {} drop constraint if exists {};",
@@ -250,15 +306,19 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::AddView { view }
-                    if view.database_type().is_none() || view.database_type() == Some(DatabaseType::Postgresql) =>
+                    if view.database_type().is_none()
+                        || view.database_type() == Some(DatabaseType::Postgresql) =>
                 {
                     writeln!(writer, "create or replace view {} as", view.name())?;
                     writeln!(writer, "{};", view.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddView { .. } => {}
-                SchemaChange::DropView { view_name, database_type }
-                    if database_type.is_none() || *database_type == Some(DatabaseType::Postgresql) =>
+                SchemaChange::DropView {
+                    view_name,
+                    database_type,
+                } if database_type.is_none()
+                    || *database_type == Some(DatabaseType::Postgresql) =>
                 {
                     writeln!(writer, "drop view if exists {};", view_name)?;
                     writeln!(writer)?;
@@ -272,60 +332,115 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     writeln!(writer, "drop type if exists {} cascade;", name)?;
                     writeln!(writer)?;
                 }
-                SchemaChange::ModifyEnumType { old_enum_type, new_enum_type } => {
+                SchemaChange::ModifyEnumType {
+                    old_enum_type,
+                    new_enum_type,
+                } => {
                     write_modify_enum_type(writer, old_enum_type, new_enum_type)?;
                 }
-                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::Postgresql => {
+                SchemaChange::AddFunction { function }
+                    if function.database_type() == DatabaseType::Postgresql =>
+                {
                     writeln!(writer, "{};", function.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddFunction { .. } => {}
-                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::Postgresql => {
-                    writeln!(writer, "-- NOTE: add argument types below if '{}' is overloaded.", function_name)?;
+                SchemaChange::DropFunction {
+                    function_name,
+                    database_type,
+                } if *database_type == DatabaseType::Postgresql => {
+                    writeln!(
+                        writer,
+                        "-- NOTE: add argument types below if '{}' is overloaded.",
+                        function_name
+                    )?;
                     writeln!(writer, "drop function if exists {};", function_name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropFunction { .. } => {}
-                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::Postgresql => {
+                SchemaChange::AddProcedure { procedure }
+                    if procedure.database_type() == DatabaseType::Postgresql =>
+                {
                     writeln!(writer, "{};", procedure.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddProcedure { .. } => {}
-                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::Postgresql => {
-                    writeln!(writer, "-- NOTE: add argument types below if '{}' is overloaded.", procedure_name)?;
+                SchemaChange::DropProcedure {
+                    procedure_name,
+                    database_type,
+                } if *database_type == DatabaseType::Postgresql => {
+                    writeln!(
+                        writer,
+                        "-- NOTE: add argument types below if '{}' is overloaded.",
+                        procedure_name
+                    )?;
                     writeln!(writer, "drop procedure if exists {};", procedure_name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropProcedure { .. } => {}
-                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Postgresql => {
+                SchemaChange::AddOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::Postgresql =>
+                {
                     writeln!(writer, "{};", other_sql.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddOtherSql { .. } => {}
-                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Postgresql => {
-                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                SchemaChange::DropOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::Postgresql =>
+                {
+                    writeln!(
+                        writer,
+                        "-- TODO: other_sql entry removed, review manually: {}",
+                        other_sql.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropOtherSql { .. } => {}
-                SchemaChange::AddTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::Postgresql => {
-                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                SchemaChange::AddTrigger {
+                    table_name,
+                    trigger,
+                } if trigger.database_type() == DatabaseType::Postgresql => {
+                    regenerate_triggers(
+                        &trigger_generator,
+                        &trigger_buffer,
+                        database_model,
+                        table_name,
+                        &mut triggers_regenerated,
+                        &mut *writer,
+                    )?;
                 }
                 SchemaChange::AddTrigger { .. } => {}
-                SchemaChange::DropTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::Postgresql => {
-                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                SchemaChange::DropTrigger {
+                    table_name,
+                    trigger,
+                } if trigger.database_type() == DatabaseType::Postgresql => {
+                    regenerate_triggers(
+                        &trigger_generator,
+                        &trigger_buffer,
+                        database_model,
+                        table_name,
+                        &mut triggers_regenerated,
+                        &mut *writer,
+                    )?;
                 }
                 SchemaChange::DropTrigger { .. } => {}
                 SchemaChange::AddInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
                 {
                     writeln!(writer, "{};", initial_data.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddInitialData { .. } => {}
                 SchemaChange::DropInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::Postgresql) =>
                 {
-                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(
+                        writer,
+                        "-- TODO: initial_data entry removed, review manually: {}",
+                        initial_data.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropInitialData { .. } => {}
@@ -340,8 +455,16 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
 /// dependent view is dependent too), in model order. Views carry only raw SQL, so dependence is
 /// a word-boundary text match: the view must mention the table and either the column or `*`.
 /// Over-matching only costs a harmless drop + recreate; under-matching would fail the `ALTER`.
-fn dependent_views(database_model: &DatabaseModel, table_name: &str, column_name: &str) -> Vec<View> {
-    let bare_table = table_name.rsplit('.').next().unwrap_or(table_name).to_lowercase();
+fn dependent_views(
+    database_model: &DatabaseModel,
+    table_name: &str,
+    column_name: &str,
+) -> Vec<View> {
+    let bare_table = table_name
+        .rsplit('.')
+        .next()
+        .unwrap_or(table_name)
+        .to_lowercase();
     let column = column_name.to_lowercase();
     let all: Vec<View> = database_model
         .schemas()
@@ -351,7 +474,8 @@ fn dependent_views(database_model: &DatabaseModel, table_name: &str, column_name
     let mut selected = vec![false; all.len()];
     for (i, view) in all.iter().enumerate() {
         let sql = view.sql().to_lowercase();
-        selected[i] = contains_word(&sql, &bare_table) && (contains_word(&sql, &column) || sql.contains('*'));
+        selected[i] =
+            contains_word(&sql, &bare_table) && (contains_word(&sql, &column) || sql.contains('*'));
     }
     loop {
         let mut changed = false;
@@ -360,7 +484,9 @@ fn dependent_views(database_model: &DatabaseModel, table_name: &str, column_name
                 continue;
             }
             let sql = all[i].sql().to_lowercase();
-            if (0..all.len()).any(|j| selected[j] && contains_word(&sql, &all[j].name().to_lowercase())) {
+            if (0..all.len())
+                .any(|j| selected[j] && contains_word(&sql, &all[j].name().to_lowercase()))
+            {
                 selected[i] = true;
                 changed = true;
             }
@@ -369,14 +495,24 @@ fn dependent_views(database_model: &DatabaseModel, table_name: &str, column_name
             break;
         }
     }
-    all.into_iter().zip(selected).filter(|(_, s)| *s).map(|(v, _)| v).collect()
+    all.into_iter()
+        .zip(selected)
+        .filter(|(_, s)| *s)
+        .map(|(v, _)| v)
+        .collect()
 }
 
 fn contains_word(haystack: &str, needle: &str) -> bool {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_';
     haystack.match_indices(needle).any(|(start, _)| {
-        let before_ok = haystack[..start].chars().next_back().is_none_or(|c| !is_ident(c));
-        let after_ok = haystack[start + needle.len()..].chars().next().is_none_or(|c| !is_ident(c));
+        let before_ok = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_ident(c));
+        let after_ok = haystack[start + needle.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !is_ident(c));
         before_ok && after_ok
     })
 }
@@ -384,14 +520,25 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
 /// Drops in reverse model order so a view is dropped before the views it depends on.
 fn write_drop_views(writer: &mut dyn Write, views: &[View]) -> Result<(), MigrationGeneratorError> {
     for view in views.iter().rev() {
-        writeln!(writer, "drop view if exists {};", view.fully_qualified_view_name(DatabaseType::Postgresql))?;
+        writeln!(
+            writer,
+            "drop view if exists {};",
+            view.fully_qualified_view_name(DatabaseType::Postgresql)
+        )?;
     }
     Ok(())
 }
 
-fn write_recreate_views(writer: &mut dyn Write, views: &[View]) -> Result<(), MigrationGeneratorError> {
+fn write_recreate_views(
+    writer: &mut dyn Write,
+    views: &[View],
+) -> Result<(), MigrationGeneratorError> {
     for view in views {
-        writeln!(writer, "create or replace view {} as", view.fully_qualified_view_name(DatabaseType::Postgresql))?;
+        writeln!(
+            writer,
+            "create or replace view {} as",
+            view.fully_qualified_view_name(DatabaseType::Postgresql)
+        )?;
         writeln!(writer, "{};", view.sql())?;
         writeln!(writer)?;
     }
@@ -448,7 +595,11 @@ fn regenerate_triggers(
     if !regenerated.insert(table_name.to_string()) {
         return Ok(());
     }
-    if let Some(table) = database_model.all_tables().into_iter().find(|t| t.name().eq_ignore_ascii_case(table_name)) {
+    if let Some(table) = database_model
+        .all_tables()
+        .into_iter()
+        .find(|t| t.name().eq_ignore_ascii_case(table_name))
+    {
         trigger_generator.output_triggers_for_table(table);
         write!(writer, "{}", trigger_buffer.take())?;
     }
@@ -457,7 +608,10 @@ fn regenerate_triggers(
 
 /// Guarded so re-running the migration after the type already exists is a no-op, matching
 /// `write_guarded_add_constraint`'s `pg_constraint` pattern but against `pg_type`.
-fn write_add_enum_type(writer: &mut dyn Write, enum_type: &schema_model::model::enum_type::EnumType) -> Result<(), MigrationGeneratorError> {
+fn write_add_enum_type(
+    writer: &mut dyn Write,
+    enum_type: &schema_model::model::enum_type::EnumType,
+) -> Result<(), MigrationGeneratorError> {
     let name = to_snake_case(enum_type.name());
     let values = enum_type
         .values()
@@ -468,7 +622,11 @@ fn write_add_enum_type(writer: &mut dyn Write, enum_type: &schema_model::model::
 
     writeln!(writer, "do $$")?;
     writeln!(writer, "begin")?;
-    writeln!(writer, "  if not exists (select 1 from pg_type where typname = '{}') then", name)?;
+    writeln!(
+        writer,
+        "  if not exists (select 1 from pg_type where typname = '{}') then",
+        name
+    )?;
     writeln!(writer, "    create type {} as enum ({});", name, values)?;
     writeln!(writer, "  end if;")?;
     writeln!(writer, "end $$;")?;
@@ -490,7 +648,11 @@ fn write_modify_enum_type(
     let name = to_snake_case(new_enum_type.name());
 
     for value in new_enum_type.values() {
-        if !old_enum_type.values().iter().any(|v| v.name() == value.name()) {
+        if !old_enum_type
+            .values()
+            .iter()
+            .any(|v| v.name() == value.name())
+        {
             writeln!(
                 writer,
                 "alter type {} add value if not exists '{}';",
@@ -502,14 +664,21 @@ fn write_modify_enum_type(
     writeln!(writer)?;
 
     for value in old_enum_type.values() {
-        if !new_enum_type.values().iter().any(|v| v.name() == value.name()) {
+        if !new_enum_type
+            .values()
+            .iter()
+            .any(|v| v.name() == value.name())
+        {
             writeln!(
                 writer,
                 "-- WARNING: enum value '{}' was removed from '{}'. Postgres has no ALTER TYPE ... DROP VALUE,",
                 value.name(),
                 name
             )?;
-            writeln!(writer, "-- so this migration cannot enforce the new value list automatically. Before it can run:")?;
+            writeln!(
+                writer,
+                "-- so this migration cannot enforce the new value list automatically. Before it can run:"
+            )?;
             writeln!(
                 writer,
                 "--   1. If rows still use '{}', add UPDATE statements above this line to migrate them to a valid value, then delete the block below, OR",
@@ -549,7 +718,11 @@ fn write_not_null_column_with_backfill_guard(
     column_name: &str,
     type_sql: &str,
 ) -> Result<(), MigrationGeneratorError> {
-    writeln!(writer, "alter table {} add column if not exists {}{};", table_name, column_name, type_sql)?;
+    writeln!(
+        writer,
+        "alter table {} add column if not exists {}{};",
+        table_name, column_name, type_sql
+    )?;
     writeln!(writer)?;
     writeln!(
         writer,
@@ -561,7 +734,11 @@ fn write_not_null_column_with_backfill_guard(
         "--   1. If '{}' has rows, add UPDATE statements above this line to give '{}' a value, then delete the block below, OR",
         table_name, column_name
     )?;
-    writeln!(writer, "--   2. If '{}' is empty, delete the block below to confirm that.", table_name)?;
+    writeln!(
+        writer,
+        "--   2. If '{}' is empty, delete the block below to confirm that.",
+        table_name
+    )?;
     writeln!(writer, "do $$")?;
     writeln!(writer, "begin")?;
     writeln!(
@@ -571,7 +748,11 @@ fn write_not_null_column_with_backfill_guard(
     )?;
     writeln!(writer, "end $$;")?;
     writeln!(writer)?;
-    writeln!(writer, "alter table {} alter column {} set not null;", table_name, column_name)?;
+    writeln!(
+        writer,
+        "alter table {} alter column {} set not null;",
+        table_name, column_name
+    )?;
     writeln!(writer)?;
     Ok(())
 }
@@ -582,7 +763,11 @@ fn write_not_null_column_with_backfill_guard(
 /// Returns the real underlying type to use there instead, plus whether a note about the
 /// stripped-off sequence/default should be emitted (mirrors the SQL Server `is_identity`
 /// handling in `sqlserver/mod.rs`, which hits the same problem with `identity(...)`).
-fn alter_column_type_sql(column: &Column, type_generator: &PostgresColumnTypeGenerator, dummy_table: &schema_model::model::table::Table) -> (String, bool) {
+fn alter_column_type_sql(
+    column: &Column,
+    type_generator: &PostgresColumnTypeGenerator,
+    dummy_table: &schema_model::model::table::Table,
+) -> (String, bool) {
     match column.column_type() {
         ColumnType::Sequence => ("integer".to_string(), true),
         ColumnType::LongSequence => ("bigint".to_string(), true),
@@ -610,9 +795,27 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
     };
     Some(
         match boolean_mode {
-            BooleanMode::Native => if value { "true" } else { "false" },
-            BooleanMode::YesNo => if value { "'Yes'" } else { "'No'" },
-            BooleanMode::YN => if value { "'Y'" } else { "'N'" },
+            BooleanMode::Native => {
+                if value {
+                    "true"
+                } else {
+                    "false"
+                }
+            }
+            BooleanMode::YesNo => {
+                if value {
+                    "'Yes'"
+                } else {
+                    "'No'"
+                }
+            }
+            BooleanMode::YN => {
+                if value {
+                    "'Y'"
+                } else {
+                    "'N'"
+                }
+            }
         }
         .to_string(),
     )
@@ -641,8 +844,18 @@ fn write_guarded_add_constraint(
     Ok(())
 }
 
-fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
-    let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
+fn write_add_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
+    let cols: String = key
+        .columns()
+        .iter()
+        .map(|c| c.name())
+        .collect::<Vec<_>>()
+        .join(", ");
     match key.key_type() {
         KeyType::Primary => {
             let constraint_name = primary_key_name(DatabaseType::Postgresql, table_name);
@@ -650,7 +863,10 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
                 writer,
                 table_name,
                 &constraint_name,
-                &format!("alter table {} add constraint {} primary key ({});", table_name, constraint_name, cols),
+                &format!(
+                    "alter table {} add constraint {} primary key ({});",
+                    table_name, constraint_name, cols
+                ),
             )?;
         }
         KeyType::Unique => {
@@ -659,13 +875,19 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
                 writer,
                 table_name,
                 &constraint_name,
-                &format!("alter table {} add constraint {} unique ({});", table_name, constraint_name, cols),
+                &format!(
+                    "alter table {} add constraint {} unique ({});",
+                    table_name, constraint_name, cols
+                ),
             )?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Postgresql, table_name, ordinal);
             let unique = if key.is_unique() { "unique " } else { "" };
-            let where_clause = key.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
+            let where_clause = key
+                .filter()
+                .map(|f| format!(" where {}", f))
+                .unwrap_or_default();
             writeln!(
                 writer,
                 "create {}index if not exists {} on {} ({}){};",
@@ -677,7 +899,12 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
     Ok(())
 }
 
-fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_drop_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     match key.key_type() {
         KeyType::Primary => {
             let constraint_name = primary_key_name(DatabaseType::Postgresql, table_name);
@@ -704,19 +931,37 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
     Ok(())
 }
 
-fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_add_relation(
+    writer: &mut dyn Write,
+    relation: &Relation,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     if !relation.creates_foreign_key_constraint() {
         return Ok(());
     }
-    let fk_name = foreign_key_name(DatabaseType::Postgresql, relation.from_table_name(), ordinal);
+    let fk_name = foreign_key_name(
+        DatabaseType::Postgresql,
+        relation.from_table_name(),
+        ordinal,
+    );
     let on_delete = match relation.relation_type() {
         RelationType::Cascade => " on delete cascade",
         RelationType::SetNull => " on delete set null",
         RelationType::DoNothing => " on delete no action",
         RelationType::Enforce => "",
     };
-    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
-    let to_columns = relation.column_pairs().iter().map(|(_, to)| to.as_str()).collect::<Vec<_>>().join(", ");
+    let from_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(from, _)| from.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let to_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(_, to)| to.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     write_guarded_add_constraint(
         writer,
         relation.from_table_name(),

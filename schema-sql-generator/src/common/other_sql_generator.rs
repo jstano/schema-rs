@@ -126,9 +126,14 @@ mod tests {
         // `DefaultOtherSqlGenerator::output_other_sql`, silently skipping the wrapper's
         // override.
         let schema = SchemaBuilder::new(None::<&str>)
-            .add_other_sql(OtherSql::new(DatabaseType::Postgresql, schema_model::model::types::OtherSqlOrder::Top, "select 1"))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Postgresql,
+                schema_model::model::types::OtherSqlOrder::Top,
+                "select 1",
+            ))
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = TaggingOtherSqlGenerator(DefaultOtherSqlGenerator::new(ctx));

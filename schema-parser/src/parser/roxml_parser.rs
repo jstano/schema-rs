@@ -31,10 +31,18 @@ fn parse_database_node(node: Node) -> Result<DatabaseXml, String> {
             "table" if child.has_tag_name((NS, "table")) => tables.push(parse_table_node(child)?),
             "enum" if child.has_tag_name((NS, "enum")) => enums.push(parse_enum_node(child)?),
             "view" if child.has_tag_name((NS, "view")) => views.push(parse_view_node(child)?),
-            "function" if child.has_tag_name((NS, "function")) => functions.push(parse_function_node(child)?),
-            "procedure" if child.has_tag_name((NS, "procedure")) => procedures.push(parse_procedure_node(child)?),
-            "otherSql" if child.has_tag_name((NS, "otherSql")) => other_sql.push(parse_other_sql_node(child)?),
-            "schema" if child.has_tag_name((NS, "schema")) => schemas.push(parse_schema_node(child)?),
+            "function" if child.has_tag_name((NS, "function")) => {
+                functions.push(parse_function_node(child)?)
+            }
+            "procedure" if child.has_tag_name((NS, "procedure")) => {
+                procedures.push(parse_procedure_node(child)?)
+            }
+            "otherSql" if child.has_tag_name((NS, "otherSql")) => {
+                other_sql.push(parse_other_sql_node(child)?)
+            }
+            "schema" if child.has_tag_name((NS, "schema")) => {
+                schemas.push(parse_schema_node(child)?)
+            }
             _ => {}
         }
     }
@@ -69,14 +77,29 @@ fn parse_schema_node(node: Node) -> Result<SchemaXml, String> {
             "table" if child.has_tag_name((NS, "table")) => tables.push(parse_table_node(child)?),
             "enum" if child.has_tag_name((NS, "enum")) => enums.push(parse_enum_node(child)?),
             "view" if child.has_tag_name((NS, "view")) => views.push(parse_view_node(child)?),
-            "function" if child.has_tag_name((NS, "function")) => functions.push(parse_function_node(child)?),
-            "procedure" if child.has_tag_name((NS, "procedure")) => procedures.push(parse_procedure_node(child)?),
-            "otherSql" if child.has_tag_name((NS, "otherSql")) => other_sql.push(parse_other_sql_node(child)?),
+            "function" if child.has_tag_name((NS, "function")) => {
+                functions.push(parse_function_node(child)?)
+            }
+            "procedure" if child.has_tag_name((NS, "procedure")) => {
+                procedures.push(parse_procedure_node(child)?)
+            }
+            "otherSql" if child.has_tag_name((NS, "otherSql")) => {
+                other_sql.push(parse_other_sql_node(child)?)
+            }
             _ => {}
         }
     }
 
-    Ok(SchemaXml { name, case_sensitive_text, tables, enums, views, functions, procedures, other_sql })
+    Ok(SchemaXml {
+        name,
+        case_sensitive_text,
+        tables,
+        enums,
+        views,
+        functions,
+        procedures,
+        other_sql,
+    })
 }
 
 fn parse_table_node(node: Node) -> Result<TableXml, String> {
@@ -160,7 +183,9 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
 
 fn parse_check_node(node: Node) -> CheckXml {
     let text = collect_text(node);
-    CheckXml { value: if text.is_empty() { None } else { Some(text) } }
+    CheckXml {
+        value: if text.is_empty() { None } else { Some(text) },
+    }
 }
 
 fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
@@ -178,7 +203,11 @@ fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
         }
     }
 
-    Ok(KeysXml { primary, uniques, indexes })
+    Ok(KeysXml {
+        primary,
+        uniques,
+        indexes,
+    })
 }
 
 fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
@@ -190,13 +219,19 @@ fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
     }
     let cluster = attr_bool(node, "cluster")?;
     let where_clause = attr_string(node, "where");
-    Ok(KeyColumnsXml { columns, cluster, where_clause })
+    Ok(KeyColumnsXml {
+        columns,
+        cluster,
+        where_clause,
+    })
 }
 
 fn parse_index_node(node: Node) -> Result<IndexXml, String> {
     let mut columns = Vec::new();
     for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
-        columns.push(KeyColumnXml { name: attr_string_required(c, "name")? });
+        columns.push(KeyColumnXml {
+            name: attr_string_required(c, "name")?,
+        });
     }
     Ok(IndexXml {
         columns,
@@ -223,7 +258,10 @@ fn parse_relations_node(node: Node) -> Result<RelationsXml, String> {
             composite_rels.push(parse_composite_relation_node(r)?);
         }
     }
-    Ok(RelationsXml { relation: rels, composite_relation: composite_rels })
+    Ok(RelationsXml {
+        relation: rels,
+        composite_relation: composite_rels,
+    })
 }
 
 fn parse_composite_relation_node(node: Node) -> Result<CompositeRelationXml, String> {
@@ -287,14 +325,21 @@ fn parse_other_sql_node(node: Node) -> Result<OtherSqlXml, String> {
             ));
         }
     };
-    Ok(OtherSqlXml { database_type, order, sql: collect_text(node) })
+    Ok(OtherSqlXml {
+        database_type,
+        order,
+        sql: collect_text(node),
+    })
 }
 
 fn parse_enum_node(node: Node) -> Result<EnumXml, String> {
     let name = attr_string_required(node, "name")?;
     let mut value = Vec::new();
     for v in node.children().filter(|n| n.has_tag_name((NS, "value"))) {
-        value.push(EnumValueXml { name: attr_string_required(v, "name")?, code: attr_string(v, "code") });
+        value.push(EnumValueXml {
+            name: attr_string_required(v, "name")?,
+            code: attr_string(v, "code"),
+        });
     }
     Ok(EnumXml { name, value })
 }
@@ -304,9 +349,15 @@ fn parse_triggers_node(node: Node) -> Result<TriggersXml, String> {
     let mut delete = Vec::new();
     for c in node.children().filter(|n| n.is_element()) {
         if c.has_tag_name((NS, "update")) {
-            update.push(TriggerXml { database_type: attr_string_required(c, "databaseType")?, sql: collect_text(c) });
+            update.push(TriggerXml {
+                database_type: attr_string_required(c, "databaseType")?,
+                sql: collect_text(c),
+            });
         } else if c.has_tag_name((NS, "delete")) {
-            delete.push(TriggerXml { database_type: attr_string_required(c, "databaseType")?, sql: collect_text(c) });
+            delete.push(TriggerXml {
+                database_type: attr_string_required(c, "databaseType")?,
+                sql: collect_text(c),
+            });
         }
     }
     Ok(TriggersXml { update, delete })
@@ -314,7 +365,10 @@ fn parse_triggers_node(node: Node) -> Result<TriggersXml, String> {
 
 fn parse_constraints_node(node: Node) -> Result<ConstraintsXml, String> {
     let mut constraint = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "constraint"))) {
+    for c in node
+        .children()
+        .filter(|n| n.has_tag_name((NS, "constraint")))
+    {
         constraint.push(ConstraintXml {
             name: attr_string_required(c, "name")?,
             database_type: attr_string(c, "databaseType"),
@@ -326,7 +380,10 @@ fn parse_constraints_node(node: Node) -> Result<ConstraintsXml, String> {
 
 fn parse_aggregations_node(node: Node) -> Result<AggregationsXml, String> {
     let mut aggregate = Vec::new();
-    for a in node.children().filter(|n| n.has_tag_name((NS, "aggregate"))) {
+    for a in node
+        .children()
+        .filter(|n| n.has_tag_name((NS, "aggregate")))
+    {
         aggregate.push(parse_aggregate_node(a)?);
     }
     Ok(AggregationsXml { aggregate })
@@ -344,7 +401,9 @@ fn parse_aggregate_node(node: Node) -> Result<AggregateXml, String> {
                 destination_column: attr_string_required(c, "destinationColumn")?,
             });
         } else if c.has_tag_name((NS, "count")) {
-            count.push(CountXml { destination_column: attr_string_required(c, "destinationColumn")? });
+            count.push(CountXml {
+                destination_column: attr_string_required(c, "destinationColumn")?,
+            });
         } else if c.has_tag_name((NS, "group")) {
             group = Some(parse_group_node(c)?);
         }
@@ -477,7 +536,8 @@ mod tests {
 
     #[test]
     fn parse_with_roxmltree_sample() {
-        let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml").expect("resource present");
+        let xml = fs::read_to_string("tests/resources/schema-parser-test-schema.xml")
+            .expect("resource present");
         let db = parse_database_roxml(&xml).expect("parsed");
         assert!(!db.tables.is_empty());
         assert!(db.schemas.is_empty() || !db.schemas[0].tables.is_empty());
@@ -485,13 +545,16 @@ mod tests {
 
     #[test]
     fn parse_check_node_joins_text_around_comments() {
-        let doc = Document::parse(
-            r#"<check xmlns="http://stano.com/database">a<!-- note -->b</check>"#,
-        )
-        .unwrap();
-        assert_eq!(parse_check_node(doc.root_element()).value.as_deref(), Some("ab"));
+        let doc =
+            Document::parse(r#"<check xmlns="http://stano.com/database">a<!-- note -->b</check>"#)
+                .unwrap();
+        assert_eq!(
+            parse_check_node(doc.root_element()).value.as_deref(),
+            Some("ab")
+        );
 
-        let empty = Document::parse(r#"<check xmlns="http://stano.com/database">  </check>"#).unwrap();
+        let empty =
+            Document::parse(r#"<check xmlns="http://stano.com/database">  </check>"#).unwrap();
         assert_eq!(parse_check_node(empty.root_element()).value, None);
     }
 
@@ -574,7 +637,8 @@ mod tests {
 
     #[test]
     fn missing_required_attribute_returns_error_instead_of_defaulting_to_empty_string() {
-        let doc = Document::parse(r#"<column xmlns="http://stano.com/database" type="int"/>"#).unwrap();
+        let doc =
+            Document::parse(r#"<column xmlns="http://stano.com/database" type="int"/>"#).unwrap();
         let node = doc.root_element();
 
         let err = parse_column_node(node).unwrap_err();

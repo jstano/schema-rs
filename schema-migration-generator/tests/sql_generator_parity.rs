@@ -66,7 +66,11 @@ fn scenario(name: &'static str, dialects: &'static [DatabaseType], column: Colum
     }
 }
 
-const ALL: &[DatabaseType] = &[DatabaseType::Postgresql, DatabaseType::Sqlite, DatabaseType::SqlServer];
+const ALL: &[DatabaseType] = &[
+    DatabaseType::Postgresql,
+    DatabaseType::Sqlite,
+    DatabaseType::SqlServer,
+];
 
 fn col(column_type: ColumnType) -> Column {
     ColumnBuilder::new(None::<&str>, "target", column_type).build()
@@ -86,12 +90,17 @@ fn scenarios() -> Vec<Scenario> {
         scenario(
             "decimal_length_only",
             ALL,
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Decimal).length(10).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Decimal)
+                .length(10)
+                .build(),
         ),
         scenario(
             "decimal_length_and_scale",
             ALL,
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Decimal).length(10).scale(2).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Decimal)
+                .length(10)
+                .scale(2)
+                .build(),
         ),
         scenario("date", ALL, col(ColumnType::Date)),
         scenario("date_time", ALL, col(ColumnType::DateTime)),
@@ -101,18 +110,24 @@ fn scenarios() -> Vec<Scenario> {
         scenario(
             "char",
             ALL,
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Char).length(1).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Char)
+                .length(1)
+                .build(),
         ),
         scenario(
             "varchar",
             ALL,
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Varchar).length(100).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Varchar)
+                .length(100)
+                .build(),
         ),
         scenario("text_no_length", ALL, col(ColumnType::Text)),
         scenario(
             "text_with_length",
             &[DatabaseType::SqlServer],
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Text).length(200).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Text)
+                .length(200)
+                .build(),
         ),
         scenario("citext", ALL, col(ColumnType::CiText)),
         scenario("cstext", ALL, col(ColumnType::CsText)),
@@ -120,7 +135,9 @@ fn scenarios() -> Vec<Scenario> {
         scenario(
             "binary_with_length",
             &[DatabaseType::SqlServer],
-            ColumnBuilder::new(None::<&str>, "target", ColumnType::Binary).length(16).build(),
+            ColumnBuilder::new(None::<&str>, "target", ColumnType::Binary)
+                .length(16)
+                .build(),
         ),
         scenario("uuid", ALL, col(ColumnType::Uuid)),
         scenario("json", ALL, col(ColumnType::Json)),
@@ -151,7 +168,10 @@ fn scenarios() -> Vec<Scenario> {
     // (-> varchar/nvarchar) both need coverage since `enum_sql` branches on that.
     let equal_len_enum = EnumType::new(
         "GenderType",
-        vec![EnumValue::new("MALE", Some("M".to_string())), EnumValue::new("FEMALE", Some("F".to_string()))],
+        vec![
+            EnumValue::new("MALE", Some("M".to_string())),
+            EnumValue::new("FEMALE", Some("F".to_string())),
+        ],
     );
     let mut s = scenario(
         "enum_equal_length_codes",
@@ -165,7 +185,10 @@ fn scenarios() -> Vec<Scenario> {
 
     let unequal_len_enum = EnumType::new(
         "StatusType",
-        vec![EnumValue::new("SHORT", Some("A".to_string())), EnumValue::new("LONGER", Some("ABC".to_string()))],
+        vec![
+            EnumValue::new("SHORT", Some("A".to_string())),
+            EnumValue::new("LONGER", Some("ABC".to_string())),
+        ],
     );
     let mut s = scenario(
         "enum_unequal_length_codes",
@@ -179,7 +202,9 @@ fn scenarios() -> Vec<Scenario> {
 
     // Array: Postgres only - Sqlite/SqlServer's real generator panics for any array column,
     // so there's no CREATE TABLE output to compare against.
-    for element_type in ["byte", "short", "int", "long", "decimal", "char", "varchar", "text"] {
+    for element_type in [
+        "byte", "short", "int", "long", "decimal", "char", "varchar", "text",
+    ] {
         scenarios.push(scenario(
             Box::leak(format!("array_{}", element_type).into_boxed_str()),
             &[DatabaseType::Postgresql],
@@ -193,7 +218,9 @@ fn scenarios() -> Vec<Scenario> {
 }
 
 fn build_model(scenario: &Scenario) -> DatabaseModel {
-    let table = TableBuilder::new(None::<&str>, "widget").add_column(scenario.column.clone()).build();
+    let table = TableBuilder::new(None::<&str>, "widget")
+        .add_column(scenario.column.clone())
+        .build();
     let mut schema_builder = SchemaBuilder::new(None::<&str>)
         .add_table(table)
         .case_sensitive_text(scenario.case_sensitive_text);
@@ -201,7 +228,11 @@ fn build_model(scenario: &Scenario) -> DatabaseModel {
         schema_builder = schema_builder.add_enum_type(enum_type);
     }
     let schema = schema_builder.build();
-    DatabaseModel::new(scenario.boolean_mode, ForeignKeyMode::Relations, vec![schema])
+    DatabaseModel::new(
+        scenario.boolean_mode,
+        ForeignKeyMode::Relations,
+        vec![schema],
+    )
 }
 
 /// Extracts the type token for `target` out of a rendered `CREATE TABLE` line
@@ -211,7 +242,10 @@ fn build_model(scenario: &Scenario) -> DatabaseModel {
 fn extract_type_token(sql: &str) -> String {
     let marker = "target ";
     let lower = sql.to_lowercase();
-    let start = lower.find(marker).unwrap_or_else(|| panic!("column 'target' not found in:\n{}", sql)) + marker.len();
+    let start = lower
+        .find(marker)
+        .unwrap_or_else(|| panic!("column 'target' not found in:\n{}", sql))
+        + marker.len();
     let rest = &sql[start..];
     let rest_lower = &lower[start..];
 
@@ -252,7 +286,9 @@ fn real_create_table_type(database_type: DatabaseType, model: DatabaseModel) -> 
     let options = GenerateOptions {
         boolean_mode: model.boolean_mode(),
         database_model: Rc::new(model),
-        writer: Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        writer: Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+            buffer.clone(),
+        )))),
         foreign_key_mode: ForeignKeyMode::Relations,
         output_mode: schema_sql_generator::common::output_mode::OutputMode::All,
         target_postgres_version: 0,
@@ -264,9 +300,16 @@ fn real_create_table_type(database_type: DatabaseType, model: DatabaseModel) -> 
     extract_type_token(&buffer.contents())
 }
 
-fn migration_add_column_type(database_type: DatabaseType, model: &DatabaseModel, column: &Column) -> String {
+fn migration_add_column_type(
+    database_type: DatabaseType,
+    model: &DatabaseModel,
+    column: &Column,
+) -> String {
     let mut change_set = ChangeSet::new();
-    change_set.add_change(SchemaChange::AddColumn { table_name: "widget".to_string(), column: column.clone() });
+    change_set.add_change(SchemaChange::AddColumn {
+        table_name: "widget".to_string(),
+        column: column.clone(),
+    });
 
     let generator = create_generator(database_type);
     let mut output = Vec::new();
@@ -299,7 +342,11 @@ fn migration_generator_add_column_type_matches_sql_generator_create_table_type()
         }
     }
 
-    assert!(failures.is_empty(), "type mismatches:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "type mismatches:\n{}",
+        failures.join("\n")
+    );
 }
 
 /// Extracts the `default` literal (e.g. `'Yes'`, `1`, `42`) from the `target` column's own
@@ -309,13 +356,21 @@ fn migration_generator_add_column_type_matches_sql_generator_create_table_type()
 fn extract_default_token(sql: &str) -> Option<String> {
     let lower = sql.to_lowercase();
     let col_start = lower.find("target ")?;
-    let line_end = lower[col_start..].find('\n').map(|i| col_start + i).unwrap_or(sql.len());
+    let line_end = lower[col_start..]
+        .find('\n')
+        .map(|i| col_start + i)
+        .unwrap_or(sql.len());
     let line = &sql[col_start..line_end];
     let line_lower = &lower[col_start..line_end];
 
     let marker = "default ";
     let start = line_lower.find(marker)? + marker.len();
-    Some(line[start..].trim().trim_end_matches([',', ';']).to_string())
+    Some(
+        line[start..]
+            .trim()
+            .trim_end_matches([',', ';'])
+            .to_string(),
+    )
 }
 
 struct DefaultScenario {
@@ -369,9 +424,15 @@ fn default_scenarios() -> Vec<DefaultScenario> {
 }
 
 fn build_default_model(scenario: &DefaultScenario) -> DatabaseModel {
-    let table = TableBuilder::new(None::<&str>, "widget").add_column(scenario.column.clone()).build();
+    let table = TableBuilder::new(None::<&str>, "widget")
+        .add_column(scenario.column.clone())
+        .build();
     let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-    DatabaseModel::new(scenario.boolean_mode, ForeignKeyMode::Relations, vec![schema])
+    DatabaseModel::new(
+        scenario.boolean_mode,
+        ForeignKeyMode::Relations,
+        vec![schema],
+    )
 }
 
 fn real_create_table_default(database_type: DatabaseType, model: DatabaseModel) -> Option<String> {
@@ -384,7 +445,9 @@ fn real_create_table_default(database_type: DatabaseType, model: DatabaseModel) 
     let options = GenerateOptions {
         boolean_mode: model.boolean_mode(),
         database_model: Rc::new(model),
-        writer: Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(buffer.clone())))),
+        writer: Rc::new(RefCell::new(PrintWriter::new_auto_flush(Box::new(
+            buffer.clone(),
+        )))),
         foreign_key_mode: ForeignKeyMode::Relations,
         output_mode: schema_sql_generator::common::output_mode::OutputMode::All,
         target_postgres_version: 0,
@@ -396,9 +459,16 @@ fn real_create_table_default(database_type: DatabaseType, model: DatabaseModel) 
     extract_default_token(&buffer.contents())
 }
 
-fn migration_add_column_default(database_type: DatabaseType, model: &DatabaseModel, column: &Column) -> Option<String> {
+fn migration_add_column_default(
+    database_type: DatabaseType,
+    model: &DatabaseModel,
+    column: &Column,
+) -> Option<String> {
     let mut change_set = ChangeSet::new();
-    change_set.add_change(SchemaChange::AddColumn { table_name: "widget".to_string(), column: column.clone() });
+    change_set.add_change(SchemaChange::AddColumn {
+        table_name: "widget".to_string(),
+        column: column.clone(),
+    });
 
     let generator = create_generator(database_type);
     let mut output = Vec::new();
@@ -429,5 +499,9 @@ fn migration_generator_add_column_default_matches_sql_generator_create_table_def
         }
     }
 
-    assert!(failures.is_empty(), "default mismatches:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "default mismatches:\n{}",
+        failures.join("\n")
+    );
 }

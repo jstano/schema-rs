@@ -1,4 +1,6 @@
-use crate::common::column_constraint_generator::{ColumnConstraintGenerator, DefaultColumnConstraintGenerator};
+use crate::common::column_constraint_generator::{
+    ColumnConstraintGenerator, DefaultColumnConstraintGenerator,
+};
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::table::Table;
 
@@ -16,7 +18,8 @@ impl SqliteColumnConstraintGenerator {
 
 impl ColumnConstraintGenerator for SqliteColumnConstraintGenerator {
     fn column_check_constraints(&self, table: &Table) -> Vec<String> {
-        self.column_constraint_generator.column_check_constraints(table)
+        self.column_constraint_generator
+            .column_check_constraints(table)
     }
 }
 
@@ -39,8 +42,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteColumnConstraintGenerator::new(ctx);
@@ -53,10 +59,17 @@ mod tests {
     #[test]
     fn no_constraints_when_column_has_no_checks() {
         let table = TableBuilder::new(None::<&str>, "products")
-            .add_column(ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar).length(10).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar)
+                    .length(10)
+                    .build(),
+            )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteColumnConstraintGenerator::new(ctx);

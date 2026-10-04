@@ -242,12 +242,21 @@ mod tests {
     #[test]
     fn fully_qualified_table_name_uses_explicit_schema() {
         let t = sample_table();
-        assert_eq!(t.fully_qualified_table_name(DatabaseType::Postgresql), "schema.table");
-        assert_eq!(t.fully_qualified_table_name(DatabaseType::SqlServer), "schema.table");
+        assert_eq!(
+            t.fully_qualified_table_name(DatabaseType::Postgresql),
+            "schema.table"
+        );
+        assert_eq!(
+            t.fully_qualified_table_name(DatabaseType::SqlServer),
+            "schema.table"
+        );
         // SQLite has no schema concept, so an explicit schema is flattened into the name
         // rather than emitted as `schema.table` (which SQLite would parse as a reference to
         // an ATTACHed database).
-        assert_eq!(t.fully_qualified_table_name(DatabaseType::Sqlite), "schema_table");
+        assert_eq!(
+            t.fully_qualified_table_name(DatabaseType::Sqlite),
+            "schema_table"
+        );
     }
 
     #[test]
@@ -274,8 +283,14 @@ mod tests {
     fn fully_qualified_table_name_falls_back_to_default_schema() {
         let mut t = sample_table();
         t.schema_name = None;
-        assert_eq!(t.fully_qualified_table_name(DatabaseType::Postgresql), "public.table");
-        assert_eq!(t.fully_qualified_table_name(DatabaseType::SqlServer), "dbo.table");
+        assert_eq!(
+            t.fully_qualified_table_name(DatabaseType::Postgresql),
+            "public.table"
+        );
+        assert_eq!(
+            t.fully_qualified_table_name(DatabaseType::SqlServer),
+            "dbo.table"
+        );
         assert_eq!(t.fully_qualified_table_name(DatabaseType::Sqlite), "table");
     }
 }

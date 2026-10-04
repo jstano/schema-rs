@@ -14,7 +14,10 @@ use schema_model::model::table::Table;
 use schema_model::model::trigger::Trigger;
 use schema_model::model::types::{KeyType, LockEscalation, RelationType, TableOption, TriggerType};
 
-pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Table, String> {
+pub(crate) fn parse_table(
+    table_xml: &TableXml,
+    schema_name: Option<&str>,
+) -> Result<Table, String> {
     let columns = parse_columns(table_xml, schema_name)?;
     let keys = parse_keys(table_xml)?;
     let indexes = parse_indexes(table_xml);
@@ -46,12 +49,12 @@ pub(crate) fn parse_table(table_xml: &TableXml, schema_name: Option<&str>) -> Re
 fn lock_escalation(table_xml: &TableXml) -> Result<LockEscalation, String> {
     use std::str::FromStr;
     match table_xml.lock_escalation.as_deref() {
-        Some(s) => LockEscalation::from_str(s)
-            .map_err(|e| format!("table '{}': {}", table_xml.name, e)),
+        Some(s) => {
+            LockEscalation::from_str(s).map_err(|e| format!("table '{}': {}", table_xml.name, e))
+        }
         None => Ok(LockEscalation::Auto),
     }
 }
-
 
 fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<Column>, String> {
     let mut columns = Vec::new();
@@ -68,7 +71,12 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<
                 .length(column_xml.length.unwrap_or(0))
                 .scale(column_xml.scale.unwrap_or(0))
                 .required(column_xml.required.unwrap_or(false))
-                .check_constraint(column_xml.check.as_ref().and_then(|c| c.value.as_ref().cloned()))
+                .check_constraint(
+                    column_xml
+                        .check
+                        .as_ref()
+                        .and_then(|c| c.value.as_ref().cloned()),
+                )
                 .default_constraint(column_xml.default_value.clone())
                 .generated(column_xml.generated.clone())
                 .min_value(column_xml.min_value)
@@ -167,7 +175,11 @@ fn parse_indexes(table_xml: &TableXml) -> Vec<Key> {
     indexes
 }
 
-fn parse_relation_type(table_xml: &TableXml, target_table: &str, type_str: &str) -> Result<RelationType, String> {
+fn parse_relation_type(
+    table_xml: &TableXml,
+    target_table: &str,
+    type_str: &str,
+) -> Result<RelationType, String> {
     match type_str.to_ascii_lowercase().as_str() {
         "cascade" => Ok(RelationType::Cascade),
         "enforce" => Ok(RelationType::Enforce),
@@ -185,7 +197,8 @@ fn parse_relations(table_xml: &TableXml) -> Result<Vec<Relation>, String> {
 
     if let Some(relations_xml) = &table_xml.relations {
         for relation_xml in relations_xml.relation.iter() {
-            let relation_type = parse_relation_type(table_xml, &relation_xml.table, &relation_xml.r#type)?;
+            let relation_type =
+                parse_relation_type(table_xml, &relation_xml.table, &relation_xml.r#type)?;
             relations.push(Relation::new(
                 relation_xml.table.clone(),
                 relation_xml.column.clone(),
@@ -212,7 +225,9 @@ fn parse_relations(table_xml: &TableXml) -> Result<Vec<Relation>, String> {
                 table_xml.name.clone(),
                 column_pairs,
                 relation_type,
-                composite_relation_xml.disable_usage_checking.unwrap_or(false),
+                composite_relation_xml
+                    .disable_usage_checking
+                    .unwrap_or(false),
             )?);
         }
     }
@@ -241,7 +256,11 @@ fn parse_triggers(table_xml: &TableXml) -> Result<Vec<Trigger>, String> {
                 Some(&trigger_xml.database_type),
                 &format!("delete trigger on table '{}'", table_xml.name),
             )?;
-            triggers.push(Trigger::new(&trigger_xml.sql, TriggerType::Delete, database_type));
+            triggers.push(Trigger::new(
+                &trigger_xml.sql,
+                TriggerType::Delete,
+                database_type,
+            ));
         }
     }
 
@@ -255,7 +274,10 @@ fn parse_constraints(table_xml: &TableXml) -> Result<Vec<Constraint>, String> {
         for constraint_xml in constraints_xml.constraint.iter() {
             let database_type = crate::parser::convert::required_database_type(
                 constraint_xml.database_type.as_deref(),
-                &format!("constraint '{}' on table '{}'", constraint_xml.name, table_xml.name),
+                &format!(
+                    "constraint '{}' on table '{}'",
+                    constraint_xml.name, table_xml.name
+                ),
             )?;
             constraints.push(Constraint::new(
                 &constraint_xml.name,

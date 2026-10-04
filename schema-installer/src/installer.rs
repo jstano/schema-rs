@@ -38,7 +38,12 @@ impl SchemaInstaller {
         baseline: Option<Baseline<'_>>,
     ) -> Result<(), SchemaInstallerError> {
         // Connect to database
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
         // Create tracking tables if they don't exist
         Self::ensure_tracking_tables(&pool, &config.database_type).await?;
@@ -50,21 +55,27 @@ impl SchemaInstaller {
         }
 
         // Parse schema
-        let schema_file = config.schema_file.as_ref()
-            .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("schema_file required for install command".to_string()))?;
-        let schema_file_str = schema_file.to_str()
+        let schema_file = config.schema_file.as_ref().ok_or_else(|| {
+            SchemaInstallerError::InvalidConfiguration(
+                "schema_file required for install command".to_string(),
+            )
+        })?;
+        let schema_file_str = schema_file
+            .to_str()
             .ok_or_else(|| SchemaInstallerError::SchemaFileNotFound("Invalid path".to_string()))?;
-        let schema_content = fs::read_to_string(schema_file_str)
-            .map_err(SchemaInstallerError::Io)?;
-        let database_model = parse_database_xml(&schema_content)
-            .map_err(SchemaInstallerError::Parse)?;
+        let schema_content =
+            fs::read_to_string(schema_file_str).map_err(SchemaInstallerError::Io)?;
+        let database_model =
+            parse_database_xml(&schema_content).map_err(SchemaInstallerError::Parse)?;
 
         // Catches dangling relation targets and enum-type references up front, with a
         // clear message - several generator code paths panic on a reference that
         // doesn't resolve, on the assumption the model was already validated.
         let validation_errors = database_model.validate();
         if !validation_errors.is_empty() {
-            return Err(SchemaInstallerError::ValidationFailed(validation_errors.join("\n")));
+            return Err(SchemaInstallerError::ValidationFailed(
+                validation_errors.join("\n"),
+            ));
         }
 
         // Dialect-specific checks `validate()` can't make on its own, since it has no
@@ -72,7 +83,9 @@ impl SchemaInstaller {
         // to target all three databases (H23).
         let dialect_errors = config.database_type.validate_for_dialect(&database_model);
         if !dialect_errors.is_empty() {
-            return Err(SchemaInstallerError::ValidationFailed(dialect_errors.join("\n")));
+            return Err(SchemaInstallerError::ValidationFailed(
+                dialect_errors.join("\n"),
+            ));
         }
 
         // Generate SQL into an in-memory buffer. This used to go through a file at a
@@ -100,8 +113,9 @@ impl SchemaInstaller {
         // script were complete. Flush explicitly so a failure is loud, not truncated SQL.
         writer.borrow_mut().flush();
 
-        let sql = String::from_utf8(buffer.take())
-            .map_err(|e| SchemaInstallerError::Execution(format!("generated SQL is not valid UTF-8: {e}")))?;
+        let sql = String::from_utf8(buffer.take()).map_err(|e| {
+            SchemaInstallerError::Execution(format!("generated SQL is not valid UTF-8: {e}"))
+        })?;
 
         // Record migration under a fixed, reserved version so it can never collide
         // with real migration versions (which start at V1+).
@@ -114,10 +128,19 @@ impl SchemaInstaller {
         // attempt before claiming a fresh "pending" one - otherwise it collides with
         // the insert below (UNIQUE (version)) and surfaces as a bogus
         // `ConcurrentMigrationDetected` with no concurrency involved (H14).
-        pool.delete_failed_migration_by_version(install_version).await?;
+        pool.delete_failed_migration_by_version(install_version)
+            .await?;
 
         let migration_id = pool
-            .insert_migration(install_version, script_name, "install schema", &checksum, 0, MigrationStatus::Pending.as_str(), tool_version)
+            .insert_migration(
+                install_version,
+                script_name,
+                "install schema",
+                &checksum,
+                0,
+                MigrationStatus::Pending.as_str(),
+                tool_version,
+            )
             .await?;
 
         // Execute all statements and record "success" as one transaction (H14): the
@@ -129,7 +152,10 @@ impl SchemaInstaller {
         // failure rolls back the entire script, leaving nothing behind to retry against.
         let start = std::time::Instant::now();
         let result = match crate::sql_split::split_sql_statements(&sql, &config.database_type) {
-            Ok(statements) => pool.execute_migration_transactional(&statements, migration_id).await,
+            Ok(statements) => {
+                pool.execute_migration_transactional(&statements, migration_id)
+                    .await
+            }
             Err(e) => Err(e),
         };
         match result {
@@ -144,8 +170,12 @@ impl SchemaInstaller {
             }
             Err(e) => {
                 let elapsed_ms = start.elapsed().as_millis() as i64;
-                pool.update_migration_status(migration_id, MigrationStatus::Failed.as_str(), elapsed_ms)
-                    .await?;
+                pool.update_migration_status(
+                    migration_id,
+                    MigrationStatus::Failed.as_str(),
+                    elapsed_ms,
+                )
+                .await?;
                 Err(e)
             }
         }
@@ -169,7 +199,9 @@ impl SchemaInstaller {
 
         let mut migrations = baseline.source.migrations()?;
         migrations.sort_by(|a, b| compare_versions(&a.version, &b.version));
-        migrations.retain(|m| compare_versions(&m.version, baseline.version) != std::cmp::Ordering::Greater);
+        migrations.retain(|m| {
+            compare_versions(&m.version, baseline.version) != std::cmp::Ordering::Greater
+        });
 
         for migration in &migrations {
             let checksum = compute_checksum(&migration.sql);
@@ -194,8 +226,15 @@ impl SchemaInstaller {
         Ok(())
     }
 
-    pub async fn is_installed(config: &SchemaInstallerConfig) -> Result<bool, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+    pub async fn is_installed(
+        config: &SchemaInstallerConfig,
+    ) -> Result<bool, SchemaInstallerError> {
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
         // Create-if-missing rather than sniffing the "table doesn't exist" error text, which
         // is dialect-specific (SQL Server says `Invalid object name`) and so made a fresh
         // database return `Err` instead of "not installed" (M22). Every other command already
@@ -204,8 +243,15 @@ impl SchemaInstaller {
         Self::check_if_installed(&pool).await
     }
 
-    pub async fn get_installed_version(config: &SchemaInstallerConfig) -> Result<Option<String>, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+    pub async fn get_installed_version(
+        config: &SchemaInstallerConfig,
+    ) -> Result<Option<String>, SchemaInstallerError> {
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
         Self::ensure_tracking_tables(&pool, &config.database_type).await?;
         let migrations = pool.get_applied_migrations().await?;
         let latest = migrations
@@ -223,11 +269,15 @@ impl SchemaInstaller {
         // `ensure_tracking_tables` first.
         let migrations = pool.get_applied_migrations().await?;
         Ok(migrations.iter().any(|m| {
-            m.status == MigrationStatus::Success.as_str() && m.version == crate::migration::RESERVED_INSTALL_VERSION
+            m.status == MigrationStatus::Success.as_str()
+                && m.version == crate::migration::RESERVED_INSTALL_VERSION
         }))
     }
 
-    async fn ensure_tracking_tables(pool: &AnyPool, database_type: &GeneratorType) -> Result<(), SchemaInstallerError> {
+    async fn ensure_tracking_tables(
+        pool: &AnyPool,
+        database_type: &GeneratorType,
+    ) -> Result<(), SchemaInstallerError> {
         pool.ensure_migration_table(database_type).await?;
         Ok(())
     }

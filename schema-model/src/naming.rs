@@ -80,21 +80,37 @@ mod tests {
 
     #[test]
     fn primary_key_name_has_no_ordinal() {
-        assert_eq!(primary_key_name(DatabaseType::Postgresql, "users"), "pk_users");
+        assert_eq!(
+            primary_key_name(DatabaseType::Postgresql, "users"),
+            "pk_users"
+        );
     }
 
     #[test]
     fn unique_and_index_and_foreign_key_names_are_numbered() {
-        assert_eq!(unique_key_name(DatabaseType::Postgresql, "users", 1), "ak_users1");
-        assert_eq!(index_name(DatabaseType::Postgresql, "users", 2), "ix_users2");
-        assert_eq!(foreign_key_name(DatabaseType::Postgresql, "orders", 1), "fk_orders1");
+        assert_eq!(
+            unique_key_name(DatabaseType::Postgresql, "users", 1),
+            "ak_users1"
+        );
+        assert_eq!(
+            index_name(DatabaseType::Postgresql, "users", 2),
+            "ix_users2"
+        );
+        assert_eq!(
+            foreign_key_name(DatabaseType::Postgresql, "orders", 1),
+            "fk_orders1"
+        );
     }
 
     #[test]
     fn truncates_long_table_names_to_fit_max_key_name_length() {
         let long_table_name = "a".repeat(70);
         let name = foreign_key_name(DatabaseType::Postgresql, &long_table_name, 1);
-        assert!(name.len() <= 63, "name '{}' exceeds postgres's 63 char limit", name);
+        assert!(
+            name.len() <= 63,
+            "name '{}' exceeds postgres's 63 char limit",
+            name
+        );
         assert!(name.starts_with("fk_"));
         assert!(name.ends_with('1'));
     }

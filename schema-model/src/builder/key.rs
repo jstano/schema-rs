@@ -98,8 +98,18 @@ mod tests {
     fn unique_key_is_unique_without_calling_unique() {
         let k = KeyBuilder::new(KeyType::Unique).add_column("a").build();
         assert!(k.is_unique());
-        assert!(!KeyBuilder::new(KeyType::Index).add_column("a").build().is_unique());
-        assert!(!KeyBuilder::new(KeyType::Primary).add_column("a").build().is_unique());
+        assert!(
+            !KeyBuilder::new(KeyType::Index)
+                .add_column("a")
+                .build()
+                .is_unique()
+        );
+        assert!(
+            !KeyBuilder::new(KeyType::Primary)
+                .add_column("a")
+                .build()
+                .is_unique()
+        );
     }
 
     #[test]

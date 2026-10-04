@@ -116,7 +116,9 @@ mod tests {
     #[test]
     fn is_broken_pipe_classifies_error_kinds_correctly() {
         assert!(is_broken_pipe(&io::Error::from(ErrorKind::BrokenPipe)));
-        assert!(!is_broken_pipe(&io::Error::from(ErrorKind::PermissionDenied)));
+        assert!(!is_broken_pipe(&io::Error::from(
+            ErrorKind::PermissionDenied
+        )));
         assert!(!is_broken_pipe(&io::Error::from(ErrorKind::OutOfMemory)));
     }
 

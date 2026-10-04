@@ -4,7 +4,7 @@ use crate::common::sql_writer::SqlWriter;
 use schema_model::model::function::Function;
 
 pub struct SqliteFunctionGenerator {
-    function_generator: DefaultFunctionGenerator
+    function_generator: DefaultFunctionGenerator,
 }
 
 impl SqliteFunctionGenerator {
@@ -23,7 +23,13 @@ impl FunctionGenerator for SqliteFunctionGenerator {
         self.function_generator.output_functions_via(self);
     }
 
-    fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
-        self.function_generator.output_function(writer, statement_separator, function);
+    fn output_function(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        function: &Function,
+    ) {
+        self.function_generator
+            .output_function(writer, statement_separator, function);
     }
 }

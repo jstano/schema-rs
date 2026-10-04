@@ -119,8 +119,12 @@ fn run() -> Result<(), String> {
             return Err("--schema-file is required unless --new-schema is set".to_string());
         }
     };
-    let foreign_key_mode = arguments.get_one::<String>("foreign-key-mode").unwrap_or(&empty);
-    let boolean_mode = arguments.get_one::<String>("boolean-mode").unwrap_or(&empty);
+    let foreign_key_mode = arguments
+        .get_one::<String>("foreign-key-mode")
+        .unwrap_or(&empty);
+    let boolean_mode = arguments
+        .get_one::<String>("boolean-mode")
+        .unwrap_or(&empty);
     let output_mode = arguments.get_one::<String>("output-mode").unwrap_or(&empty);
     let target_postgres_version = parse_version(&arguments, "postgresql-version")?;
     let target_sqlserver_version = parse_version(&arguments, "sqlserver-version")?;
@@ -149,8 +153,13 @@ fn run() -> Result<(), String> {
     if let Some(parent) = Path::new(&output_path).parent()
         && !parent.as_os_str().is_empty()
     {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "failed to create output directory '{}': {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
     let output_file = File::create(&output_path)
         .map_err(|e| format!("failed to create output file '{}': {}", output_path, e))?;
@@ -168,7 +177,9 @@ fn run() -> Result<(), String> {
         boolean_mode: boolean_mode_value,
         database_model: Rc::new(database_model),
         writer: Rc::new(RefCell::new(print_writer)),
-        foreign_key_mode: foreign_key_mode.parse().unwrap_or(ForeignKeyMode::Relations),
+        foreign_key_mode: foreign_key_mode
+            .parse()
+            .unwrap_or(ForeignKeyMode::Relations),
         output_mode: output_mode.parse().unwrap_or(OutputMode::All),
         target_postgres_version,
         emit_postgres_extensions: !arguments.get_flag("no-postgres-extensions"),
@@ -193,14 +204,28 @@ fn parse_version(arguments: &clap::ArgMatches, name: &str) -> Result<u32, String
 }
 
 fn indented(errors: &[String]) -> String {
-    errors.iter().map(|e| format!("  {}", e)).collect::<Vec<_>>().join("\n")
+    errors
+        .iter()
+        .map(|e| format!("  {}", e))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn load_schema(schema_path: &Path) -> Result<DatabaseModel, String> {
-    let contents = fs::read_to_string(schema_path)
-        .map_err(|e| format!("failed to read the schema file '{}': {}", schema_path.display(), e))?;
-    let database_model = parse_database_xml(contents.as_str())
-        .map_err(|e| format!("failed to parse the schema '{}': {}", schema_path.display(), e))?;
+    let contents = fs::read_to_string(schema_path).map_err(|e| {
+        format!(
+            "failed to read the schema file '{}': {}",
+            schema_path.display(),
+            e
+        )
+    })?;
+    let database_model = parse_database_xml(contents.as_str()).map_err(|e| {
+        format!(
+            "failed to parse the schema '{}': {}",
+            schema_path.display(),
+            e
+        )
+    })?;
 
     // Catches dangling relation targets and enum-type references up front, with a clear
     // message - several generator code paths (`find_enum_type`, `find_table_by_qualified_name`,
@@ -208,16 +233,22 @@ fn load_schema(schema_path: &Path) -> Result<DatabaseModel, String> {
     // already validated.
     let errors = database_model.validate();
     if !errors.is_empty() {
-        return Err(format!("the schema file is invalid:\n{}", indented(&errors)));
+        return Err(format!(
+            "the schema file is invalid:\n{}",
+            indented(&errors)
+        ));
     }
 
     Ok(database_model)
 }
 
 fn build_output_path(path: &Path, database_type: String) -> Result<String, String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("schema file path '{}' has no parent directory", path.display()))?;
+    let parent = path.parent().ok_or_else(|| {
+        format!(
+            "schema file path '{}' has no parent directory",
+            path.display()
+        )
+    })?;
     let stem = path
         .file_stem()
         .ok_or_else(|| format!("schema file path '{}' has no file name", path.display()))?

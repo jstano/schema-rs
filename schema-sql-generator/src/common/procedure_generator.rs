@@ -56,7 +56,12 @@ impl ProcedureGenerator for DefaultProcedureGenerator {
         self.output_procedures_via(self);
     }
 
-    fn output_procedure(&self, writer: &mut SqlWriter, statement_separator: &str, procedure: &Procedure) {
+    fn output_procedure(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        procedure: &Procedure,
+    ) {
         writer.print(procedure.sql());
         writer.println(statement_separator);
         writer.newline();

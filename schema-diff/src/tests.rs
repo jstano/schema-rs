@@ -23,7 +23,11 @@ fn detects_added_table() {
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
@@ -46,22 +50,41 @@ fn added_table_with_relation_to_existing_table_emits_add_relation() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "customers")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "customers")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .add_table(
             TableBuilder::new(Some("s"), "orders")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build())
                 .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
-                .add_relation(Relation::new("customers", "id", "orders", "customer_id", RelationType::Cascade, false))
+                .add_relation(Relation::new(
+                    "customers",
+                    "id",
+                    "orders",
+                    "customer_id",
+                    RelationType::Cascade,
+                    false,
+                ))
                 .build(),
         )
         .build();
@@ -76,7 +99,11 @@ fn added_table_with_relation_to_existing_table_emits_add_relation() {
     });
     assert!(add_table.is_some());
     assert!(!add_table.unwrap().keys().is_empty());
-    assert!(!cs.changes().iter().any(|c| matches!(c, SchemaChange::AddKey { table_name, .. } if table_name == "orders")));
+    assert!(
+        !cs.changes().iter().any(
+            |c| matches!(c, SchemaChange::AddKey { table_name, .. } if table_name == "orders")
+        )
+    );
 
     // But the relation to the pre-existing "customers" table must still be a separate
     // `AddRelation` change, since `AddTable`'s rendered `CREATE TABLE` doesn't include it.
@@ -92,16 +119,30 @@ fn added_table_with_trigger_emits_add_trigger() {
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "orders")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
-                .add_trigger(Trigger::new("raise notice 'x'", TriggerType::Update, DatabaseType::Postgresql))
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
+                .add_trigger(Trigger::new(
+                    "raise notice 'x'",
+                    TriggerType::Update,
+                    DatabaseType::Postgresql,
+                ))
                 .build(),
         )
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
 
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddTable { table } if table.name() == "orders")));
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddTrigger { table_name, .. } if table_name == "orders")));
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::AddTable { table } if table.name() == "orders"))
+    );
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::AddTrigger { table_name, .. } if table_name == "orders")
+    ));
 }
 
 #[test]
@@ -109,7 +150,11 @@ fn detects_dropped_table() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "orders")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
@@ -117,7 +162,9 @@ fn detects_dropped_table() {
 
     let cs = SchemaDiffEngine::diff(&old, &new);
     assert_eq!(cs.len(), 1);
-    assert!(matches!(&cs.changes()[0], SchemaChange::DropTable { table_name } if table_name == "orders"));
+    assert!(
+        matches!(&cs.changes()[0], SchemaChange::DropTable { table_name } if table_name == "orders")
+    );
 }
 
 #[test]
@@ -125,21 +172,33 @@ fn detects_added_column() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "name", ColumnType::Varchar).build())
                 .build(),
         )
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddColumn { column, .. } if column.name() == "name")));
+    assert!(
+        cs.changes().iter().any(
+            |c| matches!(c, SchemaChange::AddColumn { column, .. } if column.name() == "name")
+        )
+    );
 }
 
 #[test]
@@ -147,7 +206,11 @@ fn detects_dropped_column() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "name", ColumnType::Varchar).build())
                 .build(),
         )
@@ -155,13 +218,19 @@ fn detects_dropped_column() {
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropColumn { column_name, .. } if column_name == "name")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::DropColumn { column_name, .. } if column_name == "name")
+    ));
 }
 
 #[test]
@@ -169,15 +238,25 @@ fn detects_rename_candidates_for_dropped_column() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
-                .add_column(ColumnBuilder::new(Some("s"), "first_name", ColumnType::Varchar).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "first_name", ColumnType::Varchar).build(),
+                )
                 .build(),
         )
         .build();
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "full_name", ColumnType::Varchar).build())
                 .build(),
         )
@@ -186,7 +265,10 @@ fn detects_rename_candidates_for_dropped_column() {
     let cs = SchemaDiffEngine::diff(&old, &new);
     let drop = cs.changes().iter().find(|c| matches!(c, SchemaChange::DropColumn { column_name, .. } if column_name == "first_name"));
     assert!(drop.is_some());
-    if let SchemaChange::DropColumn { rename_candidates, .. } = drop.unwrap() {
+    if let SchemaChange::DropColumn {
+        rename_candidates, ..
+    } = drop.unwrap()
+    {
         assert!(rename_candidates.contains(&"full_name".to_string()));
     }
 }
@@ -196,7 +278,11 @@ fn no_rename_candidates_when_types_differ() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "age", ColumnType::Int).build())
                 .build(),
         )
@@ -204,16 +290,25 @@ fn no_rename_candidates_when_types_differ() {
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .add_column(ColumnBuilder::new(Some("s"), "bio", ColumnType::Varchar).build())
                 .build(),
         )
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    let drop = cs.changes().iter().find(|c| matches!(c, SchemaChange::DropColumn { column_name, .. } if column_name == "age"));
+    let drop = cs.changes().iter().find(
+        |c| matches!(c, SchemaChange::DropColumn { column_name, .. } if column_name == "age"),
+    );
     assert!(drop.is_some());
-    if let SchemaChange::DropColumn { rename_candidates, .. } = drop.unwrap() {
+    if let SchemaChange::DropColumn {
+        rename_candidates, ..
+    } = drop.unwrap()
+    {
         assert!(rename_candidates.is_empty());
     }
 }
@@ -236,7 +331,9 @@ fn detects_modified_column() {
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::ModifyColumn { table_name, .. } if table_name == "users")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::ModifyColumn { table_name, .. } if table_name == "users")
+    ));
 }
 
 #[test]
@@ -244,14 +341,22 @@ fn no_changes_when_identical() {
     let s1 = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
     let s2 = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "users")
-                .add_column(ColumnBuilder::new(Some("s"), "id", ColumnType::Int).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", ColumnType::Int)
+                        .required(true)
+                        .build(),
+                )
                 .build(),
         )
         .build();
@@ -266,7 +371,9 @@ fn detects_relation_type_change() {
         SchemaBuilder::new(Some("s"))
             .add_table(
                 TableBuilder::new(Some("s"), "orders")
-                    .add_column(ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build())
+                    .add_column(
+                        ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build(),
+                    )
                     .add_relation(Relation::new(
                         "customers",
                         "id",
@@ -293,7 +400,9 @@ fn no_relation_change_when_type_matches() {
         SchemaBuilder::new(Some("s"))
             .add_table(
                 TableBuilder::new(Some("s"), "orders")
-                    .add_column(ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build())
+                    .add_column(
+                        ColumnBuilder::new(Some("s"), "customer_id", ColumnType::Int).build(),
+                    )
                     .add_relation(Relation::new(
                         "customers",
                         "id",
@@ -318,7 +427,9 @@ fn no_composite_relation_change_when_column_pairs_match() {
             .add_table(
                 TableBuilder::new(Some("s"), "assignment")
                     .add_column(ColumnBuilder::new(Some("s"), "parent_id", ColumnType::Int).build())
-                    .add_column(ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build())
+                    .add_column(
+                        ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build(),
+                    )
                     .add_relation(
                         Relation::new_composite(
                             "assignment",
@@ -345,7 +456,9 @@ fn detects_composite_relation_column_order_change() {
             .add_table(
                 TableBuilder::new(Some("s"), "assignment")
                     .add_column(ColumnBuilder::new(Some("s"), "parent_id", ColumnType::Int).build())
-                    .add_column(ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build())
+                    .add_column(
+                        ColumnBuilder::new(Some("s"), "property_id", ColumnType::Int).build(),
+                    )
                     .add_relation(
                         Relation::new_composite(
                             "assignment",
@@ -364,8 +477,16 @@ fn detects_composite_relation_column_order_change() {
     let new = make(vec![("property_id", "property_id"), ("parent_id", "id")]);
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropRelation { .. })));
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddRelation { .. })));
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::DropRelation { .. }))
+    );
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::AddRelation { .. }))
+    );
 }
 
 #[test]
@@ -389,8 +510,16 @@ fn detects_key_uniqueness_change() {
     let new = make(true);
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropKey { .. })));
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddKey { .. })));
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::DropKey { .. }))
+    );
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::AddKey { .. }))
+    );
 }
 
 #[test]
@@ -415,8 +544,16 @@ fn detects_key_filter_change() {
     let new = make(Some("deleted_at is null"));
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropKey { .. })));
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddKey { .. })));
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::DropKey { .. }))
+    );
+    assert!(
+        cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::AddKey { .. }))
+    );
 }
 
 #[test]
@@ -445,11 +582,18 @@ fn detects_check_constraint_body_change() {
 #[test]
 fn drop_constraint_carries_its_own_database_type() {
     let make = |present: bool| {
-        let mut builder = TableBuilder::new(Some("s"), "orders").add_column(ColumnBuilder::new(Some("s"), "qty", ColumnType::Int).build());
+        let mut builder = TableBuilder::new(Some("s"), "orders")
+            .add_column(ColumnBuilder::new(Some("s"), "qty", ColumnType::Int).build());
         if present {
-            builder = builder.add_constraint(Constraint::new("chk_qty", "qty > 0", DatabaseType::SqlServer));
+            builder = builder.add_constraint(Constraint::new(
+                "chk_qty",
+                "qty > 0",
+                DatabaseType::SqlServer,
+            ));
         }
-        SchemaBuilder::new(Some("s")).add_table(builder.build()).build()
+        SchemaBuilder::new(Some("s"))
+            .add_table(builder.build())
+            .build()
     };
     let old = make(true);
     let new = make(false);
@@ -466,7 +610,12 @@ fn drop_view_carries_its_own_database_type() {
     let make = |present: bool| {
         let mut builder = SchemaBuilder::new(Some("s"));
         if present {
-            builder = builder.add_view(View::new(Some("s"), "v_orders", "select id from orders", Some(DatabaseType::SqlServer)));
+            builder = builder.add_view(View::new(
+                Some("s"),
+                "v_orders",
+                "select id from orders",
+                Some(DatabaseType::SqlServer),
+            ));
         }
         builder.build()
     };
@@ -491,7 +640,11 @@ fn detects_view_select_change() {
     let new = make("select id, qty from orders");
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropView { view_name, .. } if view_name == "v_orders")));
+    assert!(
+        cs.changes().iter().any(
+            |c| matches!(c, SchemaChange::DropView { view_name, .. } if view_name == "v_orders")
+        )
+    );
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddView { view } if view.sql() == "select id, qty from orders")));
 }
 
@@ -521,7 +674,9 @@ fn detects_column_enum_type_change() {
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::ModifyColumn { table_name, .. } if table_name == "users")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::ModifyColumn { table_name, .. } if table_name == "users")
+    ));
 }
 
 #[test]
@@ -531,7 +686,10 @@ fn detects_added_enum_value() {
     let old = SchemaBuilder::new(Some("s"))
         .add_enum_type(EnumType::new(
             "date_range_type",
-            vec![EnumValue::new("DAILY", None::<String>), EnumValue::new("WEEKLY", None::<String>)],
+            vec![
+                EnumValue::new("DAILY", None::<String>),
+                EnumValue::new("WEEKLY", None::<String>),
+            ],
         ))
         .build();
     let new = SchemaBuilder::new(Some("s"))
@@ -548,7 +706,10 @@ fn detects_added_enum_value() {
     let cs = SchemaDiffEngine::diff(&old, &new);
     assert_eq!(cs.len(), 1);
     match &cs.changes()[0] {
-        SchemaChange::ModifyEnumType { old_enum_type, new_enum_type } => {
+        SchemaChange::ModifyEnumType {
+            old_enum_type,
+            new_enum_type,
+        } => {
             assert_eq!(old_enum_type.values().len(), 2);
             assert_eq!(new_enum_type.values().len(), 3);
         }
@@ -559,28 +720,48 @@ fn detects_added_enum_value() {
 #[test]
 fn detects_added_and_dropped_enum_type() {
     let old = SchemaBuilder::new(Some("s"))
-        .add_enum_type(EnumType::new("old_type", vec![EnumValue::new("A", None::<String>)]))
+        .add_enum_type(EnumType::new(
+            "old_type",
+            vec![EnumValue::new("A", None::<String>)],
+        ))
         .build();
     let new = SchemaBuilder::new(Some("s"))
-        .add_enum_type(EnumType::new("new_type", vec![EnumValue::new("B", None::<String>)]))
+        .add_enum_type(EnumType::new(
+            "new_type",
+            vec![EnumValue::new("B", None::<String>)],
+        ))
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddEnumType { enum_type } if enum_type.name() == "new_type")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::AddEnumType { enum_type } if enum_type.name() == "new_type")
+    ));
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropEnumType { enum_type_name } if enum_type_name == "old_type")));
 }
 
 #[test]
 fn detects_added_and_changed_function() {
     let old = SchemaBuilder::new(Some("s"))
-        .add_functions(vec![Function::new(Some("s"), "f1", DatabaseType::Postgresql, "create function f1() returns int as $$ select 1 $$")])
+        .add_functions(vec![Function::new(
+            Some("s"),
+            "f1",
+            DatabaseType::Postgresql,
+            "create function f1() returns int as $$ select 1 $$",
+        )])
         .build();
     let new = SchemaBuilder::new(Some("s"))
-        .add_functions(vec![Function::new(Some("s"), "f1", DatabaseType::Postgresql, "create function f1() returns int as $$ select 2 $$")])
+        .add_functions(vec![Function::new(
+            Some("s"),
+            "f1",
+            DatabaseType::Postgresql,
+            "create function f1() returns int as $$ select 2 $$",
+        )])
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropFunction { function_name, .. } if function_name == "f1")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::DropFunction { function_name, .. } if function_name == "f1")
+    ));
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddFunction { function } if function.sql().contains("select 2"))));
 }
 
@@ -588,25 +769,42 @@ fn detects_added_and_changed_function() {
 fn detects_added_procedure() {
     let old = SchemaBuilder::new(Some("s")).build();
     let new = SchemaBuilder::new(Some("s"))
-        .add_procedures(vec![Procedure::new(Some("s"), "p1", DatabaseType::Postgresql, "create procedure p1() as $$ begin end $$")])
+        .add_procedures(vec![Procedure::new(
+            Some("s"),
+            "p1",
+            DatabaseType::Postgresql,
+            "create procedure p1() as $$ begin end $$",
+        )])
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddProcedure { procedure } if procedure.name() == "p1")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::AddProcedure { procedure } if procedure.name() == "p1")
+    ));
 }
 
 #[test]
 fn detects_added_and_dropped_other_sql() {
     let old = SchemaBuilder::new(Some("s"))
-        .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Top, "create extension if not exists citext"))
+        .add_other_sql(OtherSql::new(
+            DatabaseType::Postgresql,
+            OtherSqlOrder::Top,
+            "create extension if not exists citext",
+        ))
         .build();
     let new = SchemaBuilder::new(Some("s"))
-        .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Bottom, "analyze"))
+        .add_other_sql(OtherSql::new(
+            DatabaseType::Postgresql,
+            OtherSqlOrder::Bottom,
+            "analyze",
+        ))
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
     assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::DropOtherSql { other_sql } if other_sql.sql() == "create extension if not exists citext")));
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddOtherSql { other_sql } if other_sql.sql() == "analyze")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::AddOtherSql { other_sql } if other_sql.sql() == "analyze")
+    ));
 }
 
 #[test]
@@ -617,13 +815,19 @@ fn detects_added_trigger_on_a_table_present_in_both() {
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "orders")
-                .add_trigger(Trigger::new("raise notice 'x'", TriggerType::Update, DatabaseType::Postgresql))
+                .add_trigger(Trigger::new(
+                    "raise notice 'x'",
+                    TriggerType::Update,
+                    DatabaseType::Postgresql,
+                ))
                 .build(),
         )
         .build();
 
     let cs = SchemaDiffEngine::diff(&old, &new);
-    assert!(cs.changes().iter().any(|c| matches!(c, SchemaChange::AddTrigger { table_name, .. } if table_name == "orders")));
+    assert!(cs.changes().iter().any(
+        |c| matches!(c, SchemaChange::AddTrigger { table_name, .. } if table_name == "orders")
+    ));
 }
 
 #[test]
@@ -631,15 +835,24 @@ fn detects_added_initial_data_on_a_table_present_in_both() {
     let old = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "roles")
-                .add_initial_data(InitialData::new("insert into roles values (1, 'admin')", None))
+                .add_initial_data(InitialData::new(
+                    "insert into roles values (1, 'admin')",
+                    None,
+                ))
                 .build(),
         )
         .build();
     let new = SchemaBuilder::new(Some("s"))
         .add_table(
             TableBuilder::new(Some("s"), "roles")
-                .add_initial_data(InitialData::new("insert into roles values (1, 'admin')", None))
-                .add_initial_data(InitialData::new("insert into roles values (2, 'user')", None))
+                .add_initial_data(InitialData::new(
+                    "insert into roles values (1, 'admin')",
+                    None,
+                ))
+                .add_initial_data(InitialData::new(
+                    "insert into roles values (2, 'user')",
+                    None,
+                ))
                 .build(),
         )
         .build();
@@ -649,5 +862,9 @@ fn detects_added_initial_data_on_a_table_present_in_both() {
         c,
         SchemaChange::AddInitialData { table_name, initial_data } if table_name == "roles" && initial_data.sql().contains("'user'")
     )));
-    assert!(!cs.changes().iter().any(|c| matches!(c, SchemaChange::DropInitialData { .. })));
+    assert!(
+        !cs.changes()
+            .iter()
+            .any(|c| matches!(c, SchemaChange::DropInitialData { .. }))
+    );
 }

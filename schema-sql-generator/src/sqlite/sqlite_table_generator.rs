@@ -82,8 +82,11 @@ impl TableGenerator for SqliteTableGenerator {
         // SQLite has no `ALTER TABLE ... ADD CONSTRAINT` support, so foreign keys
         // must be declared inline in the `CREATE TABLE` statement rather than as
         // separate statements from the relation generator.
-        let inline_foreign_keys = self.relation_generator.inline_foreign_key_constraints(table);
-        self.table_generator.output_table_definition_with_extra(table, inline_foreign_keys);
+        let inline_foreign_keys = self
+            .relation_generator
+            .inline_foreign_key_constraints(table);
+        self.table_generator
+            .output_table_definition_with_extra(table, inline_foreign_keys);
     }
 
     fn output_table_footer(&self, table: &Table) {
@@ -112,12 +115,24 @@ mod tests {
     #[test]
     fn output_table_renders_header_and_columns() {
         let table = TableBuilder::new(None::<&str>, "users")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar).length(50).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar)
+                    .length(50)
+                    .required(true)
+                    .build(),
+            )
             .add_key(Key::new(KeyType::Primary, vec![KeyColumn::new("id")]))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteTableGenerator::new(ctx);
@@ -141,20 +156,34 @@ mod tests {
         // `output_table_definition` override (not `DefaultTableGenerator`'s), or SQLite
         // output silently has no foreign keys under `--foreign-key-mode relations`.
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(Key::new(KeyType::Primary, vec![KeyColumn::new("id")]))
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_relation(schema_model::model::relation::Relation::new(
-                "parent", "id", "child", "parent_id", schema_model::model::types::RelationType::Cascade, false,
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                schema_model::model::types::RelationType::Cascade,
+                false,
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteTableGenerator::new(ctx);
@@ -172,20 +201,34 @@ mod tests {
         // exists when "drop table parent" runs. All drops must be emitted up front, in
         // reverse-dependency order (child before parent), ahead of every create.
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(Key::new(KeyType::Primary, vec![KeyColumn::new("id")]))
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_relation(schema_model::model::relation::Relation::new(
-                "parent", "id", "child", "parent_id", schema_model::model::types::RelationType::Cascade, false,
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                schema_model::model::types::RelationType::Cascade,
+                false,
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteTableGenerator::new(ctx);
@@ -197,8 +240,17 @@ mod tests {
         let create_child = output.find("create table child").unwrap();
         let create_parent = output.find("create table parent").unwrap();
 
-        assert!(drop_child < drop_parent, "child must be dropped before the parent it references");
-        assert!(drop_parent < create_child, "every drop must precede every create");
-        assert!(drop_parent < create_parent, "every drop must precede every create");
+        assert!(
+            drop_child < drop_parent,
+            "child must be dropped before the parent it references"
+        );
+        assert!(
+            drop_parent < create_child,
+            "every drop must precede every create"
+        );
+        assert!(
+            drop_parent < create_parent,
+            "every drop must precede every create"
+        );
     }
 }

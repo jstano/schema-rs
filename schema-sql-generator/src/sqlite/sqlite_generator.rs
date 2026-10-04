@@ -27,9 +27,7 @@ impl SqliteGenerator {
             Box::new(SqliteOtherSqlGenerator::new(context.clone())),
         );
 
-        Self {
-            sql_generator,
-        }
+        Self { sql_generator }
     }
 }
 

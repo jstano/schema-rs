@@ -18,17 +18,24 @@ impl ProcedureGenerator for SqliteProcedureGenerator {
         let database_type = self.context.settings().database_type();
         let database_model = self.context.settings().database_model();
 
-        let has_procedures = database_model
-            .schemas()
-            .iter()
-            .any(|schema| schema.procedures().iter().any(|p| p.database_type() == database_type));
+        let has_procedures = database_model.schemas().iter().any(|schema| {
+            schema
+                .procedures()
+                .iter()
+                .any(|p| p.database_type() == database_type)
+        });
 
         if has_procedures {
             panic!("SQLite does not support stored procedures.");
         }
     }
 
-    fn output_procedure(&self, _writer: &mut SqlWriter, _statement_separator: &str, _procedure: &Procedure) {
+    fn output_procedure(
+        &self,
+        _writer: &mut SqlWriter,
+        _statement_separator: &str,
+        _procedure: &Procedure,
+    ) {
         panic!("SQLite does not support stored procedures.");
     }
 }
@@ -45,7 +52,8 @@ mod tests {
     #[test]
     fn output_procedures_does_nothing_when_none_exist() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteProcedureGenerator::new(ctx);
@@ -61,7 +69,8 @@ mod tests {
         let schema = SchemaBuilder::new(None::<&str>)
             .add_procedures(vec![procedure])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteProcedureGenerator::new(ctx);

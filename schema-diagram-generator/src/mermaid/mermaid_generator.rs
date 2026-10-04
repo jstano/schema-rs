@@ -1,6 +1,8 @@
 use crate::common::column_type_label::column_type_label;
 use crate::common::diagram_generator::DiagramGenerator;
-use crate::common::relation_support::{relation_cardinality, resolve_relation_target, table_display_name};
+use crate::common::relation_support::{
+    relation_cardinality, resolve_relation_target, table_display_name,
+};
 use crate::common::safe_identifier::{build_safe_identifiers, sanitize_token};
 use schema_model::model::database_model::DatabaseModel;
 use std::rc::Rc;
@@ -64,7 +66,10 @@ impl DiagramGenerator for MermaidERDiagramGenerator {
                 let col_name = col.name();
                 let col_token = &column_ids[col_index];
 
-                let annotation = if pk_columns.iter().any(|pk| pk.eq_ignore_ascii_case(col_name)) {
+                let annotation = if pk_columns
+                    .iter()
+                    .any(|pk| pk.eq_ignore_ascii_case(col_name))
+                {
                     " PK"
                 } else if table.column_relation(col).is_some() {
                     " FK"
@@ -72,7 +77,10 @@ impl DiagramGenerator for MermaidERDiagramGenerator {
                     ""
                 };
 
-                output.push_str(&format!("        {} {}{}\n", type_label, col_token, annotation));
+                output.push_str(&format!(
+                    "        {} {}{}\n",
+                    type_label, col_token, annotation
+                ));
             }
 
             output.push_str("    }\n");
@@ -143,10 +151,7 @@ mod tests {
                     .required(true)
                     .build(),
             )
-            .add_column(
-                ColumnBuilder::new(None::<&str>, "created_at", ColumnType::Date)
-                    .build(),
-            )
+            .add_column(ColumnBuilder::new(None::<&str>, "created_at", ColumnType::Date).build())
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .add_relation(Relation::new(
                 "customer",
@@ -202,15 +207,40 @@ mod tests {
     #[test]
     fn composite_relation_lists_all_from_columns() {
         let parent_table = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
-            .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").add_column("tenant_id").build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_key(
+                KeyBuilder::new(KeyType::Primary)
+                    .add_column("id")
+                    .add_column("tenant_id")
+                    .build(),
+            )
             .build();
 
         let child_table = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .add_relation(
                 Relation::new_composite(
@@ -228,12 +258,19 @@ mod tests {
             .add_table(parent_table)
             .add_table(child_table)
             .build();
-        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+        let model = Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![schema],
+        ));
 
         let generator = MermaidERDiagramGenerator::new(model);
         let output = generator.generate();
 
-        assert!(output.contains("CHILD }o--|| PARENT : \"parent_id, tenant_id\""), "{output}");
+        assert!(
+            output.contains("CHILD }o--|| PARENT : \"parent_id, tenant_id\""),
+            "{output}"
+        );
     }
 
     #[test]
@@ -247,11 +284,19 @@ mod tests {
     #[test]
     fn table_name_with_space_is_sanitized_and_kept_legible_via_alias() {
         let table = TableBuilder::new(None::<&str>, "order detail")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+        let model = Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![schema],
+        ));
 
         let generator = MermaidERDiagramGenerator::new(model);
         let output = generator.generate();
@@ -268,18 +313,37 @@ mod tests {
         // "Order-Detail" and "Order Detail" to the entity id ORDER_DETAIL, silently
         // merging two distinct tables into one diagram entity.
         let table1 = TableBuilder::new(None::<&str>, "Order-Detail")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let table2 = TableBuilder::new(None::<&str>, "Order Detail")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table1).add_table(table2).build();
-        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table1)
+            .add_table(table2)
+            .build();
+        let model = Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![schema],
+        ));
 
         let generator = MermaidERDiagramGenerator::new(model);
         let output = generator.generate();
 
-        assert_eq!(output.matches(" {\n").count(), 2, "expected two distinct entity blocks: {output}");
+        assert_eq!(
+            output.matches(" {\n").count(),
+            2,
+            "expected two distinct entity blocks: {output}"
+        );
         assert!(output.contains("ORDER_DETAIL {") || output.contains("ORDER_DETAIL[\""));
         assert!(output.contains("ORDER_DETAIL_2["));
     }
@@ -287,10 +351,16 @@ mod tests {
     #[test]
     fn column_name_with_space_is_sanitized_to_a_single_token() {
         let table = TableBuilder::new(None::<&str>, "widget")
-            .add_column(ColumnBuilder::new(None::<&str>, "display name", ColumnType::Varchar).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "display name", ColumnType::Varchar).build(),
+            )
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+        let model = Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![schema],
+        ));
 
         let generator = MermaidERDiagramGenerator::new(model);
         let output = generator.generate();
@@ -301,15 +371,33 @@ mod tests {
     #[test]
     fn relation_label_escapes_embedded_quote() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "id\"quoted", ColumnType::Int).build())
-            .add_relation(Relation::new("parent", "id", "child", "id\"quoted", RelationType::Enforce, false))
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "id\"quoted",
+                RelationType::Enforce,
+                false,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
-        let model = Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]));
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model = Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![schema],
+        ));
 
         let generator = MermaidERDiagramGenerator::new(model);
         let output = generator.generate();
@@ -317,13 +405,32 @@ mod tests {
         assert!(output.contains("\"id#quot;quoted\""));
     }
 
-    fn schema_table(schema: &str, name: &str, relation_to: Option<(&str, bool, RelationType)>) -> schema_model::model::table::Table {
+    fn schema_table(
+        schema: &str,
+        name: &str,
+        relation_to: Option<(&str, bool, RelationType)>,
+    ) -> schema_model::model::table::Table {
         let mut builder = TableBuilder::new(Some(schema), name)
-            .add_column(ColumnBuilder::new(Some(schema), "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(Some(schema), "ref_id", ColumnType::Int).required(relation_to.as_ref().is_some_and(|r| r.1)).build())
+            .add_column(
+                ColumnBuilder::new(Some(schema), "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(Some(schema), "ref_id", ColumnType::Int)
+                    .required(relation_to.as_ref().is_some_and(|r| r.1))
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build());
         if let Some((target, _, relation_type)) = relation_to {
-            builder = builder.add_relation(Relation::new(target, "id", name, "ref_id", relation_type, false));
+            builder = builder.add_relation(Relation::new(
+                target,
+                "id",
+                name,
+                "ref_id",
+                relation_type,
+                false,
+            ));
         }
         builder.build()
     }
@@ -331,30 +438,59 @@ mod tests {
     fn two_schema_model(relation_type: RelationType, required: bool) -> Rc<DatabaseModel> {
         let sales = SchemaBuilder::new(Some("sales"))
             .add_table(schema_table("sales", "users", None))
-            .add_table(schema_table("sales", "orders", Some(("auth.users", required, relation_type))))
+            .add_table(schema_table(
+                "sales",
+                "orders",
+                Some(("auth.users", required, relation_type)),
+            ))
             .build();
-        let auth = SchemaBuilder::new(Some("auth")).add_table(schema_table("auth", "users", None)).build();
-        Rc::new(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![sales, auth]))
+        let auth = SchemaBuilder::new(Some("auth"))
+            .add_table(schema_table("auth", "users", None))
+            .build();
+        Rc::new(DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![sales, auth],
+        ))
     }
 
     #[test]
     fn schema_qualified_relation_target_matches_a_declared_entity() {
         // M30: the relation used to reference a bare sanitized `AUTH_USERS` that was
         // never declared as an entity.
-        let output = MermaidERDiagramGenerator::new(two_schema_model(RelationType::Enforce, true)).generate();
-        let relation_line = output.lines().find(|l| l.contains("}o--")).expect("relation line");
+        let output = MermaidERDiagramGenerator::new(two_schema_model(RelationType::Enforce, true))
+            .generate();
+        let relation_line = output
+            .lines()
+            .find(|l| l.contains("}o--"))
+            .expect("relation line");
         let target = relation_line.split_whitespace().nth(2).unwrap();
-        assert!(output.contains("AUTH.USERS") && output.contains(target), "{output}");
-        assert!(output.lines().any(|l| l.contains("{") && l.contains(target) && !l.contains("}o--")), "target {target} not declared:\n{output}");
+        assert!(
+            output.contains("AUTH.USERS") && output.contains(target),
+            "{output}"
+        );
+        assert!(
+            output
+                .lines()
+                .any(|l| l.contains("{") && l.contains(target) && !l.contains("}o--")),
+            "target {target} not declared:\n{output}"
+        );
     }
 
     #[test]
     fn same_named_tables_in_different_schemas_get_distinct_entities() {
         // M31: `sales.users` and `auth.users` both resolved to the same id.
-        let output = MermaidERDiagramGenerator::new(two_schema_model(RelationType::Enforce, true)).generate();
-        assert!(output.contains("SALES.USERS") && output.contains("AUTH.USERS"), "{output}");
+        let output = MermaidERDiagramGenerator::new(two_schema_model(RelationType::Enforce, true))
+            .generate();
+        assert!(
+            output.contains("SALES.USERS") && output.contains("AUTH.USERS"),
+            "{output}"
+        );
         let relation_line = output.lines().find(|l| l.contains("}o--")).unwrap();
-        assert!(relation_line.starts_with("    SALES_ORDERS "), "{relation_line}");
+        assert!(
+            relation_line.starts_with("    SALES_ORDERS "),
+            "{relation_line}"
+        );
         assert!(relation_line.contains(" AUTH_USERS "), "{relation_line}");
     }
 
@@ -368,8 +504,12 @@ mod tests {
             (RelationType::Cascade, false, "}o--o|"),
             (RelationType::Enforce, false, "}o--o|"),
         ] {
-            let output = MermaidERDiagramGenerator::new(two_schema_model(relation_type, required)).generate();
-            assert!(output.contains(expected), "{relation_type:?} required={required}:\n{output}");
+            let output = MermaidERDiagramGenerator::new(two_schema_model(relation_type, required))
+                .generate();
+            assert!(
+                output.contains(expected),
+                "{relation_type:?} required={required}:\n{output}"
+            );
         }
     }
 }

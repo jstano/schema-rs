@@ -1,4 +1,6 @@
-use crate::common::column_constraint_generator::{ColumnConstraintGenerator, DefaultColumnConstraintGenerator};
+use crate::common::column_constraint_generator::{
+    ColumnConstraintGenerator, DefaultColumnConstraintGenerator,
+};
 use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column_type::ColumnType;
 use schema_model::model::table::Table;
@@ -17,11 +19,19 @@ impl PostgresColumnConstraintGenerator {
 
 impl ColumnConstraintGenerator for PostgresColumnConstraintGenerator {
     fn column_check_constraints(&self, table: &Table) -> Vec<String> {
-        let boolean_mode = self.column_constraint_generator.context().settings().boolean_mode();
-        table.columns_with_check_constraints(boolean_mode)
+        let boolean_mode = self
+            .column_constraint_generator
+            .context()
+            .settings()
+            .boolean_mode();
+        table
+            .columns_with_check_constraints(boolean_mode)
             .iter()
             .filter(|col| col.column_type() != ColumnType::Enum)
-            .map(|col| self.column_constraint_generator.generate_constraint(table, col))
+            .map(|col| {
+                self.column_constraint_generator
+                    .generate_constraint(table, col)
+            })
             .collect()
     }
 }
@@ -44,8 +54,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresColumnConstraintGenerator::new(ctx);
@@ -66,8 +79,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresColumnConstraintGenerator::new(ctx);

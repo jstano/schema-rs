@@ -43,7 +43,11 @@ pub fn write_database_xml(model: &DatabaseModel) -> Result<String, SchemaReverse
     Ok(out)
 }
 
-fn write_schema_body(out: &mut String, schema: &Schema, indent: usize) -> Result<(), SchemaReverseEngineerError> {
+fn write_schema_body(
+    out: &mut String,
+    schema: &Schema,
+    indent: usize,
+) -> Result<(), SchemaReverseEngineerError> {
     for enum_type in schema.enum_types() {
         write_enum(out, enum_type, indent);
     }
@@ -81,7 +85,11 @@ fn write_view(out: &mut String, view: &View, indent: usize) {
     out.push_str("</view>\n\n");
 }
 
-fn write_table(out: &mut String, table: &Table, indent: usize) -> Result<(), SchemaReverseEngineerError> {
+fn write_table(
+    out: &mut String,
+    table: &Table,
+    indent: usize,
+) -> Result<(), SchemaReverseEngineerError> {
     push_indent(out, indent);
     let _ = writeln!(out, "<table name=\"{}\">", xml_escape_attr(table.name()));
 
@@ -152,14 +160,22 @@ fn write_column(out: &mut String, column: &Column, indent: usize) {
     }
 }
 
-fn write_keys(out: &mut String, table: &Table, indent: usize) -> Result<(), SchemaReverseEngineerError> {
+fn write_keys(
+    out: &mut String,
+    table: &Table,
+    indent: usize,
+) -> Result<(), SchemaReverseEngineerError> {
     // The XSD requires a <primary> element whenever <keys> is present, so a table with no
     // primary key can't emit unique/index keys either. Silently dropping them would lose data
     // from the round trip, so a PK-less table with unique keys or indexes is a hard error
     // instead (per the project's prefer-error-over-silent-coercion direction).
     let Some(primary) = table.primary_key() else {
-        if table.keys().iter().any(|k| k.key_type() == KeyType::Unique) || !table.indexes().is_empty() {
-            return Err(SchemaReverseEngineerError::PkLessTableHasKeys(table.name().to_string()));
+        if table.keys().iter().any(|k| k.key_type() == KeyType::Unique)
+            || !table.indexes().is_empty()
+        {
+            return Err(SchemaReverseEngineerError::PkLessTableHasKeys(
+                table.name().to_string(),
+            ));
         }
         return Ok(());
     };
@@ -167,7 +183,11 @@ fn write_keys(out: &mut String, table: &Table, indent: usize) -> Result<(), Sche
     push_indent(out, indent);
     out.push_str("<keys>\n");
     write_key_columns(out, "primary", primary, indent + 1);
-    for unique in table.keys().iter().filter(|k| k.key_type() == KeyType::Unique) {
+    for unique in table
+        .keys()
+        .iter()
+        .filter(|k| k.key_type() == KeyType::Unique)
+    {
         write_key_columns(out, "unique", unique, indent + 1);
     }
     for index in table.indexes() {
@@ -375,31 +395,61 @@ mod tests {
     #[test]
     fn writes_table_with_columns_pk_and_relation() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
             .build();
 
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("id").build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
 
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child)
-            .add_enum_type(EnumType::new("mood", vec![EnumValue::new("HAPPY", None::<String>)]))
-            .add_view(View::new(None::<&str>, "v1", "select 1", Some(DatabaseType::Postgresql)))
+            .add_enum_type(EnumType::new(
+                "mood",
+                vec![EnumValue::new("HAPPY", None::<String>)],
+            ))
+            .add_view(View::new(
+                None::<&str>,
+                "v1",
+                "select 1",
+                Some(DatabaseType::Postgresql),
+            ))
             .build();
 
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
 
         assert!(xml.contains("<database xmlns=\"http://stano.com/database\""));
         assert!(xml.contains("<table name=\"parent\">"));
         assert!(xml.contains("<column name=\"id\" type=\"sequence\" required=\"true\"/>"));
-        assert!(xml.contains("<relation src=\"parent_id\" table=\"parent\" column=\"id\" type=\"cascade\"/>"));
+        assert!(xml.contains(
+            "<relation src=\"parent_id\" table=\"parent\" column=\"id\" type=\"cascade\"/>"
+        ));
         assert!(xml.contains("<enum name=\"mood\">"));
         assert!(xml.contains("<view name=\"v1\">"));
     }
@@ -408,7 +458,10 @@ mod tests {
     fn write_cdata_splits_embedded_close_sequence() {
         let mut out = String::new();
         write_cdata(&mut out, "select arr[1:2]]>x from t");
-        assert!(!out.contains("2]]>x"), "the literal ]]> must not survive unescaped inside one CDATA block: {out}");
+        assert!(
+            !out.contains("2]]>x"),
+            "the literal ]]> must not survive unescaped inside one CDATA block: {out}"
+        );
         assert!(out.starts_with("<![CDATA["));
         assert!(out.ends_with("]]>"));
     }
@@ -422,7 +475,8 @@ mod tests {
             None,
         );
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
 
         let reparsed = schema_parser::parse_database_xml(&xml)
@@ -442,11 +496,13 @@ mod tests {
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
 
-        let reparsed = schema_parser::parse_database_xml(&xml)
-            .expect("XML containing a ]]> sequence inside a constraint's SQL must still be well-formed");
+        let reparsed = schema_parser::parse_database_xml(&xml).expect(
+            "XML containing a ]]> sequence inside a constraint's SQL must still be well-formed",
+        );
         let reparsed_table = reparsed.default_schema().get_table("t");
         assert_eq!(reparsed_table.constraints()[0].sql(), "check (a[1:2]]>0)");
     }
@@ -462,12 +518,13 @@ mod tests {
             )
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
 
         let reparsed = schema_parser::parse_database_xml(&xml).unwrap();
         let column = reparsed.default_schema().get_table("t").column("a");
-        assert_eq!(column.default_constraint().as_deref(), Some(default));
+        assert_eq!(column.default_constraint(), Some(default));
     }
 
     #[test]
@@ -476,7 +533,8 @@ mod tests {
             .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
         assert!(!xml.contains("<keys>"));
     }
@@ -488,7 +546,8 @@ mod tests {
             .add_key(KeyBuilder::new(KeyType::Unique).add_column("a").build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let err = write_database_xml(&model).unwrap_err();
         assert!(matches!(err, SchemaReverseEngineerError::PkLessTableHasKeys(name) if name == "t"));
@@ -501,7 +560,8 @@ mod tests {
             .add_index(KeyBuilder::new(KeyType::Index).add_column("a").build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let err = write_database_xml(&model).unwrap_err();
         assert!(matches!(err, SchemaReverseEngineerError::PkLessTableHasKeys(name) if name == "t"));
@@ -510,14 +570,28 @@ mod tests {
     #[test]
     fn writes_and_round_trips_a_composite_relation() {
         let parent = TableBuilder::new(None::<&str>, "Property")
-            .add_column(ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("ID").build())
             .build();
 
         let child = TableBuilder::new(None::<&str>, "Assignment")
-            .add_column(ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "PropertyID", ColumnType::Int).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "ParentAssignmentID", ColumnType::Int).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "ID", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "PropertyID", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "ParentAssignmentID", ColumnType::Int).build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("ID").build())
             .add_relation(
                 Relation::new_composite(
@@ -531,15 +605,20 @@ mod tests {
             )
             .build();
 
-        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let xml = write_database_xml(&model).unwrap();
 
         assert!(xml.contains("<compositeRelation table=\"Assignment\" type=\"cascade\">"));
         assert!(xml.contains("<column src=\"ParentAssignmentID\" name=\"ID\"/>"));
         assert!(xml.contains("<column src=\"PropertyID\" name=\"PropertyID\"/>"));
 
-        let reparsed = schema_parser::parse_database_xml(&xml).expect("round-tripped composite relation XML must be well-formed");
+        let reparsed = schema_parser::parse_database_xml(&xml)
+            .expect("round-tripped composite relation XML must be well-formed");
         let reparsed_table = reparsed.default_schema().get_table("Assignment");
         let relation = &reparsed_table.relations()[0];
         assert!(relation.is_composite());
@@ -555,17 +634,26 @@ mod tests {
     #[test]
     fn wraps_tables_in_a_schema_element_when_the_schema_is_named() {
         let table = TableBuilder::new(Some("sales"), "orders")
-            .add_column(ColumnBuilder::new(Some("sales"), "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(Some("sales"), "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let schema = SchemaBuilder::new(Some("sales")).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let xml = write_database_xml(&model).unwrap();
         assert!(xml.contains("<schema name=\"sales\">"));
         assert!(xml.contains("<table name=\"orders\">"));
         assert!(xml.contains("</schema>"));
 
-        let reparsed = schema_parser::parse_database_xml(&xml).expect("round-tripped XML must still be well-formed");
-        assert_eq!(reparsed.find_schema(Some("sales")).schema_name(), Some("sales"));
+        let reparsed = schema_parser::parse_database_xml(&xml)
+            .expect("round-tripped XML must still be well-formed");
+        assert_eq!(
+            reparsed.find_schema(Some("sales")).schema_name(),
+            Some("sales")
+        );
     }
 }

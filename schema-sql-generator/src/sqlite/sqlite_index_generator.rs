@@ -25,12 +25,27 @@ impl IndexGenerator for SqliteIndexGenerator {
     }
 
     fn output_indexes_for_table(&self, writer: &mut SqlWriter, table: &Table) {
-        self.index_generator.output_indexes_for_table_via(self, writer, table);
+        self.index_generator
+            .output_indexes_for_table_via(self, writer, table);
     }
 
-    fn output_index(&self, writer: &mut SqlWriter, statement_separator: &str, table: &Table, key_name: &str, key: &Key) {
+    fn output_index(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        table: &Table,
+        key_name: &str,
+        key: &Key,
+    ) {
         let index_options = self.index_options(key);
-        self.index_generator.render_index(writer, statement_separator, table, key_name, key, index_options);
+        self.index_generator.render_index(
+            writer,
+            statement_separator,
+            table,
+            key_name,
+            key,
+            index_options,
+        );
     }
 
     fn index_options(&self, key: &Key) -> Option<String> {
@@ -65,10 +80,22 @@ mod tests {
 
     #[test]
     fn output_indexes_for_table_renders_unique_index() {
-        let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("email")], false, false, true, None::<String>);
-        let table = TableBuilder::new(None::<&str>, "users").add_index(index).build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let index = Key::new_full(
+            KeyType::Index,
+            vec![KeyColumn::new("email")],
+            false,
+            false,
+            true,
+            None::<String>,
+        );
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_index(index)
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteIndexGenerator::new(ctx.clone());
@@ -83,8 +110,11 @@ mod tests {
     #[test]
     fn output_indexes_for_table_skips_when_no_indexes() {
         let table = TableBuilder::new(None::<&str>, "solo").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteIndexGenerator::new(ctx.clone());
@@ -100,10 +130,22 @@ mod tests {
         // Regression test for M1: `include`/`compress` have no SQLite equivalent - neither
         // must appear in the output, but the index itself must still be generated rather
         // than erroring/panicking.
-        let index = Key::new_full(KeyType::Index, vec![KeyColumn::new("id")], false, true, false, Some("name,code"));
-        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let index = Key::new_full(
+            KeyType::Index,
+            vec![KeyColumn::new("id")],
+            false,
+            true,
+            false,
+            Some("name,code"),
+        );
+        let table = TableBuilder::new(None::<&str>, "t1")
+            .add_index(index)
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteIndexGenerator::new(ctx.clone());
@@ -126,9 +168,14 @@ mod tests {
             None::<String>,
             Some("parent_id is not null"),
         );
-        let table = TableBuilder::new(None::<&str>, "t1").add_index(index).build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let table = TableBuilder::new(None::<&str>, "t1")
+            .add_index(index)
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteIndexGenerator::new(ctx.clone());
@@ -138,7 +185,9 @@ mod tests {
 
         let output = buffer.contents();
         assert!(
-            output.contains("create unique index ix_t11 on t1 (parent_id) where parent_id is not null;"),
+            output.contains(
+                "create unique index ix_t11 on t1 (parent_id) where parent_id is not null;"
+            ),
             "unexpected output: {output}"
         );
     }

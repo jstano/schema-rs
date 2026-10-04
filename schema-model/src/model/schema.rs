@@ -83,13 +83,17 @@ impl Schema {
 
     fn table_index(&self, name: &str) -> usize {
         let name_lower = name.to_lowercase();
-        *self.table_map.get(&name_lower)
+        *self
+            .table_map
+            .get(&name_lower)
             .unwrap_or_else(|| panic!("Unable to locate a table with the name '{}'", name))
     }
 
     pub fn get_optional_table(&self, name: &str) -> Option<&Table> {
         let name_lower = name.to_lowercase();
-        self.table_map.get(&name_lower).map(|&idx| &self.tables[idx])
+        self.table_map
+            .get(&name_lower)
+            .map(|&idx| &self.tables[idx])
     }
 
     pub fn all_views(&self) -> &[View] {
@@ -99,7 +103,9 @@ impl Schema {
     pub fn views(&self, database_type: DatabaseType) -> Vec<View> {
         self.views
             .iter()
-            .filter(|view| view.database_type().is_none() || view.database_type().unwrap() == database_type)
+            .filter(|view| {
+                view.database_type().is_none() || view.database_type().unwrap() == database_type
+            })
             .cloned()
             .collect()
     }
@@ -119,7 +125,12 @@ impl Schema {
     pub fn get_enum_type(&self, type_name: &str) -> &EnumType {
         self.enum_types
             .get(&type_name.to_lowercase())
-            .unwrap_or_else(|| panic!("Unable to locate an enum type with the name '{}'", type_name))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Unable to locate an enum type with the name '{}'",
+                    type_name
+                )
+            })
     }
 
     pub fn functions(&self) -> &[Function] {
@@ -140,14 +151,15 @@ impl Schema {
         let mut seen_table_names: HashMap<String, &str> = HashMap::new();
         for table in &self.tables {
             let name_lower = table.name().to_lowercase();
-            if seen_table_names.contains_key(&name_lower) {
-                errors.push(format!(
+            match seen_table_names.entry(name_lower) {
+                std::collections::hash_map::Entry::Occupied(_) => errors.push(format!(
                     "ERROR: duplicate table name '{}'; table names must be unique within a schema \
                      (comparison is case-insensitive)",
                     table.name()
-                ));
-            } else {
-                seen_table_names.insert(name_lower, table.name());
+                )),
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(table.name());
+                }
             }
         }
 
@@ -182,7 +194,10 @@ impl Schema {
 
             let mut seen_column_names: HashMap<String, &str> = HashMap::new();
             for column in table.columns() {
-                if seen_column_names.insert(column.name().to_lowercase(), column.name()).is_some() {
+                if seen_column_names
+                    .insert(column.name().to_lowercase(), column.name())
+                    .is_some()
+                {
                     errors.push(format!(
                         "ERROR: table {} has duplicate column name '{}'; column names must be unique \
                          within a table (comparison is case-insensitive)",
@@ -236,7 +251,9 @@ impl Schema {
                 // Whether `enumType` resolves is checked in `DatabaseModel::validate()`, not
                 // here: a column may legitimately reference a database-level `<enum>` that
                 // lives in the default schema (M5), which a single schema can't see.
-                if column.column_type() == crate::model::column_type::ColumnType::Enum && column.enum_type().is_none() {
+                if column.column_type() == crate::model::column_type::ColumnType::Enum
+                    && column.enum_type().is_none()
+                {
                     errors.push(format!(
                         "ERROR: {}.{} is an enum column but has no enumType",
                         table.name(),
@@ -254,7 +271,9 @@ impl Schema {
                             ));
                         }
                         Some(element_type_name) => {
-                            if let Err(e) = crate::model::column_type::ColumnType::from_type_name(element_type_name) {
+                            if let Err(e) = crate::model::column_type::ColumnType::from_type_name(
+                                element_type_name,
+                            ) {
                                 errors.push(format!(
                                     "ERROR: {}.{} is an array column with an invalid elementType '{}': {}",
                                     table.name(),
@@ -282,7 +301,8 @@ impl Schema {
 
                 if matches!(
                     column.column_type(),
-                    crate::model::column_type::ColumnType::Char | crate::model::column_type::ColumnType::Varchar
+                    crate::model::column_type::ColumnType::Char
+                        | crate::model::column_type::ColumnType::Varchar
                 ) && column.length() <= 0
                 {
                     errors.push(format!(
@@ -408,8 +428,18 @@ mod tests {
     #[test]
     fn views_filtered_by_database_type() {
         let mut s = make_schema();
-        s.add_view(View::new(Some("s"), "v1", "sql1", Some(DatabaseType::Postgresql)));
-        s.add_view(View::new(Some("s"), "v2", "sql2", Some(DatabaseType::SqlServer)));
+        s.add_view(View::new(
+            Some("s"),
+            "v1",
+            "sql1",
+            Some(DatabaseType::Postgresql),
+        ));
+        s.add_view(View::new(
+            Some("s"),
+            "v2",
+            "sql2",
+            Some(DatabaseType::SqlServer),
+        ));
         let pg = s.views(DatabaseType::Postgresql);
         assert_eq!(pg.len(), 1);
         assert_eq!(pg[0].name(), "v1");
@@ -531,7 +561,11 @@ mod tests {
 
         let make_table = |name: &str| {
             TableBuilder::new(Some("s"), name)
-                .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "id", CT::Sequence)
+                        .required(true)
+                        .build(),
+                )
                 .build()
         };
 
@@ -555,7 +589,10 @@ mod tests {
             .add_column(ColumnBuilder::new(None::<&str>, "Name", CT::Int).build())
             .add_column(ColumnBuilder::new(None::<&str>, "name", CT::Int).build())
             .build();
-        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+        let errors = SchemaBuilder::new(None::<&str>)
+            .add_table(table)
+            .build()
+            .validate();
 
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("duplicate column name 'name'"));
@@ -568,11 +605,23 @@ mod tests {
         use crate::model::types::KeyType;
 
         let table = TableBuilder::new(None::<&str>, "t")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", CT::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", CT::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_key(KeyBuilder::new(KeyType::Primary).add_column("Idd").build())
-            .add_index(KeyBuilder::new(KeyType::Index).add_column("ID").add_column("nope").build())
+            .add_index(
+                KeyBuilder::new(KeyType::Index)
+                    .add_column("ID")
+                    .add_column("nope")
+                    .build(),
+            )
             .build();
-        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+        let errors = SchemaBuilder::new(None::<&str>)
+            .add_table(table)
+            .build()
+            .validate();
 
         assert_eq!(errors.len(), 2);
         assert!(errors[0].contains("'Idd'"));
@@ -587,9 +636,19 @@ mod tests {
 
         let table = TableBuilder::new(None::<&str>, "t")
             .add_column(ColumnBuilder::new(None::<&str>, "id", CT::Int).build())
-            .add_relation(Relation::new("p", "id", "t", "missing", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "p",
+                "id",
+                "t",
+                "missing",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
-        let errors = SchemaBuilder::new(None::<&str>).add_table(table).build().validate();
+        let errors = SchemaBuilder::new(None::<&str>)
+            .add_table(table)
+            .build()
+            .validate();
 
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("t.missing does not exist"));
@@ -619,7 +678,11 @@ mod tests {
         use crate::model::column_type::ColumnType as CT;
 
         let table = TableBuilder::new(Some("s"), "widget")
-            .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(Some("s"), "id", CT::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_column(ColumnBuilder::new(Some("s"), "big_id", CT::LongSequence).build())
             .build();
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
@@ -637,7 +700,11 @@ mod tests {
         use crate::model::column_type::ColumnType as CT;
 
         let table = TableBuilder::new(Some("s"), "widget")
-            .add_column(ColumnBuilder::new(Some("s"), "id", CT::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(Some("s"), "id", CT::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
 
@@ -793,7 +860,11 @@ mod tests {
         use crate::model::column_type::ColumnType as CT;
 
         let table = TableBuilder::new(Some("s"), "widget")
-            .add_column(ColumnBuilder::new(Some("s"), "code", CT::Char).length(0).build())
+            .add_column(
+                ColumnBuilder::new(Some("s"), "code", CT::Char)
+                    .length(0)
+                    .build(),
+            )
             .build();
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
 
@@ -808,8 +879,16 @@ mod tests {
         use crate::model::column_type::ColumnType as CT;
 
         let table = TableBuilder::new(Some("s"), "widget")
-            .add_column(ColumnBuilder::new(Some("s"), "code", CT::Char).length(1).build())
-            .add_column(ColumnBuilder::new(Some("s"), "name", CT::Varchar).length(100).build())
+            .add_column(
+                ColumnBuilder::new(Some("s"), "code", CT::Char)
+                    .length(1)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(Some("s"), "name", CT::Varchar)
+                    .length(100)
+                    .build(),
+            )
             .build();
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
 

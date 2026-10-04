@@ -25,8 +25,14 @@ fn identifier_tokens(sql: &str) -> HashSet<String> {
 /// satisfies a cycle, and this matches the pre-fix behavior.
 pub fn views_in_dependency_order(views: Vec<View>) -> Vec<View> {
     let count = views.len();
-    let tokens: Vec<HashSet<String>> = views.iter().map(|view| identifier_tokens(view.sql())).collect();
-    let names: Vec<String> = views.iter().map(|view| view.name().to_lowercase()).collect();
+    let tokens: Vec<HashSet<String>> = views
+        .iter()
+        .map(|view| identifier_tokens(view.sql()))
+        .collect();
+    let names: Vec<String> = views
+        .iter()
+        .map(|view| view.name().to_lowercase())
+        .collect();
 
     // dependencies[i] = indexes of the views that view i references.
     let dependencies: Vec<Vec<usize>> = (0..count)
@@ -40,7 +46,9 @@ pub fn views_in_dependency_order(views: Vec<View>) -> Vec<View> {
     let mut emitted = vec![false; count];
     let mut order = Vec::with_capacity(count);
 
-    while let Some(next) = (0..count).find(|&i| !emitted[i] && dependencies[i].iter().all(|&d| emitted[d])) {
+    while let Some(next) =
+        (0..count).find(|&i| !emitted[i] && dependencies[i].iter().all(|&d| emitted[d]))
+    {
         emitted[next] = true;
         order.push(next);
     }
@@ -57,9 +65,7 @@ pub struct DefaultViewGenerator {
 
 impl DefaultViewGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
+        Self { context }
     }
 
     pub fn context(&self) -> &GeneratorContext {
@@ -68,8 +74,7 @@ impl DefaultViewGenerator {
 }
 
 impl ViewGenerator for DefaultViewGenerator {
-    fn output_views(&self) {
-    }
+    fn output_views(&self) {}
 }
 
 #[cfg(test)]
@@ -111,7 +116,10 @@ mod tests {
 
     #[test]
     fn name_inside_a_longer_identifier_is_not_a_dependency() {
-        let ordered = views_in_dependency_order(vec![view("x", "select * from a_users"), view("a", "select 1")]);
+        let ordered = views_in_dependency_order(vec![
+            view("x", "select * from a_users"),
+            view("a", "select 1"),
+        ]);
         assert_eq!(names(&ordered), vec!["x", "a"]);
     }
 

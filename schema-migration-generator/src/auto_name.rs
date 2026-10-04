@@ -24,7 +24,10 @@ pub fn generate_migration_path(
 ) -> PathBuf {
     let dir = match (output_dir, schema_file) {
         (Some(dir), _) => Path::new(dir).to_path_buf(),
-        (None, Some(schema_file)) => Path::new(schema_file).parent().unwrap_or_else(|| Path::new(".")).to_path_buf(),
+        (None, Some(schema_file)) => Path::new(schema_file)
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf(),
         (None, None) => Path::new(".").to_path_buf(),
     };
     dir.join(generate_migration_filename(timestamp, description))
@@ -41,8 +44,14 @@ mod tests {
 
     #[test]
     fn generates_filename_without_description() {
-        assert_eq!(generate_migration_filename(sample_timestamp(), None), "V20240115143022.sql");
-        assert_eq!(generate_migration_filename(sample_timestamp(), Some("")), "V20240115143022.sql");
+        assert_eq!(
+            generate_migration_filename(sample_timestamp(), None),
+            "V20240115143022.sql"
+        );
+        assert_eq!(
+            generate_migration_filename(sample_timestamp(), Some("")),
+            "V20240115143022.sql"
+        );
     }
 
     #[test]
@@ -55,10 +64,20 @@ mod tests {
 
     #[test]
     fn derives_directory_from_schema_file_path() {
-        let path = generate_migration_path(Some("migrations/schema.xml"), None, sample_timestamp(), None);
+        let path = generate_migration_path(
+            Some("migrations/schema.xml"),
+            None,
+            sample_timestamp(),
+            None,
+        );
         assert_eq!(path, PathBuf::from("migrations/V20240115143022.sql"));
 
-        let path = generate_migration_path(Some("schema.xml"), None, sample_timestamp(), Some("add users table"));
+        let path = generate_migration_path(
+            Some("schema.xml"),
+            None,
+            sample_timestamp(),
+            Some("add users table"),
+        );
         assert_eq!(path, PathBuf::from("V20240115143022__add_users_table.sql"));
     }
 
@@ -70,7 +89,10 @@ mod tests {
             sample_timestamp(),
             Some("add users table"),
         );
-        assert_eq!(path, PathBuf::from("build/migrations/V20240115143022__add_users_table.sql"));
+        assert_eq!(
+            path,
+            PathBuf::from("build/migrations/V20240115143022__add_users_table.sql")
+        );
     }
 
     #[test]
@@ -81,7 +103,15 @@ mod tests {
 
     #[test]
     fn output_dir_is_used_when_there_is_no_schema_file() {
-        let path = generate_migration_path(None, Some("build/migrations"), sample_timestamp(), Some("add users table"));
-        assert_eq!(path, PathBuf::from("build/migrations/V20240115143022__add_users_table.sql"));
+        let path = generate_migration_path(
+            None,
+            Some("build/migrations"),
+            sample_timestamp(),
+            Some("add users table"),
+        );
+        assert_eq!(
+            path,
+            PathBuf::from("build/migrations/V20240115143022__add_users_table.sql")
+        );
     }
 }

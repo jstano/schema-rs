@@ -102,7 +102,8 @@ impl DefaultColumnGenerator {
         let primary_key_columns = table.primary_key_columns();
 
         if column.required()
-            && primary_key_columns.is_some_and(|columns| columns.contains(&column.name().to_string()))
+            && primary_key_columns
+                .is_some_and(|columns| columns.contains(&column.name().to_string()))
             && table.column_relation(column).is_none()
         {
             return Some(self.column_type_generator.uuid_default_value_sql(schema));
@@ -122,8 +123,11 @@ impl DefaultColumnGenerator {
                 format!("constraint {} default {}", column.name(), default_value)
             }
             DefaultConstraintNaming::NamedWithHash => {
-                let constraint_name =
-                    constraint_naming::hashed_constraint_name(DF_PREFIX, table.name(), column.name());
+                let constraint_name = constraint_naming::hashed_constraint_name(
+                    DF_PREFIX,
+                    table.name(),
+                    column.name(),
+                );
                 format!("constraint {} default {}", constraint_name, default_value)
             }
         }
@@ -176,7 +180,10 @@ impl ColumnGenerator for DefaultColumnGenerator {
                 options.push(' ');
             }
 
-            options.push_str(self.default_constraint(table, column, default_value.as_ref()).as_str());
+            options.push_str(
+                self.default_constraint(table, column, default_value.as_ref())
+                    .as_str(),
+            );
         }
 
         options.trim().to_string()
@@ -206,17 +213,39 @@ mod tests {
     /// exist purely to satisfy the trait's other required methods.
     struct DummyColumnTypeGenerator(GeneratorContext);
     impl ColumnTypeGenerator for DummyColumnTypeGenerator {
-        fn context(&self) -> &GeneratorContext { &self.0 }
-        fn sequence_sql(&self) -> String { String::new() }
-        fn long_sequence_sql(&self) -> String { String::new() }
-        fn text_sql(&self, _column: &Column) -> String { String::new() }
-        fn citext_sql(&self) -> String { String::new() }
-        fn cstext_sql(&self) -> String { String::new() }
-        fn binary_sql(&self, _column: &Column) -> String { String::new() }
-        fn uuid_default_value_sql(&self, _schema: &Schema) -> String { String::new() }
-        fn array_sql(&self, _column: &Column) -> String { String::new() }
-        fn json_sql(&self, _column: &Column) -> String { String::new() }
-        fn native_boolean_sql(&self) -> String { "boolean".to_string() }
+        fn context(&self) -> &GeneratorContext {
+            &self.0
+        }
+        fn sequence_sql(&self) -> String {
+            String::new()
+        }
+        fn long_sequence_sql(&self) -> String {
+            String::new()
+        }
+        fn text_sql(&self, _column: &Column) -> String {
+            String::new()
+        }
+        fn citext_sql(&self) -> String {
+            String::new()
+        }
+        fn cstext_sql(&self) -> String {
+            String::new()
+        }
+        fn binary_sql(&self, _column: &Column) -> String {
+            String::new()
+        }
+        fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
+            String::new()
+        }
+        fn array_sql(&self, _column: &Column) -> String {
+            String::new()
+        }
+        fn json_sql(&self, _column: &Column) -> String {
+            String::new()
+        }
+        fn native_boolean_sql(&self) -> String {
+            "boolean".to_string()
+        }
     }
 
     fn boolean_column_default(default_constraint: Option<&str>) -> Option<String> {
@@ -224,9 +253,14 @@ mod tests {
         if let Some(default_constraint) = default_constraint {
             builder = builder.default_constraint(Some(default_constraint.to_string()));
         }
-        let table = TableBuilder::new(None::<&str>, "widget").add_column(builder.build()).build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let table = TableBuilder::new(None::<&str>, "widget")
+            .add_column(builder.build())
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnGenerator::new(
@@ -254,14 +288,24 @@ mod tests {
     #[test]
     fn boolean_column_default_recognizes_truthy_spellings() {
         for value in ["true", "TRUE", " true ", "1", "yes", "on"] {
-            assert_eq!(boolean_column_default(Some(value)), Some("true".to_string()), "value: {:?}", value);
+            assert_eq!(
+                boolean_column_default(Some(value)),
+                Some("true".to_string()),
+                "value: {:?}",
+                value
+            );
         }
     }
 
     #[test]
     fn boolean_column_default_recognizes_falsy_spellings() {
         for value in ["false", "FALSE", "0", "no", "off"] {
-            assert_eq!(boolean_column_default(Some(value)), Some("false".to_string()), "value: {:?}", value);
+            assert_eq!(
+                boolean_column_default(Some(value)),
+                Some("false".to_string()),
+                "value: {:?}",
+                value
+            );
         }
     }
 
@@ -270,6 +314,9 @@ mod tests {
         // `Schema::validate()` rejects this before generation ever runs (see schema-model's
         // `Schema::validate` tests), so this only exercises the defensive fallback for a
         // caller that invokes the generator directly without validating first.
-        assert_eq!(boolean_column_default(Some("maybe")), Some("false".to_string()));
+        assert_eq!(
+            boolean_column_default(Some("maybe")),
+            Some("false".to_string())
+        );
     }
 }

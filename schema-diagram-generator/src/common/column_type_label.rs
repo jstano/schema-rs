@@ -64,7 +64,11 @@ mod tests {
             (ColumnType::Array, "array"),
         ];
         for (column_type, expected) in cases {
-            assert_eq!(column_type_label(column_type), expected, "failed for {column_type:?}");
+            assert_eq!(
+                column_type_label(column_type),
+                expected,
+                "failed for {column_type:?}"
+            );
         }
     }
 }

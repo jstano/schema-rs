@@ -36,9 +36,11 @@ pub struct DatabaseModel {
 }
 
 impl DatabaseModel {
-    pub fn new(boolean_mode: BooleanMode,
-               foreign_key_mode: ForeignKeyMode,
-               schemas: Vec<Schema>) -> Self {
+    pub fn new(
+        boolean_mode: BooleanMode,
+        foreign_key_mode: ForeignKeyMode,
+        schemas: Vec<Schema>,
+    ) -> Self {
         Self {
             boolean_mode,
             foreign_key_mode,
@@ -102,12 +104,19 @@ impl DatabaseModel {
     /// Returns the schema that owns the enum (`None` = the default schema) alongside it,
     /// since a generator that emits a schema-qualified type name needs the owner, not
     /// the referring column's schema (M4).
-    pub fn resolve_enum_type(&self, schema_name: Option<&str>, enum_type: &str) -> Option<(Option<&str>, &EnumType)> {
+    pub fn resolve_enum_type(
+        &self,
+        schema_name: Option<&str>,
+        enum_type: &str,
+    ) -> Option<(Option<&str>, &EnumType)> {
         let in_schema = |name: Option<&str>| {
             self.schemas
                 .iter()
                 .find(|s| schema_names_match(s.schema_name(), name))
-                .and_then(|s| s.get_optional_enum_type(enum_type).map(|found| (s.schema_name(), found)))
+                .and_then(|s| {
+                    s.get_optional_enum_type(enum_type)
+                        .map(|found| (s.schema_name(), found))
+                })
         };
         if schema_name.is_some()
             && let Some(found) = in_schema(schema_name)
@@ -120,14 +129,16 @@ impl DatabaseModel {
     pub fn find_enum_type(&self, schema_name: Option<&str>, enum_type: &str) -> &EnumType {
         self.resolve_enum_type(schema_name, enum_type)
             .map(|(_, found)| found)
-            .unwrap_or_else(|| panic!("Unable to locate an enum type with the name '{}'", enum_type))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Unable to locate an enum type with the name '{}'",
+                    enum_type
+                )
+            })
     }
 
     pub fn all_tables(&self) -> Vec<&Table> {
-        self.schemas
-            .iter()
-            .flat_map(|s| s.tables())
-            .collect()
+        self.schemas.iter().flat_map(|s| s.tables()).collect()
     }
 
     pub fn find_table(&self, schema_name: Option<&str>, table_name: &str) -> &Table {
@@ -136,8 +147,8 @@ impl DatabaseModel {
     }
 
     pub fn find_table_by_qualified_name(&self, qualified_name: &str) -> &Table {
-        let (schema_name, table_name) = split_qualified_name(qualified_name)
-            .unwrap_or_else(|e| panic!("{}", e));
+        let (schema_name, table_name) =
+            split_qualified_name(qualified_name).unwrap_or_else(|e| panic!("{}", e));
 
         self.find_table(schema_name, table_name)
     }
@@ -172,7 +183,9 @@ impl DatabaseModel {
             for table in schema.tables() {
                 for column in table.columns() {
                     if let Some(enum_type_name) = column.enum_type()
-                        && self.resolve_enum_type(schema.schema_name(), enum_type_name).is_none()
+                        && self
+                            .resolve_enum_type(schema.schema_name(), enum_type_name)
+                            .is_none()
                     {
                         errors.push(format!(
                             "ERROR: {}.{} references enum type '{}' which is not defined in {}",
@@ -198,17 +211,18 @@ impl DatabaseModel {
                         relation.from_column_name(),
                         e
                     )),
-                    Ok(_) => match self.find_table_by_qualified_name_checked(relation.to_table_name()) {
-                        None => errors.push(format!(
-                            "ERROR: {}.{} has a relation to '{}' which does not exist",
-                            table.name(),
-                            relation.from_column_name(),
-                            relation.to_table_name()
-                        )),
-                        Some(target) => {
-                            for (from_column, to_column) in relation.column_pairs() {
-                                if !target.has_column(to_column) {
-                                    errors.push(format!(
+                    Ok(_) => {
+                        match self.find_table_by_qualified_name_checked(relation.to_table_name()) {
+                            None => errors.push(format!(
+                                "ERROR: {}.{} has a relation to '{}' which does not exist",
+                                table.name(),
+                                relation.from_column_name(),
+                                relation.to_table_name()
+                            )),
+                            Some(target) => {
+                                for (from_column, to_column) in relation.column_pairs() {
+                                    if !target.has_column(to_column) {
+                                        errors.push(format!(
                                         "ERROR: {}.{} has a relation to {}.{}, but {} has no column '{}'",
                                         table.name(),
                                         from_column,
@@ -217,10 +231,11 @@ impl DatabaseModel {
                                         target.name(),
                                         to_column
                                     ));
+                                    }
                                 }
                             }
                         }
-                    },
+                    }
                 }
             }
         }
@@ -237,8 +252,15 @@ impl DatabaseModel {
     /// or table doesn't exist - useful for callers (e.g. the XML parser) resolving
     /// possibly-malformed input, where a dangling reference should surface as an error
     /// rather than crash.
-    pub fn find_table_mut_checked(&mut self, schema_name: Option<&str>, table_name: &str) -> Option<&mut Table> {
-        let schema = self.schemas.iter_mut().find(|s| schema_names_match(s.schema_name(), schema_name))?;
+    pub fn find_table_mut_checked(
+        &mut self,
+        schema_name: Option<&str>,
+        table_name: &str,
+    ) -> Option<&mut Table> {
+        let schema = self
+            .schemas
+            .iter_mut()
+            .find(|s| schema_names_match(s.schema_name(), schema_name))?;
         schema.get_table_mut_checked(table_name)
     }
 
@@ -266,10 +288,18 @@ mod tests {
         // caught up front.
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("Regoin", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "Regoin",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(child).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let errors = model.validate();
         assert_eq!(errors.len(), 1);
@@ -279,13 +309,24 @@ mod tests {
     #[test]
     fn validate_accepts_a_relation_whose_target_table_exists_in_a_different_schema() {
         let parent = TableBuilder::new(Some("app"), "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let parent_schema = SchemaBuilder::new(Some("app")).add_table(parent).build();
 
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("app.parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "app.parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let default_schema = SchemaBuilder::new(None::<&str>).add_table(child).build();
 
@@ -315,8 +356,11 @@ mod tests {
     #[test]
     fn validate_reports_error_for_column_referencing_an_undeclared_enum_type() {
         // Previously nothing caught this and it panicked deep in SQL generation.
-        let schema = SchemaBuilder::new(Some("s")).add_table(enum_column_table(Some("s"), "StatusType")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(Some("s"))
+            .add_table(enum_column_table(Some("s"), "StatusType"))
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let errors = model.validate();
         assert_eq!(errors.len(), 1);
@@ -327,9 +371,17 @@ mod tests {
     fn validate_accepts_a_database_level_enum_used_from_a_named_schema() {
         // M5: a top-level `<enum>` lives in the default schema; a column inside
         // `<schema name="app">` must be able to reference it.
-        let default_schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_named("StatusType")).build();
-        let app = SchemaBuilder::new(Some("app")).add_table(enum_column_table(Some("app"), "statustype")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let default_schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(enum_named("StatusType"))
+            .build();
+        let app = SchemaBuilder::new(Some("app"))
+            .add_table(enum_column_table(Some("app"), "statustype"))
+            .build();
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app],
+        );
 
         assert!(model.validate().is_empty());
     }
@@ -340,18 +392,40 @@ mod tests {
             .add_enum_type(enum_named("StatusType"))
             .add_enum_type(enum_named("SharedType"))
             .build();
-        let app = SchemaBuilder::new(Some("app")).add_enum_type(enum_named("StatusType")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let app = SchemaBuilder::new(Some("app"))
+            .add_enum_type(enum_named("StatusType"))
+            .build();
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app],
+        );
 
-        assert_eq!(model.resolve_enum_type(Some("app"), "StatusType").unwrap().0, Some("app"));
-        assert_eq!(model.resolve_enum_type(Some("app"), "SharedType").unwrap().0, None);
+        assert_eq!(
+            model
+                .resolve_enum_type(Some("app"), "StatusType")
+                .unwrap()
+                .0,
+            Some("app")
+        );
+        assert_eq!(
+            model
+                .resolve_enum_type(Some("app"), "SharedType")
+                .unwrap()
+                .0,
+            None
+        );
         assert_eq!(model.resolve_enum_type(None, "StatusType").unwrap().0, None);
         assert!(model.resolve_enum_type(None, "Missing").is_none());
     }
 
     fn id_table(schema: Option<&str>, name: &str) -> Table {
         TableBuilder::new(schema, name)
-            .add_column(ColumnBuilder::new(schema, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(schema, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build()
     }
 
@@ -361,10 +435,21 @@ mod tests {
         let parent = id_table(None, "parent");
         let child = TableBuilder::new(None::<&str>, "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("parent", "idd", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "parent",
+                "idd",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let errors = model.validate();
         assert_eq!(errors.len(), 1);
@@ -374,13 +459,26 @@ mod tests {
     #[test]
     fn find_schema_is_case_insensitive() {
         // M12: table and column lookups are case-insensitive; schema lookup must match.
-        let app = SchemaBuilder::new(Some("App")).add_table(id_table(Some("App"), "parent")).build();
+        let app = SchemaBuilder::new(Some("App"))
+            .add_table(id_table(Some("App"), "parent"))
+            .build();
         let default_schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app],
+        );
 
         assert_eq!(model.find_schema(Some("app")).schema_name(), Some("App"));
-        assert_eq!(model.find_table_by_qualified_name("APP.Parent").name(), "parent");
-        assert!(model.find_table_by_qualified_name_checked("app.parent").is_some());
+        assert_eq!(
+            model.find_table_by_qualified_name("APP.Parent").name(),
+            "parent"
+        );
+        assert!(
+            model
+                .find_table_by_qualified_name_checked("app.parent")
+                .is_some()
+        );
     }
 
     #[test]
@@ -389,9 +487,17 @@ mod tests {
         let model = DatabaseModel::new(
             BooleanMode::Native,
             ForeignKeyMode::Relations,
-            vec![SchemaBuilder::new(None::<&str>).add_table(id_table(None, "a.b.c")).build()],
+            vec![
+                SchemaBuilder::new(None::<&str>)
+                    .add_table(id_table(None, "a.b.c"))
+                    .build(),
+            ],
         );
 
-        assert!(model.find_table_by_qualified_name_checked("a.b.c").is_none());
+        assert!(
+            model
+                .find_table_by_qualified_name_checked("a.b.c")
+                .is_none()
+        );
     }
 }

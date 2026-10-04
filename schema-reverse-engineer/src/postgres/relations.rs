@@ -65,7 +65,9 @@ pub async fn list_foreign_keys(
 /// FK constraint (single-column or composite), keyed by the owning (FK/child) table name.
 /// Consecutive rows sharing a `constraint_name` are folded into one group; this relies on the
 /// caller having ordered rows by `constraint_name, ordinal_position` (the SQL query does this).
-fn group_foreign_key_rows(rows: Vec<ForeignKeyRow>) -> Result<HashMap<String, Vec<Relation>>, SchemaReverseEngineerError> {
+fn group_foreign_key_rows(
+    rows: Vec<ForeignKeyRow>,
+) -> Result<HashMap<String, Vec<Relation>>, SchemaReverseEngineerError> {
     let mut groups: Vec<(String, ConstraintGroup)> = Vec::new();
     for row in rows {
         if let Some((last_name, group)) = groups.last_mut()
@@ -88,19 +90,33 @@ fn group_foreign_key_rows(rows: Vec<ForeignKeyRow>) -> Result<HashMap<String, Ve
     let mut by_table: HashMap<String, Vec<Relation>> = HashMap::new();
     for (constraint_name, group) in groups {
         let relation_type = map_delete_rule(&group.delete_rule).map_err(|e| {
-            SchemaReverseEngineerError::Introspection(format!("foreign key constraint '{constraint_name}': {e}"))
+            SchemaReverseEngineerError::Introspection(format!(
+                "foreign key constraint '{constraint_name}': {e}"
+            ))
         })?;
         let relation = if group.column_pairs.len() == 1 {
             let (from_column, to_column) = group.column_pairs.into_iter().next().unwrap();
-            Relation::new(group.to_table, to_column, group.from_table.clone(), from_column, relation_type, false)
+            Relation::new(
+                group.to_table,
+                to_column,
+                group.from_table.clone(),
+                from_column,
+                relation_type,
+                false,
+            )
         } else {
-            Relation::new_composite(group.to_table, group.from_table.clone(), group.column_pairs, relation_type, false).map_err(
-                |e| {
-                    SchemaReverseEngineerError::Introspection(format!(
-                        "foreign key constraint '{constraint_name}': {e}"
-                    ))
-                },
-            )?
+            Relation::new_composite(
+                group.to_table,
+                group.from_table.clone(),
+                group.column_pairs,
+                relation_type,
+                false,
+            )
+            .map_err(|e| {
+                SchemaReverseEngineerError::Introspection(format!(
+                    "foreign key constraint '{constraint_name}': {e}"
+                ))
+            })?
         };
         by_table.entry(group.from_table).or_default().push(relation);
     }
@@ -115,7 +131,9 @@ fn map_delete_rule(delete_rule: &str) -> Result<RelationType, String> {
         "CASCADE" => Ok(RelationType::Cascade),
         "SET NULL" => Ok(RelationType::SetNull),
         "RESTRICT" | "NO ACTION" => Ok(RelationType::Enforce),
-        other => Err(format!("unsupported ON DELETE rule '{other}' (supported: CASCADE, SET NULL, RESTRICT, NO ACTION)")),
+        other => Err(format!(
+            "unsupported ON DELETE rule '{other}' (supported: CASCADE, SET NULL, RESTRICT, NO ACTION)"
+        )),
     }
 }
 
@@ -123,7 +141,14 @@ fn map_delete_rule(delete_rule: &str) -> Result<RelationType, String> {
 mod tests {
     use super::*;
 
-    fn row(constraint_name: &str, from_table: &str, from_column: &str, to_table: &str, to_column: &str, delete_rule: &str) -> ForeignKeyRow {
+    fn row(
+        constraint_name: &str,
+        from_table: &str,
+        from_column: &str,
+        to_table: &str,
+        to_column: &str,
+        delete_rule: &str,
+    ) -> ForeignKeyRow {
         ForeignKeyRow {
             constraint_name: constraint_name.to_string(),
             from_table: from_table.to_string(),
@@ -136,7 +161,14 @@ mod tests {
 
     #[test]
     fn set_default_delete_rule_is_rejected() {
-        let rows = vec![row("fk_a", "child", "a_id", "parent_a", "id", "SET DEFAULT")];
+        let rows = vec![row(
+            "fk_a",
+            "child",
+            "a_id",
+            "parent_a",
+            "id",
+            "SET DEFAULT",
+        )];
         let err = group_foreign_key_rows(rows).unwrap_err().to_string();
         assert!(err.contains("SET DEFAULT"), "got: {err}");
     }
@@ -156,8 +188,22 @@ mod tests {
     #[test]
     fn multi_row_same_constraint_groups_into_one_composite_relation() {
         let rows = vec![
-            row("fk_assignment", "Assignment", "ParentAssignmentID", "Assignment", "ID", "CASCADE"),
-            row("fk_assignment", "Assignment", "PropertyID", "Assignment", "PropertyID", "CASCADE"),
+            row(
+                "fk_assignment",
+                "Assignment",
+                "ParentAssignmentID",
+                "Assignment",
+                "ID",
+                "CASCADE",
+            ),
+            row(
+                "fk_assignment",
+                "Assignment",
+                "PropertyID",
+                "Assignment",
+                "PropertyID",
+                "CASCADE",
+            ),
         ];
         let by_table = group_foreign_key_rows(rows).unwrap();
         let relations = &by_table["Assignment"];

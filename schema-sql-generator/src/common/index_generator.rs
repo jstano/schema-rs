@@ -59,7 +59,12 @@ impl DefaultIndexGenerator {
     /// Same as `output_indexes_via`, one table at a time - see that method for why
     /// dispatching through `generator` (rather than calling `self.output_index` directly)
     /// matters.
-    pub fn output_indexes_for_table_via(&self, generator: &dyn IndexGenerator, writer: &mut SqlWriter, table: &Table) {
+    pub fn output_indexes_for_table_via(
+        &self,
+        generator: &dyn IndexGenerator,
+        writer: &mut SqlWriter,
+        table: &Table,
+    ) {
         if !table.indexes().is_empty() {
             let database_type = self.context().settings().database_type();
 
@@ -96,7 +101,8 @@ impl DefaultIndexGenerator {
         key: &Key,
         index_options: Option<String>,
     ) {
-        let fully_qualified_table_name = table.fully_qualified_table_name(self.context().settings().database_type());
+        let fully_qualified_table_name =
+            table.fully_qualified_table_name(self.context().settings().database_type());
         let index_columns = key
             .columns()
             .iter()
@@ -115,7 +121,7 @@ impl DefaultIndexGenerator {
                     index_options,
                     statement_separator
                 )
-                    .as_str(),
+                .as_str(),
             );
         } else {
             writer.println(
@@ -127,7 +133,7 @@ impl DefaultIndexGenerator {
                     index_columns,
                     statement_separator
                 )
-                    .as_str(),
+                .as_str(),
             );
         }
     }
@@ -151,7 +157,14 @@ impl IndexGenerator for DefaultIndexGenerator {
         key: &Key,
     ) {
         let index_options = self.index_options(key);
-        self.render_index(writer, statement_separator, table, key_name, key, index_options);
+        self.render_index(
+            writer,
+            statement_separator,
+            table,
+            key_name,
+            key,
+            index_options,
+        );
     }
 
     fn index_options(&self, _key: &Key) -> Option<String> {
@@ -162,7 +175,11 @@ impl IndexGenerator for DefaultIndexGenerator {
 /// Formats a comma-separated column list from XML (e.g. `"name,code"`) as SQL wants it
 /// (e.g. `"name, code"`), trimming any incidental whitespace around each name.
 pub(crate) fn format_column_list(columns: &str) -> String {
-    columns.split(',').map(|c| c.trim()).collect::<Vec<_>>().join(", ")
+    columns
+        .split(',')
+        .map(|c| c.trim())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -184,8 +201,11 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, long_table_name.as_str())
             .add_index(idx)
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultIndexGenerator::new(ctx);
@@ -203,11 +223,17 @@ mod tests {
         let long_table_name = "a".repeat(40);
         let mut table_builder = TableBuilder::new(None::<&str>, long_table_name.as_str());
         for i in 0..10 {
-            table_builder = table_builder.add_index(Key::new(KeyType::Index, vec![KeyColumn::new(format!("col{i}"))]));
+            table_builder = table_builder.add_index(Key::new(
+                KeyType::Index,
+                vec![KeyColumn::new(format!("col{i}"))],
+            ));
         }
         let table = table_builder.build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultIndexGenerator::new(ctx);
@@ -216,7 +242,11 @@ mod tests {
         let output = buffer.contents();
         for line in output.lines().filter(|l| l.starts_with("create index")) {
             let name = line.split_whitespace().nth(2).unwrap();
-            assert!(name.len() <= 32, "index name '{}' exceeds SQL Server's 32 char limit", name);
+            assert!(
+                name.len() <= 32,
+                "index name '{}' exceeds SQL Server's 32 char limit",
+                name
+            );
         }
         assert!(output.contains("ix_"));
     }

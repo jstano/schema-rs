@@ -22,7 +22,8 @@ pub fn read_schema_source(source: &str) -> Result<String, String> {
         return read_from_git(rev, path, source);
     }
 
-    fs::read_to_string(source).map_err(|err| format!("failed to read schema file '{}': {}", source, err))
+    fs::read_to_string(source)
+        .map_err(|err| format!("failed to read schema file '{}': {}", source, err))
 }
 
 /// Reads `path` from disk and its `HEAD` version from git, for the `--file`
@@ -33,21 +34,29 @@ pub fn read_schema_source(source: &str) -> Result<String, String> {
 pub fn read_file_against_head(path: &str) -> Result<(String, String), String> {
     match check_git_availability() {
         GitAvailability::NotInstalled => {
-            return Err("--file requires git, but the 'git' command was not found on PATH.".to_string());
+            return Err(
+                "--file requires git, but the 'git' command was not found on PATH.".to_string(),
+            );
         }
         GitAvailability::NotARepo => {
-            return Err("--file requires a git repository, but the current directory is not inside one.".to_string());
+            return Err(
+                "--file requires a git repository, but the current directory is not inside one."
+                    .to_string(),
+            );
         }
         GitAvailability::Available => {}
     }
 
     if !git_rev_exists("HEAD") {
-        return Err("--file requires a commit at HEAD, but this repository has no commits yet.".to_string());
+        return Err(
+            "--file requires a commit at HEAD, but this repository has no commits yet.".to_string(),
+        );
     }
 
     let source = format!("HEAD:{}", path);
     let old = read_from_git("HEAD", path, &source)?;
-    let new = fs::read_to_string(path).map_err(|err| format!("failed to read schema file '{}': {}", path, err))?;
+    let new = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read schema file '{}': {}", path, err))?;
     Ok((old, new))
 }
 
@@ -66,7 +75,10 @@ fn maybe_git_ref(source: &str) -> Option<(&str, &str)> {
 }
 
 fn check_git_availability() -> GitAvailability {
-    match Command::new("git").args(["rev-parse", "--is-inside-work-tree"]).output() {
+    match Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+    {
         Ok(output) if output.status.success() => GitAvailability::Available,
         Ok(_) => GitAvailability::NotARepo,
         Err(_) => GitAvailability::NotInstalled,
@@ -75,7 +87,12 @@ fn check_git_availability() -> GitAvailability {
 
 fn git_rev_exists(rev: &str) -> bool {
     Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet", &format!("{}^{{commit}}", rev)])
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{}^{{commit}}", rev),
+        ])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
@@ -95,5 +112,6 @@ fn read_from_git(rev: &str, path: &str, source: &str) -> Result<String, String> 
         ));
     }
 
-    String::from_utf8(output.stdout).map_err(|err| format!("'{}' is not valid UTF-8: {}", source, err))
+    String::from_utf8(output.stdout)
+        .map_err(|err| format!("'{}' is not valid UTF-8: {}", source, err))
 }

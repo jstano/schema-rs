@@ -13,7 +13,7 @@ use schema_model::model::types::ForeignKeyMode;
 pub trait SqlGenerator {
     fn context(&self) -> &GeneratorContext;
 
-    fn generate(&self)  {
+    fn generate(&self) {
         self.output_sql();
     }
 
@@ -133,8 +133,7 @@ impl SqlGenerator for DefaultSqlGenerator {
         }
     }
 
-    fn output_header(&self) {
-    }
+    fn output_header(&self) {}
 
     fn output_tables(&self) {
         self.table_generator.output_tables();
@@ -212,7 +211,9 @@ mod tests {
 
     struct FakeTableGenerator(CallLog);
     impl TableGenerator for FakeTableGenerator {
-        fn output_tables(&self) { self.0.record("tables"); }
+        fn output_tables(&self) {
+            self.0.record("tables");
+        }
         fn output_table(&self, _table: &Table) {}
         fn output_table_drop(&self, _table: &Table) {}
         fn output_table_header(&self, _table: &Table) {}
@@ -224,45 +225,89 @@ mod tests {
 
     struct FakeRelationGenerator(CallLog);
     impl RelationGenerator for FakeRelationGenerator {
-        fn output_relations(&self) { self.0.record("relations"); }
+        fn output_relations(&self) {
+            self.0.record("relations");
+        }
     }
 
     struct FakeIndexGenerator(CallLog);
     impl IndexGenerator for FakeIndexGenerator {
-        fn output_indexes(&self) { self.0.record("indexes"); }
+        fn output_indexes(&self) {
+            self.0.record("indexes");
+        }
         fn output_indexes_for_table(&self, _writer: &mut SqlWriter, _table: &Table) {}
-        fn output_index(&self, _writer: &mut SqlWriter, _statement_separator: &str, _table: &Table, _key_name: &str, _key: &Key) {}
-        fn index_options(&self, _key: &Key) -> Option<String> { None }
+        fn output_index(
+            &self,
+            _writer: &mut SqlWriter,
+            _statement_separator: &str,
+            _table: &Table,
+            _key_name: &str,
+            _key: &Key,
+        ) {
+        }
+        fn index_options(&self, _key: &Key) -> Option<String> {
+            None
+        }
     }
 
     struct FakeFunctionGenerator(CallLog);
     impl FunctionGenerator for FakeFunctionGenerator {
-        fn output_functions(&self) { self.0.record("functions"); }
-        fn output_function(&self, _writer: &mut SqlWriter, _statement_separator: &str, _function: &schema_model::model::function::Function) {}
+        fn output_functions(&self) {
+            self.0.record("functions");
+        }
+        fn output_function(
+            &self,
+            _writer: &mut SqlWriter,
+            _statement_separator: &str,
+            _function: &schema_model::model::function::Function,
+        ) {
+        }
     }
 
     struct FakeViewGenerator(CallLog);
     impl ViewGenerator for FakeViewGenerator {
-        fn output_views(&self) { self.0.record("views"); }
+        fn output_views(&self) {
+            self.0.record("views");
+        }
     }
 
     struct FakeProcedureGenerator(CallLog);
     impl ProcedureGenerator for FakeProcedureGenerator {
-        fn output_procedures(&self) { self.0.record("procedures"); }
-        fn output_procedure(&self, _writer: &mut SqlWriter, _statement_separator: &str, _procedure: &schema_model::model::procedure::Procedure) {}
+        fn output_procedures(&self) {
+            self.0.record("procedures");
+        }
+        fn output_procedure(
+            &self,
+            _writer: &mut SqlWriter,
+            _statement_separator: &str,
+            _procedure: &schema_model::model::procedure::Procedure,
+        ) {
+        }
     }
 
     struct FakeTriggerGenerator(CallLog);
     impl TriggerGenerator for FakeTriggerGenerator {
-        fn output_triggers(&self) { self.0.record("triggers"); }
+        fn output_triggers(&self) {
+            self.0.record("triggers");
+        }
         fn output_triggers_for_table(&self, _table: &schema_model::model::table::Table) {}
     }
 
     struct FakeOtherSqlGenerator(CallLog);
     impl OtherSqlGenerator for FakeOtherSqlGenerator {
-        fn output_other_sql_top(&self) { self.0.record("other_sql_top"); }
-        fn output_other_sql_bottom(&self) { self.0.record("other_sql_bottom"); }
-        fn output_other_sql(&self, _writer: &mut SqlWriter, _statement_separator: &str, _sql: &str) {}
+        fn output_other_sql_top(&self) {
+            self.0.record("other_sql_top");
+        }
+        fn output_other_sql_bottom(&self) {
+            self.0.record("other_sql_bottom");
+        }
+        fn output_other_sql(
+            &self,
+            _writer: &mut SqlWriter,
+            _statement_separator: &str,
+            _sql: &str,
+        ) {
+        }
     }
 
     fn make_generator(
@@ -271,7 +316,8 @@ mod tests {
     ) -> (DefaultSqlGenerator, CallLog) {
         let log = CallLog::default();
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let mut options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
@@ -303,7 +349,16 @@ mod tests {
 
         assert_eq!(
             log.calls(),
-            vec!["other_sql_top", "tables", "relations", "triggers", "functions", "views", "procedures", "other_sql_bottom"]
+            vec![
+                "other_sql_top",
+                "tables",
+                "relations",
+                "triggers",
+                "functions",
+                "views",
+                "procedures",
+                "other_sql_bottom"
+            ]
         );
     }
 
@@ -314,7 +369,15 @@ mod tests {
 
         assert_eq!(
             log.calls(),
-            vec!["other_sql_top", "tables", "triggers", "functions", "views", "procedures", "other_sql_bottom"]
+            vec![
+                "other_sql_top",
+                "tables",
+                "triggers",
+                "functions",
+                "views",
+                "procedures",
+                "other_sql_bottom"
+            ]
         );
         assert!(!log.calls().contains(&"relations"));
     }

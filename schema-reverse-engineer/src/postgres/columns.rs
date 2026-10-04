@@ -55,7 +55,10 @@ pub async fn list_columns(
     .await
     .map_err(|e| SchemaReverseEngineerError::Introspection(e.to_string()))?;
 
-    Ok(rows.into_iter().map(|row| build_column_info(row, enum_type_names)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| build_column_info(row, enum_type_names))
+        .collect())
 }
 
 fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> ColumnInfo {
@@ -70,18 +73,24 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Colum
     // An unsupported type (inet, money, xml, hstore, PostGIS, ...) falls back to `Text` with a
     // warning rather than aborting the whole run -- losing one column's exact type is far
     // better than producing no output file at all for the rest of the database.
-    let (column_type, element_type) =
-        match map_column_type(&row.data_type, &row.udt_name, is_autoincrement, enum_type_names) {
-            Ok(mapped) => mapped,
-            Err(SchemaReverseEngineerError::UnsupportedColumnType(type_name)) => {
-                eprintln!(
-                    "warning: {}.{} has unsupported type '{}' -- falling back to text",
-                    row.table_name, row.column_name, type_name
-                );
-                (ColumnType::Text, None)
-            }
-            Err(other) => unreachable!("map_column_type only ever returns UnsupportedColumnType: {other}"),
-        };
+    let (column_type, element_type) = match map_column_type(
+        &row.data_type,
+        &row.udt_name,
+        is_autoincrement,
+        enum_type_names,
+    ) {
+        Ok(mapped) => mapped,
+        Err(SchemaReverseEngineerError::UnsupportedColumnType(type_name)) => {
+            eprintln!(
+                "warning: {}.{} has unsupported type '{}' -- falling back to text",
+                row.table_name, row.column_name, type_name
+            );
+            (ColumnType::Text, None)
+        }
+        Err(other) => {
+            unreachable!("map_column_type only ever returns UnsupportedColumnType: {other}")
+        }
+    };
 
     let enum_type = if column_type == ColumnType::Enum {
         Some(row.udt_name.clone())
@@ -90,7 +99,9 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Colum
     };
 
     let length = match column_type {
-        ColumnType::Varchar | ColumnType::Char | ColumnType::CiText => row.character_maximum_length.unwrap_or(0),
+        ColumnType::Varchar | ColumnType::Char | ColumnType::CiText => {
+            row.character_maximum_length.unwrap_or(0)
+        }
         ColumnType::Decimal => row.numeric_precision.unwrap_or(0),
         _ => 0,
     };
@@ -112,11 +123,12 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Colum
     // Postgres always reports a default expression for identity/sequence columns
     // (e.g. `nextval(...)`); suppress it here since the column type itself already
     // conveys that it's auto-generated (matches the Java writer's behavior).
-    let default_constraint = if is_generated || matches!(column_type, ColumnType::Sequence | ColumnType::LongSequence) {
-        None
-    } else {
-        row.column_default
-    };
+    let default_constraint =
+        if is_generated || matches!(column_type, ColumnType::Sequence | ColumnType::LongSequence) {
+            None
+        } else {
+            row.column_default
+        };
 
     ColumnInfo {
         table_name: row.table_name,
@@ -148,8 +160,12 @@ pub fn map_column_type(
 ) -> Result<(ColumnType, Option<String>), SchemaReverseEngineerError> {
     if data_type == "ARRAY" {
         let element_udt = udt_name.strip_prefix('_').unwrap_or(udt_name);
-        let (element_column_type, _) = base_type_to_column_type(element_udt, false, enum_type_names)?;
-        return Ok((ColumnType::Array, Some(element_column_type.name().to_lowercase())));
+        let (element_column_type, _) =
+            base_type_to_column_type(element_udt, false, enum_type_names)?;
+        return Ok((
+            ColumnType::Array,
+            Some(element_column_type.name().to_lowercase()),
+        ));
     }
 
     base_type_to_column_type(udt_name, is_autoincrement, enum_type_names)
@@ -195,7 +211,11 @@ fn base_type_to_column_type(
         "uuid" => ColumnType::Uuid,
         "json" | "jsonb" => ColumnType::Json,
         other if enum_type_names.contains(other) => ColumnType::Enum,
-        other => return Err(SchemaReverseEngineerError::UnsupportedColumnType(other.to_string())),
+        other => {
+            return Err(SchemaReverseEngineerError::UnsupportedColumnType(
+                other.to_string(),
+            ));
+        }
     };
     Ok((column_type, None))
 }
@@ -211,15 +231,27 @@ mod tests {
     #[test]
     fn maps_uuid_and_jsonb() {
         let none = enums(&[]);
-        assert_eq!(map_column_type("uuid", "uuid", false, &none).unwrap().0, ColumnType::Uuid);
-        assert_eq!(map_column_type("jsonb", "jsonb", false, &none).unwrap().0, ColumnType::Json);
-        assert_eq!(map_column_type("USER-DEFINED", "json", false, &none).unwrap().0, ColumnType::Json);
+        assert_eq!(
+            map_column_type("uuid", "uuid", false, &none).unwrap().0,
+            ColumnType::Uuid
+        );
+        assert_eq!(
+            map_column_type("jsonb", "jsonb", false, &none).unwrap().0,
+            ColumnType::Json
+        );
+        assert_eq!(
+            map_column_type("USER-DEFINED", "json", false, &none)
+                .unwrap()
+                .0,
+            ColumnType::Json
+        );
     }
 
     #[test]
     fn maps_native_enum_type() {
         let mood = enums(&["mood"]);
-        let (column_type, element_type) = map_column_type("USER-DEFINED", "mood", false, &mood).unwrap();
+        let (column_type, element_type) =
+            map_column_type("USER-DEFINED", "mood", false, &mood).unwrap();
         assert_eq!(column_type, ColumnType::Enum);
         assert_eq!(element_type, None);
     }
@@ -256,14 +288,22 @@ mod tests {
     #[test]
     fn maps_numeric_to_decimal() {
         let none = enums(&[]);
-        assert_eq!(map_column_type("numeric", "numeric", false, &none).unwrap().0, ColumnType::Decimal);
+        assert_eq!(
+            map_column_type("numeric", "numeric", false, &none)
+                .unwrap()
+                .0,
+            ColumnType::Decimal
+        );
     }
 
     #[test]
     fn unknown_type_is_an_error() {
         let none = enums(&[]);
         let err = map_column_type("USER-DEFINED", "some_domain", false, &none).unwrap_err();
-        assert!(matches!(err, SchemaReverseEngineerError::UnsupportedColumnType(_)));
+        assert!(matches!(
+            err,
+            SchemaReverseEngineerError::UnsupportedColumnType(_)
+        ));
     }
 
     fn column_row(data_type: &str, udt_name: &str) -> ColumnRow {

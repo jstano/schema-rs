@@ -48,7 +48,9 @@ pub fn tables_in_drop_order(database_model: &DatabaseModel) -> Vec<&Table> {
 
     for (child_index, table) in tables.iter().enumerate() {
         for relation in table.relations() {
-            let Some(parent_table) = database_model.find_table_by_qualified_name_checked(relation.to_table_name()) else {
+            let Some(parent_table) =
+                database_model.find_table_by_qualified_name_checked(relation.to_table_name())
+            else {
                 continue;
             };
             let Some(&parent_index) = index_of_table.get(&(parent_table as *const Table)) else {
@@ -64,7 +66,9 @@ pub fn tables_in_drop_order(database_model: &DatabaseModel) -> Vec<&Table> {
         }
     }
 
-    let mut queue: VecDeque<usize> = (0..table_count).filter(|&index| in_degree[index] == 0).collect();
+    let mut queue: VecDeque<usize> = (0..table_count)
+        .filter(|&index| in_degree[index] == 0)
+        .collect();
     let mut order = Vec::with_capacity(table_count);
 
     while let Some(index) = queue.pop_front() {
@@ -119,11 +123,19 @@ impl DefaultTableGenerator {
     /// (e.g. dialect-specific inline foreign key constraints) to the comma-separated
     /// list before printing.
     pub fn output_table_definition_with_extra(&self, table: &Table, extra: Vec<String>) {
-        let table_definitions: Vec<String> = self.column_generator.column_definitions(table)
+        let table_definitions: Vec<String> = self
+            .column_generator
+            .column_definitions(table)
             .into_iter()
             .chain(self.key_generator.key_constraints(table))
-            .chain(self.column_constraint_generator.column_check_constraints(table))
-            .chain(self.table_constraint_generator.table_check_constraints(table))
+            .chain(
+                self.column_constraint_generator
+                    .column_check_constraints(table),
+            )
+            .chain(
+                self.table_constraint_generator
+                    .table_check_constraints(table),
+            )
             .chain(extra)
             .filter(|sql| !sql.is_empty())
             .collect();
@@ -159,10 +171,9 @@ impl TableGenerator for DefaultTableGenerator {
                 self.output_table_footer(table);
                 self.output_indexes(table);
                 self.output_initial_data(table);
-            };
+            }
         }
     }
-
 
     fn output_table(&self, table: &Table) {
         self.output_table_drop(table);
@@ -177,22 +188,36 @@ impl TableGenerator for DefaultTableGenerator {
         let is_postgres = self.context.settings().database_type() == DatabaseType::Postgresql;
         let cascade_suffix = if is_postgres { " cascade" } else { "" };
         let separator = self.context.settings().statement_separator().to_string();
-        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
+        let fully_qualified_table_name =
+            table.fully_qualified_table_name(self.context.settings().database_type());
 
         self.context.with_writer(|writer| {
             if is_postgres {
                 sql_println!(writer, "/* {} */", fully_qualified_table_name);
-                sql_println!(writer, "drop table if exists {}{}{}", fully_qualified_table_name, cascade_suffix, separator);
+                sql_println!(
+                    writer,
+                    "drop table if exists {}{}{}",
+                    fully_qualified_table_name,
+                    cascade_suffix,
+                    separator
+                );
                 sql_println!(writer, "");
             } else {
-                sql_println!(writer, "drop table if exists {}{}{}", fully_qualified_table_name, cascade_suffix, separator);
+                sql_println!(
+                    writer,
+                    "drop table if exists {}{}{}",
+                    fully_qualified_table_name,
+                    cascade_suffix,
+                    separator
+                );
                 sql_println!(writer, "/* {} */", fully_qualified_table_name);
             }
         });
     }
 
     fn output_table_header(&self, table: &Table) {
-        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
+        let fully_qualified_table_name =
+            table.fully_qualified_table_name(self.context.settings().database_type());
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "create table {}", fully_qualified_table_name);
@@ -218,15 +243,24 @@ impl TableGenerator for DefaultTableGenerator {
     }
 
     fn output_initial_data(&self, table: &Table) {
-        let initial_data = table.initial_data()
+        let initial_data = table
+            .initial_data()
             .iter()
-            .filter(|it| { it.database_type().is_none() || it.database_type().unwrap() == self.context.settings().database_type() })
+            .filter(|it| {
+                it.database_type().is_none()
+                    || it.database_type().unwrap() == self.context.settings().database_type()
+            })
             .collect::<Vec<_>>();
 
         if !initial_data.is_empty() {
             self.context.with_writer(|writer| {
                 initial_data.iter().for_each(|it| {
-                    sql_println!(writer, "{}{}", it.sql(), self.context.settings().statement_separator());
+                    sql_println!(
+                        writer,
+                        "{}{}",
+                        it.sql(),
+                        self.context.settings().statement_separator()
+                    );
                 });
 
                 writer.newline();
@@ -252,20 +286,32 @@ mod tests {
 
     struct NoopColumnGenerator;
     impl ColumnGenerator for NoopColumnGenerator {
-        fn column_definitions(&self, _table: &Table) -> Vec<String> { Vec::new() }
-        fn column_sql(&self, _table: &Table, _column: &Column) -> String { String::new() }
-        fn column_options(&self, _table: &Table, _column: &Column) -> String { String::new() }
-        fn default_value(&self, _table: &Table, _column: &Column) -> Option<String> { None }
+        fn column_definitions(&self, _table: &Table) -> Vec<String> {
+            Vec::new()
+        }
+        fn column_sql(&self, _table: &Table, _column: &Column) -> String {
+            String::new()
+        }
+        fn column_options(&self, _table: &Table, _column: &Column) -> String {
+            String::new()
+        }
+        fn default_value(&self, _table: &Table, _column: &Column) -> Option<String> {
+            None
+        }
     }
 
     struct NoopKeyGenerator;
     impl KeyGenerator for NoopKeyGenerator {
-        fn key_constraints(&self, _table: &Table) -> Vec<String> { Vec::new() }
+        fn key_constraints(&self, _table: &Table) -> Vec<String> {
+            Vec::new()
+        }
     }
 
     struct NoopColumnConstraintGenerator;
     impl ColumnConstraintGenerator for NoopColumnConstraintGenerator {
-        fn column_check_constraints(&self, _table: &Table) -> Vec<String> { Vec::new() }
+        fn column_check_constraints(&self, _table: &Table) -> Vec<String> {
+            Vec::new()
+        }
     }
 
     /// Reproduces H6: a constraint generator that produces an empty string for a column
@@ -273,20 +319,39 @@ mod tests {
     /// Boolean column with `min`/`max` set under `BooleanMode::Native`).
     struct EmptyStringColumnConstraintGenerator;
     impl ColumnConstraintGenerator for EmptyStringColumnConstraintGenerator {
-        fn column_check_constraints(&self, _table: &Table) -> Vec<String> { vec![String::new()] }
+        fn column_check_constraints(&self, _table: &Table) -> Vec<String> {
+            vec![String::new()]
+        }
     }
 
     struct NoopTableConstraintGenerator;
     impl TableConstraintGenerator for NoopTableConstraintGenerator {
-        fn table_check_constraints(&self, _table: &Table) -> Vec<String> { Vec::new() }
+        fn table_check_constraints(&self, _table: &Table) -> Vec<String> {
+            Vec::new()
+        }
     }
 
     struct NoopIndexGenerator;
     impl IndexGenerator for NoopIndexGenerator {
         fn output_indexes(&self) {}
-        fn output_indexes_for_table(&self, _writer: &mut crate::common::sql_writer::SqlWriter, _table: &Table) {}
-        fn output_index(&self, _writer: &mut crate::common::sql_writer::SqlWriter, _statement_separator: &str, _table: &Table, _key_name: &str, _key: &Key) {}
-        fn index_options(&self, _key: &Key) -> Option<String> { None }
+        fn output_indexes_for_table(
+            &self,
+            _writer: &mut crate::common::sql_writer::SqlWriter,
+            _table: &Table,
+        ) {
+        }
+        fn output_index(
+            &self,
+            _writer: &mut crate::common::sql_writer::SqlWriter,
+            _statement_separator: &str,
+            _table: &Table,
+            _key_name: &str,
+            _key: &Key,
+        ) {
+        }
+        fn index_options(&self, _key: &Key) -> Option<String> {
+            None
+        }
     }
 
     fn make_generator(context: GeneratorContext) -> DefaultTableGenerator {
@@ -304,11 +369,20 @@ mod tests {
     fn output_initial_data_includes_rows_for_current_database_type_or_unspecified() {
         let table = TableBuilder::new(None::<&str>, "users")
             .add_initial_data(InitialData::new("insert into users values (1)", None))
-            .add_initial_data(InitialData::new("insert into users values (2)", Some(DatabaseType::Sqlite)))
-            .add_initial_data(InitialData::new("insert into users values (3)", Some(DatabaseType::Postgresql)))
+            .add_initial_data(InitialData::new(
+                "insert into users values (2)",
+                Some(DatabaseType::Sqlite),
+            ))
+            .add_initial_data(InitialData::new(
+                "insert into users values (3)",
+                Some(DatabaseType::Postgresql),
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);
@@ -323,8 +397,11 @@ mod tests {
     #[test]
     fn output_initial_data_writes_nothing_when_table_has_no_rows() {
         let table = TableBuilder::new(None::<&str>, "users").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);
@@ -338,8 +415,11 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "users")
             .add_initial_data(InitialData::new("insert into users values (1)", None))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = make_generator(ctx);
@@ -356,8 +436,11 @@ mod tests {
     #[test]
     fn output_table_definition_drops_empty_constraint_strings() {
         let table = TableBuilder::new(None::<&str>, "orders").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = DefaultTableGenerator::new(
@@ -389,12 +472,26 @@ mod tests {
         // drop order must be the reverse.
         let parent = TableBuilder::new(None::<&str>, "parent").build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(parent).add_table(child).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(parent)
+            .add_table(child)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
-        assert_eq!(table_names(tables_in_drop_order(&model)), vec!["child", "parent"]);
+        assert_eq!(
+            table_names(tables_in_drop_order(&model)),
+            vec!["child", "parent"]
+        );
     }
 
     #[test]
@@ -404,19 +501,37 @@ mod tests {
 
         let grandparent = TableBuilder::new(None::<&str>, "grandparent").build();
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_relation(Relation::new("grandparent", "id", "parent", "grandparent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "grandparent",
+                "id",
+                "parent",
+                "grandparent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Cascade, false))
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Cascade,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(grandparent)
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
-        assert_eq!(table_names(tables_in_drop_order(&model)), vec!["child", "parent", "grandparent"]);
+        assert_eq!(
+            table_names(tables_in_drop_order(&model)),
+            vec!["child", "parent", "grandparent"]
+        );
     }
 
     #[test]
@@ -427,10 +542,18 @@ mod tests {
         // e.g. employee.manager_id -> employee.id - must not be treated as a cycle
         // against itself (which would leave it stuck with a permanent in-degree).
         let employee = TableBuilder::new(None::<&str>, "employee")
-            .add_relation(Relation::new("employee", "id", "employee", "manager_id", RelationType::SetNull, false))
+            .add_relation(Relation::new(
+                "employee",
+                "id",
+                "employee",
+                "manager_id",
+                RelationType::SetNull,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(employee).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         assert_eq!(table_names(tables_in_drop_order(&model)), vec!["employee"]);
     }
@@ -443,13 +566,31 @@ mod tests {
         // "a" references "b" and "b" references "a" - no ordering satisfies both, so
         // this must not panic or loop forever, and should fall back predictably.
         let a = TableBuilder::new(None::<&str>, "a")
-            .add_relation(Relation::new("b", "id", "a", "b_id", RelationType::SetNull, false))
+            .add_relation(Relation::new(
+                "b",
+                "id",
+                "a",
+                "b_id",
+                RelationType::SetNull,
+                false,
+            ))
             .build();
         let b = TableBuilder::new(None::<&str>, "b")
-            .add_relation(Relation::new("a", "id", "b", "a_id", RelationType::SetNull, false))
+            .add_relation(Relation::new(
+                "a",
+                "id",
+                "b",
+                "a_id",
+                RelationType::SetNull,
+                false,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(a).add_table(b).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(a)
+            .add_table(b)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         assert_eq!(table_names(tables_in_drop_order(&model)), vec!["a", "b"]);
     }

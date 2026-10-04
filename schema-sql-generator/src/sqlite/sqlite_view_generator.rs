@@ -58,9 +58,15 @@ mod tests {
 
     #[test]
     fn output_views_renders_create_view() {
-        let view = View::new(None::<&str>, "active_users", "select * from users where active = 1", None);
+        let view = View::new(
+            None::<&str>,
+            "active_users",
+            "select * from users where active = 1",
+            None,
+        );
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Sqlite);
 
         let generator = SqliteViewGenerator::new(ctx);
@@ -78,13 +84,18 @@ mod tests {
         // an ATTACHed database named `app`, so the schema is flattened into the name instead.
         let view = View::new(Some("app"), "active_users", "select 1", None);
         let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Sqlite);
 
         let generator = SqliteViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("create view app_active_users as"));
+        assert!(
+            buffer
+                .contents()
+                .contains("create view app_active_users as")
+        );
     }
 
     #[test]
@@ -93,7 +104,8 @@ mod tests {
         // has the view must not fail with "view already exists".
         let view = View::new(None::<&str>, "active_users", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Sqlite);
 
         let generator = SqliteViewGenerator::new(ctx);
@@ -102,13 +114,17 @@ mod tests {
         let output = buffer.contents();
         let drop_pos = output.find("drop view if exists active_users").unwrap();
         let create_pos = output.find("create view active_users as").unwrap();
-        assert!(drop_pos < create_pos, "the drop guard must come before the create statement");
+        assert!(
+            drop_pos < create_pos,
+            "the drop guard must come before the create statement"
+        );
     }
 
     #[test]
     fn output_views_does_nothing_when_no_views() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, ModelDatabaseType::Sqlite);
 
         let generator = SqliteViewGenerator::new(ctx);

@@ -10,7 +10,9 @@ fn join_condition(relation: &Relation, left_alias: &str, right_alias: &str) -> S
     relation
         .column_pairs()
         .iter()
-        .map(|(from_col, to_col)| format!("{}.{} = {}.{}", left_alias, from_col, right_alias, to_col))
+        .map(|(from_col, to_col)| {
+            format!("{}.{} = {}.{}", left_alias, from_col, right_alias, to_col)
+        })
         .collect::<Vec<_>>()
         .join(" and ")
 }
@@ -51,7 +53,6 @@ impl SqlServerTriggerGenerator {
 
         has_update_triggers || has_relations_with_triggers || has_aggregations
     }
-
 }
 
 impl TriggerGenerator for SqlServerTriggerGenerator {
@@ -81,7 +82,8 @@ impl SqlServerTriggerGenerator {
         let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
         let fully_qualified_table = table.fully_qualified_table_name(database_type);
-        let fully_qualified_trigger = database_type.qualified_name(table.schema_name(), &format!("{}_delete", table_name));
+        let fully_qualified_trigger =
+            database_type.qualified_name(table.schema_name(), &format!("{}_delete", table_name));
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {}_delete */", table_name);
@@ -231,7 +233,8 @@ impl SqlServerTriggerGenerator {
         let database_type = self.context.settings().database_type();
         let table_name = table.name().to_lowercase();
         let fully_qualified_table = table.fully_qualified_table_name(database_type);
-        let fully_qualified_trigger = database_type.qualified_name(table.schema_name(), &format!("{}_update", table_name));
+        let fully_qualified_trigger =
+            database_type.qualified_name(table.schema_name(), &format!("{}_update", table_name));
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {}_update */", table_name);
@@ -346,11 +349,22 @@ mod tests {
         // does relation.to_table_name().split('.').next() to get a schema name, which only
         // works for qualified references (mirrors the same quirk in PostgresTriggerGenerator).
         let parent = TableBuilder::new(Some("app"), "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(Some("app"), "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("app.parent", "id", "child", "parent_id", RelationType::Enforce, false))
+            .add_relation(Relation::new(
+                "app.parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Enforce,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(Some("app"))
             .add_table(parent)
@@ -362,7 +376,8 @@ mod tests {
     #[test]
     fn output_triggers_renders_update_validation_trigger_for_relations_mode_triggers() {
         let model = build_model_with_relation();
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -377,7 +392,8 @@ mod tests {
     #[test]
     fn output_triggers_qualifies_drop_trigger_with_schema() {
         let model = build_model_with_relation();
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -389,7 +405,11 @@ mod tests {
     #[test]
     fn output_triggers_qualifies_drop_trigger_with_default_schema_when_none() {
         let table = TableBuilder::new(None::<&str>, "widget")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_trigger(schema_model::model::trigger::Trigger::new(
                 "-- custom",
                 schema_model::model::types::TriggerType::Update,
@@ -397,8 +417,10 @@ mod tests {
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -412,7 +434,11 @@ mod tests {
         // Regression test: an unescaped embedded quote would break the generated
         // object_id existence-check SQL string literal.
         let table = TableBuilder::new(None::<&str>, "o'brien")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .add_trigger(schema_model::model::trigger::Trigger::new(
                 "-- custom",
                 schema_model::model::types::TriggerType::Update,
@@ -420,8 +446,10 @@ mod tests {
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -433,7 +461,8 @@ mod tests {
     #[test]
     fn output_triggers_does_nothing_when_relations_mode_is_not_triggers() {
         let model = build_model_with_relation();
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Relations);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -447,14 +476,38 @@ mod tests {
     /// schema, since these unit tests build the model directly via builders rather than XML.
     fn build_model_with_reverse_relation(relation_type: RelationType) -> DatabaseModel {
         let mut parent = TableBuilder::new(Some("app"), "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_key(schema_model::builder::KeyBuilder::new(schema_model::model::types::KeyType::Primary).add_column("id").build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_key(
+                schema_model::builder::KeyBuilder::new(
+                    schema_model::model::types::KeyType::Primary,
+                )
+                .add_column("id")
+                .build(),
+            )
             .build();
-        parent.add_reverse_relation(Relation::new("app.parent", "id", "app.child", "parent_id", relation_type, false));
+        parent.add_reverse_relation(Relation::new(
+            "app.parent",
+            "id",
+            "app.child",
+            "parent_id",
+            relation_type,
+            false,
+        ));
 
         let child = TableBuilder::new(Some("app"), "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
-            .add_relation(Relation::new("app.parent", "id", "child", "parent_id", relation_type, false))
+            .add_relation(Relation::new(
+                "app.parent",
+                "id",
+                "child",
+                "parent_id",
+                relation_type,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(Some("app"))
             .add_table(parent)
@@ -466,39 +519,50 @@ mod tests {
     #[test]
     fn output_delete_trigger_enforce_checks_the_child_table_not_itself() {
         let model = build_model_with_reverse_relation(RelationType::Enforce);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
 
         let output = buffer.contents();
         assert!(output.contains("create trigger parent_delete on app.parent for delete as"));
-        assert!(output.contains("if (select count(*) from app.child where parent_id in (select id from deleted)) > 0"));
-        assert!(output.contains("cannot be deleted. It is being used by a row in the app.child table"));
+        assert!(output.contains(
+            "if (select count(*) from app.child where parent_id in (select id from deleted)) > 0"
+        ));
+        assert!(
+            output.contains("cannot be deleted. It is being used by a row in the app.child table")
+        );
     }
 
     #[test]
     fn output_delete_trigger_setnull_updates_the_child_table_not_itself() {
         let model = build_model_with_reverse_relation(RelationType::SetNull);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
 
         let output = buffer.contents();
-        assert!(output.contains("update app.child set parent_id = null where parent_id in (select id from deleted);"));
+        assert!(output.contains(
+            "update app.child set parent_id = null where parent_id in (select id from deleted);"
+        ));
     }
 
     #[test]
     fn output_delete_trigger_cascade_deletes_from_the_child_table_not_itself() {
         let model = build_model_with_reverse_relation(RelationType::Cascade);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
 
         let output = buffer.contents();
-        assert!(output.contains("delete from app.child where parent_id in (select id from deleted);"));
+        assert!(
+            output.contains("delete from app.child where parent_id in (select id from deleted);")
+        );
     }
 
     #[test]
@@ -507,16 +571,33 @@ mod tests {
         // references `id`. The delete trigger must match on the relation's own referenced
         // column, not an arbitrarily-picked primary key column.
         let mut parent = TableBuilder::new(Some("app"), "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
-            .add_key(
-                schema_model::builder::KeyBuilder::new(schema_model::model::types::KeyType::Primary)
-                    .add_column("id")
-                    .add_column("tenant_id")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
                     .build(),
             )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_key(
+                schema_model::builder::KeyBuilder::new(
+                    schema_model::model::types::KeyType::Primary,
+                )
+                .add_column("id")
+                .add_column("tenant_id")
+                .build(),
+            )
             .build();
-        parent.add_reverse_relation(Relation::new("app.parent", "id", "app.child", "parent_id", RelationType::Cascade, false));
+        parent.add_reverse_relation(Relation::new(
+            "app.parent",
+            "id",
+            "app.child",
+            "parent_id",
+            RelationType::Cascade,
+            false,
+        ));
 
         let child = TableBuilder::new(Some("app"), "child")
             .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).build())
@@ -525,21 +606,39 @@ mod tests {
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
 
         let output = buffer.contents();
-        assert!(output.contains("delete from app.child where parent_id in (select id from deleted);"));
+        assert!(
+            output.contains("delete from app.child where parent_id in (select id from deleted);")
+        );
     }
 
     fn build_model_with_composite_reverse_relation(relation_type: RelationType) -> DatabaseModel {
         let mut parent = TableBuilder::new(Some("app"), "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int).required(true).build())
-            .add_key(schema_model::builder::KeyBuilder::new(schema_model::model::types::KeyType::Primary).add_column("id").build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "tenant_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_key(
+                schema_model::builder::KeyBuilder::new(
+                    schema_model::model::types::KeyType::Primary,
+                )
+                .add_column("id")
+                .build(),
+            )
             .build();
         parent.add_reverse_relation(
             Relation::new_composite(
@@ -554,7 +653,9 @@ mod tests {
 
         let child = TableBuilder::new(Some("app"), "child")
             .add_column(ColumnBuilder::new(None::<&str>, "child_id", ColumnType::Int).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "child_tenant_id", ColumnType::Int).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "child_tenant_id", ColumnType::Int).build(),
+            )
             .add_relation(
                 Relation::new_composite(
                     "app.parent",
@@ -576,7 +677,8 @@ mod tests {
     #[test]
     fn output_delete_trigger_enforce_composite_uses_a_join_instead_of_in() {
         let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -585,13 +687,16 @@ mod tests {
         assert!(output.contains(
             "if exists (select 1 from app.child c inner join deleted d on c.child_id = d.id and c.child_tenant_id = d.tenant_id)"
         ));
-        assert!(output.contains("cannot be deleted. It is being used by a row in the app.child table"));
+        assert!(
+            output.contains("cannot be deleted. It is being used by a row in the app.child table")
+        );
     }
 
     #[test]
     fn output_delete_trigger_setnull_composite_nulls_all_from_columns() {
         let model = build_model_with_composite_reverse_relation(RelationType::SetNull);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -605,7 +710,8 @@ mod tests {
     #[test]
     fn output_delete_trigger_cascade_composite_uses_a_join() {
         let model = build_model_with_composite_reverse_relation(RelationType::Cascade);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();
@@ -619,7 +725,8 @@ mod tests {
     #[test]
     fn output_update_trigger_composite_checks_all_columns_not_null_then_matches_all_pairs() {
         let model = build_model_with_composite_reverse_relation(RelationType::Enforce);
-        let (ctx, buffer) = make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
+        let (ctx, buffer) =
+            make_context_with_fk_mode(model, DatabaseType::SqlServer, ForeignKeyMode::Triggers);
 
         let generator = SqlServerTriggerGenerator::new(ctx);
         generator.output_triggers();

@@ -17,9 +17,18 @@ pub(crate) fn split_sql_statements(
     database_type: &GeneratorType,
 ) -> Result<Vec<String>, SchemaInstallerError> {
     let rules = match database_type {
-        GeneratorType::Postgresql => Rules { nested_comments: true, backslash_escapes: true },
-        GeneratorType::SqlServer => Rules { nested_comments: true, backslash_escapes: false },
-        _ => Rules { nested_comments: false, backslash_escapes: false },
+        GeneratorType::Postgresql => Rules {
+            nested_comments: true,
+            backslash_escapes: true,
+        },
+        GeneratorType::SqlServer => Rules {
+            nested_comments: true,
+            backslash_escapes: false,
+        },
+        _ => Rules {
+            nested_comments: false,
+            backslash_escapes: false,
+        },
     };
     match database_type {
         GeneratorType::SqlServer => split_on_go_batches(sql, rules),
@@ -38,7 +47,10 @@ struct Rules {
 fn opens_escape_string(chars: &[char], pos: usize) -> bool {
     pos >= 1
         && matches!(chars[pos - 1], 'e' | 'E')
-        && (pos < 2 || !(chars[pos - 2].is_alphanumeric() || chars[pos - 2] == '_' || chars[pos - 2] == '$'))
+        && (pos < 2
+            || !(chars[pos - 2].is_alphanumeric()
+                || chars[pos - 2] == '_'
+                || chars[pos - 2] == '$'))
 }
 
 fn unterminated(what: &str) -> SchemaInstallerError {
@@ -250,7 +262,10 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
     // real top-level `GO` separator.
     let mut line_start_in_normal = true;
 
-    let finish_line = |batches: &mut Vec<String>, current: &mut String, current_line: &mut String, line_start_in_normal: bool| {
+    let finish_line = |batches: &mut Vec<String>,
+                       current: &mut String,
+                       current_line: &mut String,
+                       line_start_in_normal: bool| {
         if line_start_in_normal && let Some(count) = go_batch_separator_count(current_line) {
             // `GO n` runs the preceding batch n times.
             let batch = std::mem::take(current);
@@ -288,7 +303,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
                     current_line.push_str("/*");
                     i += 2;
                 } else if c == '\n' {
-                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    finish_line(
+                        &mut batches,
+                        &mut current,
+                        &mut current_line,
+                        line_start_in_normal,
+                    );
                     line_start_in_normal = true;
                     i += 1;
                 } else {
@@ -307,7 +327,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
                         i += 1;
                     }
                 } else if c == '\n' {
-                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    finish_line(
+                        &mut batches,
+                        &mut current,
+                        &mut current_line,
+                        line_start_in_normal,
+                    );
                     line_start_in_normal = false; // still inside the string on the next line
                     i += 1;
                 } else {
@@ -326,7 +351,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
                         i += 1;
                     }
                 } else if c == '\n' {
-                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    finish_line(
+                        &mut batches,
+                        &mut current,
+                        &mut current_line,
+                        line_start_in_normal,
+                    );
                     line_start_in_normal = false;
                     i += 1;
                 } else {
@@ -337,7 +367,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
             GoState::LineComment => {
                 if c == '\n' {
                     state = GoState::Normal;
-                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    finish_line(
+                        &mut batches,
+                        &mut current,
+                        &mut current_line,
+                        line_start_in_normal,
+                    );
                     line_start_in_normal = true; // a line comment always ends at the newline
                     i += 1;
                 } else {
@@ -358,7 +393,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
                     }
                     i += 2;
                 } else if c == '\n' {
-                    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+                    finish_line(
+                        &mut batches,
+                        &mut current,
+                        &mut current_line,
+                        line_start_in_normal,
+                    );
                     line_start_in_normal = false; // still inside the comment on the next line
                     i += 1;
                 } else {
@@ -374,7 +414,12 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
         GoState::BlockComment => return Err(unterminated("block comment")),
         GoState::Normal | GoState::LineComment => {}
     }
-    finish_line(&mut batches, &mut current, &mut current_line, line_start_in_normal);
+    finish_line(
+        &mut batches,
+        &mut current,
+        &mut current_line,
+        line_start_in_normal,
+    );
     if !current.is_empty() {
         batches.push(current);
     }
@@ -392,7 +437,9 @@ fn split_on_go_batches(sql: &str, rules: Rules) -> Result<Vec<String>, SchemaIns
 /// after `GO` (e.g. `GO foo`, `GO 0`) means the line is not a separator.
 fn go_batch_separator_count(line: &str) -> Option<usize> {
     let line = line.split("--").next().unwrap_or("").trim();
-    let rest = line.get(..2).filter(|head| head.eq_ignore_ascii_case("go"))?;
+    let rest = line
+        .get(..2)
+        .filter(|head| head.eq_ignore_ascii_case("go"))?;
     let after_go = &line[rest.len()..];
     let rest = after_go.trim();
     if rest.is_empty() {
@@ -519,14 +566,23 @@ mod tests {
     fn go_with_trailing_comment_is_a_batch_separator() {
         let sql = "CREATE TABLE t1 (id INT)\nGO -- end of batch\nCREATE TABLE t2 (id INT)\nGO";
         let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
-        assert_eq!(result, vec!["CREATE TABLE t1 (id INT)", "CREATE TABLE t2 (id INT)"]);
+        assert_eq!(
+            result,
+            vec!["CREATE TABLE t1 (id INT)", "CREATE TABLE t2 (id INT)"]
+        );
     }
 
     #[test]
     fn go_with_repeat_count_repeats_the_batch() {
         let sql = "INSERT INTO t VALUES (1)\nGO 3\nSELECT 1\nGO";
         let result = split_sql_statements(sql, &GeneratorType::SqlServer).unwrap();
-        assert_eq!(result, vec!["INSERT INTO t VALUES (1)"; 3].into_iter().chain(["SELECT 1"]).collect::<Vec<_>>());
+        assert_eq!(
+            result,
+            vec!["INSERT INTO t VALUES (1)"; 3]
+                .into_iter()
+                .chain(["SELECT 1"])
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -687,7 +743,10 @@ insert into books (id, title) values (generate_uuid(), 'Book; With Semicolon');
             ("select 'oops\nGO", GeneratorType::SqlServer),
             ("select 1 /* /* x */\nGO", GeneratorType::SqlServer),
         ] {
-            assert!(split_sql_statements(sql, &db).is_err(), "expected error for {sql:?}");
+            assert!(
+                split_sql_statements(sql, &db).is_err(),
+                "expected error for {sql:?}"
+            );
         }
     }
 

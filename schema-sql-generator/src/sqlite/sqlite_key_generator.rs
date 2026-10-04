@@ -23,6 +23,7 @@ impl KeyGenerator for SqliteKeyGenerator {
         // primary key (...)` as well would make SQLite reject the table for declaring more
         // than one primary key.
         let skip_primary_key = inline_autoincrement_pk_column(table).is_some();
-        self.key_generator.key_constraints_filtered(table, skip_primary_key)
+        self.key_generator
+            .key_constraints_filtered(table, skip_primary_key)
     }
 }

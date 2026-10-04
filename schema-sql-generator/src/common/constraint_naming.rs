@@ -57,7 +57,10 @@ mod tests {
     fn hashed_constraint_name_does_not_zero_pad_the_hash() {
         // The legacy Java tool formats the hash with Integer.toHexString(...).toUpperCase(),
         // which drops leading zero nibbles rather than zero-padding to a fixed width.
-        assert_eq!(java_string_hash("tip_sub_pool_template_hours_mode"), 0x0DCD6758);
+        assert_eq!(
+            java_string_hash("tip_sub_pool_template_hours_mode"),
+            0x0DCD6758
+        );
         assert_eq!(
             hashed_constraint_name("ck_", "tip_sub_pool_template", "hours_mode"),
             "ck_tip_sub_p_hours_mod_DCD6758"

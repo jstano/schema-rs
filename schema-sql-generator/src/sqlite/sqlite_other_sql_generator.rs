@@ -3,7 +3,7 @@ use crate::common::other_sql_generator::{DefaultOtherSqlGenerator, OtherSqlGener
 use crate::common::sql_writer::SqlWriter;
 
 pub struct SqliteOtherSqlGenerator {
-    other_sql_generator: DefaultOtherSqlGenerator
+    other_sql_generator: DefaultOtherSqlGenerator,
 }
 
 impl SqliteOtherSqlGenerator {
@@ -27,7 +27,8 @@ impl OtherSqlGenerator for SqliteOtherSqlGenerator {
     }
 
     fn output_other_sql(&self, writer: &mut SqlWriter, statement_separator: &str, sql: &str) {
-        self.other_sql_generator.output_other_sql(writer, statement_separator, sql);
+        self.other_sql_generator
+            .output_other_sql(writer, statement_separator, sql);
     }
 }
 
@@ -43,11 +44,24 @@ mod tests {
     #[test]
     fn output_other_sql_top_renders_matching_entries_only() {
         let schema = SchemaBuilder::new(None::<&str>)
-            .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Top, "pragma foreign_keys = on"))
-            .add_other_sql(OtherSql::new(DatabaseType::Postgresql, OtherSqlOrder::Top, "select 1"))
-            .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Bottom, "vacuum"))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Sqlite,
+                OtherSqlOrder::Top,
+                "pragma foreign_keys = on",
+            ))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Postgresql,
+                OtherSqlOrder::Top,
+                "select 1",
+            ))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Sqlite,
+                OtherSqlOrder::Bottom,
+                "vacuum",
+            ))
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteOtherSqlGenerator::new(ctx);
@@ -62,10 +76,19 @@ mod tests {
     #[test]
     fn output_other_sql_bottom_renders_matching_entries_only() {
         let schema = SchemaBuilder::new(None::<&str>)
-            .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Bottom, "vacuum"))
-            .add_other_sql(OtherSql::new(DatabaseType::Sqlite, OtherSqlOrder::Top, "pragma foreign_keys = on"))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Sqlite,
+                OtherSqlOrder::Bottom,
+                "vacuum",
+            ))
+            .add_other_sql(OtherSql::new(
+                DatabaseType::Sqlite,
+                OtherSqlOrder::Top,
+                "pragma foreign_keys = on",
+            ))
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = SqliteOtherSqlGenerator::new(ctx);

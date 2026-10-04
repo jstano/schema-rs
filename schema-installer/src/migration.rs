@@ -45,7 +45,6 @@ impl MigrationStatus {
             MigrationStatus::Pending => "pending",
         }
     }
-
 }
 
 impl std::str::FromStr for MigrationStatus {
@@ -74,19 +73,20 @@ impl MigrationSource for DirectoryMigrationSource {
         let mut migrations = Vec::new();
 
         if !self.path.exists() {
-            return Err(SchemaInstallerError::InvalidConfiguration(
-                format!("Migrations directory does not exist: {:?}", self.path),
-            ));
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Migrations directory does not exist: {:?}",
+                self.path
+            )));
         }
 
         if !self.path.is_dir() {
-            return Err(SchemaInstallerError::InvalidConfiguration(
-                format!("Migrations path is not a directory: {:?}", self.path),
-            ));
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Migrations path is not a directory: {:?}",
+                self.path
+            )));
         }
 
-        let entries = std::fs::read_dir(&self.path)
-            .map_err(SchemaInstallerError::Io)?;
+        let entries = std::fs::read_dir(&self.path).map_err(SchemaInstallerError::Io)?;
 
         for entry in entries {
             let entry = entry.map_err(SchemaInstallerError::Io)?;
@@ -106,14 +106,9 @@ impl MigrationSource for DirectoryMigrationSource {
                 continue;
             }
 
-            let filename = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .ok_or_else(|| {
-                    SchemaInstallerError::InvalidConfiguration(
-                        "Invalid filename encoding".to_string(),
-                    )
-                })?;
+            let filename = path.file_name().and_then(|f| f.to_str()).ok_or_else(|| {
+                SchemaInstallerError::InvalidConfiguration("Invalid filename encoding".to_string())
+            })?;
 
             if !filename.to_lowercase().ends_with(".sql") {
                 continue;
@@ -123,8 +118,7 @@ impl MigrationSource for DirectoryMigrationSource {
                 Some(parsed) => parsed,
                 None => continue,
             };
-            let sql = std::fs::read_to_string(&path)
-                .map_err(SchemaInstallerError::Io)?;
+            let sql = std::fs::read_to_string(&path).map_err(SchemaInstallerError::Io)?;
 
             // Just the filename, not the absolute path: the path differs between dev, CI and
             // prod for identical migrations, so recording it made `schema_migration` rows
@@ -170,7 +164,9 @@ fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaIns
     let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
 
     for migration in migrations {
-        if let Some(first_path) = seen.insert(migration.version.as_str(), migration.script_path.as_str()) {
+        if let Some(first_path) =
+            seen.insert(migration.version.as_str(), migration.script_path.as_str())
+        {
             return Err(SchemaInstallerError::InvalidConfiguration(format!(
                 "Duplicate migration version '{}': {} and {}",
                 migration.version, first_path, migration.script_path
@@ -191,14 +187,15 @@ fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaIns
 /// to manage (H11). A file that *does* start with `V` but is otherwise malformed still
 /// hard-errors, since that shape is far more likely to be a typo in a real migration
 /// than an intentional non-versioned file.
-pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String, String)>, SchemaInstallerError> {
-    let name_without_ext = filename
-        .strip_suffix(".sql")
-        .ok_or_else(|| {
-            SchemaInstallerError::InvalidConfiguration(
-                format!("File does not end with .sql: {}", filename),
-            )
-        })?;
+pub(crate) fn parse_migration_filename(
+    filename: &str,
+) -> Result<Option<(String, String)>, SchemaInstallerError> {
+    let name_without_ext = filename.strip_suffix(".sql").ok_or_else(|| {
+        SchemaInstallerError::InvalidConfiguration(format!(
+            "File does not end with .sql: {}",
+            filename
+        ))
+    })?;
 
     if !name_without_ext.to_lowercase().starts_with('v') {
         eprintln!(
@@ -216,12 +213,16 @@ pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String,
 
     let version_part = parts[0].to_lowercase();
     let version = version_part[1..].to_string();
-    let description = parts.get(1).map(|d| d.replace('_', " ")).unwrap_or_default();
+    let description = parts
+        .get(1)
+        .map(|d| d.replace('_', " "))
+        .unwrap_or_default();
 
     if version.is_empty() {
-        return Err(SchemaInstallerError::InvalidConfiguration(
-            format!("Migration version cannot be empty: {}", filename),
-        ));
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Migration version cannot be empty: {}",
+            filename
+        )));
     }
 
     // Reject anything that isn't a plain dot/underscore-separated run of numbers (e.g.
@@ -229,7 +230,10 @@ pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String,
     // would parse "successfully" into a version whose non-numeric segments
     // `compare_versions` then silently drops, sorting it before every real version
     // instead of failing fast with a clear error.
-    if !version.split(['.', '_']).all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit())) {
+    if !version
+        .split(['.', '_'])
+        .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+    {
         return Err(SchemaInstallerError::InvalidConfiguration(format!(
             "Migration version must be a dot/underscore-separated list of numbers (e.g. 'V1', 'V1.2', 'V1_2'), got '{}': {}",
             version, filename
@@ -239,7 +243,10 @@ pub(crate) fn parse_migration_filename(filename: &str) -> Result<Option<(String,
     // A leading zero (`V01` vs `V1`) would compare Equal in `compare_versions` yet remain
     // a distinct string for the "already applied" lookup, so both files would be applied
     // in nondeterministic order. Reject rather than normalize (M19).
-    if version.split(['.', '_']).any(|part| part.len() > 1 && part.starts_with('0')) {
+    if version
+        .split(['.', '_'])
+        .any(|part| part.len() > 1 && part.starts_with('0'))
+    {
         return Err(SchemaInstallerError::InvalidConfiguration(format!(
             "Migration version segments must not have leading zeros (got '{}'): {}",
             version, filename
@@ -300,18 +307,21 @@ pub fn compute_checksum(sql: &str) -> String {
     hex::encode(result)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_parse_migration_filename() {
-        let (version, description) = parse_migration_filename("V1__create_users.sql").unwrap().unwrap();
+        let (version, description) = parse_migration_filename("V1__create_users.sql")
+            .unwrap()
+            .unwrap();
         assert_eq!(version, "1");
         assert_eq!(description, "create users");
 
-        let (version, description) = parse_migration_filename("V1_2__add_email_column.sql").unwrap().unwrap();
+        let (version, description) = parse_migration_filename("V1_2__add_email_column.sql")
+            .unwrap()
+            .unwrap();
         assert_eq!(version, "1_2");
         assert_eq!(description, "add email column");
     }
@@ -320,7 +330,9 @@ mod tests {
     fn test_parse_migration_filename_without_description() {
         // The `__description` suffix is optional (e.g. produced by
         // schema-migration-generator's --auto-generate-name with no --description).
-        let (version, description) = parse_migration_filename("V20240115143022.sql").unwrap().unwrap();
+        let (version, description) = parse_migration_filename("V20240115143022.sql")
+            .unwrap()
+            .unwrap();
         assert_eq!(version, "20240115143022");
         assert_eq!(description, "");
 
@@ -333,7 +345,9 @@ mod tests {
 
     #[test]
     fn test_parse_migration_filename_case_insensitive() {
-        let (version, description) = parse_migration_filename("v1__create_users.sql").unwrap().unwrap();
+        let (version, description) = parse_migration_filename("v1__create_users.sql")
+            .unwrap()
+            .unwrap();
         assert_eq!(version, "1");
         assert_eq!(description, "create users");
     }
@@ -344,8 +358,16 @@ mod tests {
         // other file that doesn't start with `V`, aren't versioned migrations this tool
         // manages - they must be skipped (Ok(None)) rather than aborting the whole
         // directory scan (H11).
-        assert!(parse_migration_filename("R__refresh_view.sql").unwrap().is_none());
-        assert!(parse_migration_filename("U__undo_something.sql").unwrap().is_none());
+        assert!(
+            parse_migration_filename("R__refresh_view.sql")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_migration_filename("U__undo_something.sql")
+                .unwrap()
+                .is_none()
+        );
         assert!(parse_migration_filename("readme.sql").unwrap().is_none());
     }
 
@@ -364,10 +386,16 @@ mod tests {
         // "successfully" into a version whose non-numeric segments compare_versions
         // then silently dropped, sorting it before every real version.
         let err = parse_migration_filename("Vfinal__do_something.sql").unwrap_err();
-        assert!(err.to_string().contains("must be a dot/underscore-separated list of numbers"));
+        assert!(
+            err.to_string()
+                .contains("must be a dot/underscore-separated list of numbers")
+        );
 
         let err = parse_migration_filename("V1a__do_something.sql").unwrap_err();
-        assert!(err.to_string().contains("must be a dot/underscore-separated list of numbers"));
+        assert!(
+            err.to_string()
+                .contains("must be a dot/underscore-separated list of numbers")
+        );
     }
 
     #[test]
@@ -376,7 +404,10 @@ mod tests {
         let big = "99999999999999999999";
         assert_eq!(compare_versions(big, "1"), std::cmp::Ordering::Greater);
         assert_eq!(compare_versions("1", big), std::cmp::Ordering::Less);
-        assert_eq!(compare_versions(big, "20240115143022"), std::cmp::Ordering::Greater);
+        assert_eq!(
+            compare_versions(big, "20240115143022"),
+            std::cmp::Ordering::Greater
+        );
         assert_eq!(compare_versions(big, big), std::cmp::Ordering::Equal);
     }
 
@@ -456,10 +487,20 @@ mod tests {
     #[test]
     fn test_directory_migration_source_rejects_duplicate_versions() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("V1__add_users.sql"), "CREATE TABLE users (id INT);").unwrap();
-        std::fs::write(dir.path().join("V1__add_orders.sql"), "CREATE TABLE orders (id INT);").unwrap();
+        std::fs::write(
+            dir.path().join("V1__add_users.sql"),
+            "CREATE TABLE users (id INT);",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("V1__add_orders.sql"),
+            "CREATE TABLE orders (id INT);",
+        )
+        .unwrap();
 
-        let source = DirectoryMigrationSource { path: dir.path().to_path_buf() };
+        let source = DirectoryMigrationSource {
+            path: dir.path().to_path_buf(),
+        };
         let err = source.migrations().unwrap_err();
         assert!(err.to_string().contains("Duplicate migration version '1'"));
     }

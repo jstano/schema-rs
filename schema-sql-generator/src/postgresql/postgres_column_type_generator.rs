@@ -6,14 +6,12 @@ use schema_model::model::column_type::ColumnType;
 use schema_model::model::schema::Schema;
 
 pub struct PostgresColumnTypeGenerator {
-    context: GeneratorContext
+    context: GeneratorContext,
 }
 
 impl PostgresColumnTypeGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
+        Self { context }
     }
 }
 
@@ -169,7 +167,9 @@ mod tests {
         let (ctx, table_builder) = make_context(model);
         let generator = PostgresColumnTypeGenerator::new(ctx);
         let table = table_builder.build();
-        let col = ColumnBuilder::new(None::<&str>, "col", column_type).length(length).build();
+        let col = ColumnBuilder::new(None::<&str>, "col", column_type)
+            .length(length)
+            .build();
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 
@@ -212,8 +212,11 @@ mod tests {
 
     #[test]
     fn text_type_case_insensitive_schema_returns_citext() {
-        let schema = SchemaBuilder::new(None::<&str>).case_sensitive_text(false).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .case_sensitive_text(false)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, table_builder) = make_context(model);
         let generator = PostgresColumnTypeGenerator::new(ctx);
         let table = table_builder.build();
@@ -260,7 +263,11 @@ mod tests {
         let app = SchemaBuilder::new(Some("app"))
             .add_enum_type(EnumType::new("LocalType", Vec::new()))
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app],
+        );
         let (ctx, table_builder) = make_context(model);
         let generator = PostgresColumnTypeGenerator::new(ctx);
         let table = table_builder.build();

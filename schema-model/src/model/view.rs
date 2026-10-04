@@ -69,14 +69,23 @@ mod tests {
     #[test]
     fn fully_qualified_view_name_uses_explicit_schema() {
         let v = View::new(Some("s"), "v1", "select *", None);
-        assert_eq!(v.fully_qualified_view_name(DatabaseType::Postgresql), "s.v1");
+        assert_eq!(
+            v.fully_qualified_view_name(DatabaseType::Postgresql),
+            "s.v1"
+        );
     }
 
     #[test]
     fn fully_qualified_view_name_falls_back_to_default_schema() {
         let v = View::new(Option::<&str>::None, "v1", "select *", None);
-        assert_eq!(v.fully_qualified_view_name(DatabaseType::Postgresql), "public.v1");
-        assert_eq!(v.fully_qualified_view_name(DatabaseType::SqlServer), "dbo.v1");
+        assert_eq!(
+            v.fully_qualified_view_name(DatabaseType::Postgresql),
+            "public.v1"
+        );
+        assert_eq!(
+            v.fully_qualified_view_name(DatabaseType::SqlServer),
+            "dbo.v1"
+        );
         assert_eq!(v.fully_qualified_view_name(DatabaseType::Sqlite), "v1");
     }
 }

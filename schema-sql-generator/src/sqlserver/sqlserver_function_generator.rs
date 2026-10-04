@@ -5,7 +5,7 @@ use crate::common::sql_writer::SqlWriter;
 use schema_model::model::function::Function;
 
 pub struct SqlServerFunctionGenerator {
-    function_generator: DefaultFunctionGenerator
+    function_generator: DefaultFunctionGenerator,
 }
 
 impl SqlServerFunctionGenerator {
@@ -25,7 +25,12 @@ impl FunctionGenerator for SqlServerFunctionGenerator {
         self.function_generator.output_functions_via(self);
     }
 
-    fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
+    fn output_function(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        function: &Function,
+    ) {
         let function_name = function.name();
         let schema_name = match function.schema_name() {
             Some(s) if s.eq_ignore_ascii_case("public") => "dbo",
@@ -58,7 +63,8 @@ mod tests {
     #[test]
     fn output_function_renders_drop_if_exists_guard() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let function = Function::new(
             None::<&str>,
@@ -75,13 +81,16 @@ mod tests {
         let output = buffer.contents();
         assert!(output.contains("if exists (select * from dbo.sysobjects where id = object_id(N'[dbo].[mssql_fn]') and objectproperty(id, N'IsScalarFunction') = 1)"));
         assert!(output.contains("drop function dbo.mssql_fn"));
-        assert!(output.contains("create function dbo.mssql_fn() returns int as begin return 1 end"));
+        assert!(
+            output.contains("create function dbo.mssql_fn() returns int as begin return 1 end")
+        );
     }
 
     #[test]
     fn output_function_respects_explicit_non_default_schema() {
         let schema = SchemaBuilder::new(Some("app")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let function = Function::new(
             Some("app"),
@@ -104,7 +113,8 @@ mod tests {
         // Regression test: an unescaped embedded quote would break the generated
         // sysobjects existence-check SQL string literal.
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let function = Function::new(
             None::<&str>,
@@ -135,14 +145,17 @@ mod tests {
                 "create function dbo.mssql_fn() returns int as begin return 1 end",
             )])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerFunctionGenerator::new(ctx);
         generator.output_functions();
 
         let output = buffer.contents();
-        assert!(output.contains("create function dbo.mssql_fn() returns int as begin return 1 end"));
+        assert!(
+            output.contains("create function dbo.mssql_fn() returns int as begin return 1 end")
+        );
         assert!(output.contains("drop function dbo.mssql_fn"));
         assert!(output.contains("if exists (select * from dbo.sysobjects"));
     }

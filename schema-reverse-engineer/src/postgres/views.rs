@@ -3,7 +3,10 @@ use schema_model::model::types::DatabaseType;
 use schema_model::model::view::View;
 use sqlx::PgPool;
 
-pub async fn list_views(pool: &PgPool, db_schema: &str) -> Result<Vec<View>, SchemaReverseEngineerError> {
+pub async fn list_views(
+    pool: &PgPool,
+    db_schema: &str,
+) -> Result<Vec<View>, SchemaReverseEngineerError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT table_name, view_definition \
          FROM information_schema.views \
@@ -17,6 +20,13 @@ pub async fn list_views(pool: &PgPool, db_schema: &str) -> Result<Vec<View>, Sch
 
     Ok(rows
         .into_iter()
-        .map(|(name, sql)| View::new(None, name.as_str(), sql.trim(), Some(DatabaseType::Postgresql)))
+        .map(|(name, sql)| {
+            View::new(
+                None,
+                name.as_str(),
+                sql.trim(),
+                Some(DatabaseType::Postgresql),
+            )
+        })
         .collect())
 }

@@ -26,7 +26,12 @@ impl ProcedureGenerator for SqlServerProcedureGenerator {
         self.procedure_generator.output_procedures_via(self);
     }
 
-    fn output_procedure(&self, writer: &mut SqlWriter, statement_separator: &str, procedure: &Procedure) {
+    fn output_procedure(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        procedure: &Procedure,
+    ) {
         let procedure_name = procedure.name();
         let schema_name = match procedure.schema_name() {
             Some(s) if s.eq_ignore_ascii_case("public") => "dbo",
@@ -60,11 +65,22 @@ mod tests {
     fn output_procedures_renders_matching_database_type_only() {
         let schema = SchemaBuilder::new(None::<&str>)
             .add_procedures(vec![
-                Procedure::new(None::<&str>, "mssql_only", DatabaseType::SqlServer, "create procedure mssql_only as begin end"),
-                Procedure::new(None::<&str>, "pg_only", DatabaseType::Postgresql, "create procedure pg_only"),
+                Procedure::new(
+                    None::<&str>,
+                    "mssql_only",
+                    DatabaseType::SqlServer,
+                    "create procedure mssql_only as begin end",
+                ),
+                Procedure::new(
+                    None::<&str>,
+                    "pg_only",
+                    DatabaseType::Postgresql,
+                    "create procedure pg_only",
+                ),
             ])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerProcedureGenerator::new(ctx);
@@ -90,7 +106,8 @@ mod tests {
                 "create procedure dbo.mssql_proc as begin return 1 end",
             )])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerProcedureGenerator::new(ctx);
@@ -105,7 +122,8 @@ mod tests {
     #[test]
     fn output_procedure_escapes_single_quote_in_procedure_name() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
         let procedure = Procedure::new(
             None::<&str>,

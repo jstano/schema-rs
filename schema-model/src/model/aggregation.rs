@@ -189,7 +189,10 @@ mod tests {
             AggregationType::Count
         );
         assert_eq!(aggr.aggregation_groups()[0].destination(), "dst1");
-        assert_eq!(aggr.aggregation_groups()[1].source_derived_from().unwrap(), "from2");
+        assert_eq!(
+            aggr.aggregation_groups()[1].source_derived_from().unwrap(),
+            "from2"
+        );
 
         // Ensure vectors returned are the same size as provided (by value semantics they were moved in)
         assert_eq!(aggr.aggregation_columns().len(), cols.len());

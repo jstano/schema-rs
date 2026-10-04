@@ -17,9 +17,15 @@ impl OutputMode {
     pub fn includes_tables(self) -> bool {
         matches!(self, OutputMode::All)
     }
-    pub fn includes_views(self) -> bool { matches!(self, OutputMode::All) }
-    pub fn includes_routines(self) -> bool { matches!(self, OutputMode::All) }
-    pub fn includes_other_sql(self) -> bool { matches!(self, OutputMode::All) }
+    pub fn includes_views(self) -> bool {
+        matches!(self, OutputMode::All)
+    }
+    pub fn includes_routines(self) -> bool {
+        matches!(self, OutputMode::All)
+    }
+    pub fn includes_other_sql(self) -> bool {
+        matches!(self, OutputMode::All)
+    }
 }
 
 impl FromStr for OutputMode {

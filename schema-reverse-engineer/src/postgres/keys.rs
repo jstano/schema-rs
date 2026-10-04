@@ -64,7 +64,9 @@ pub async fn list_keys(
             .entry(row.table_name)
             .or_default()
             .primary
-            .get_or_insert_with(|| KeyInfo { columns: Vec::new() })
+            .get_or_insert_with(|| KeyInfo {
+                columns: Vec::new(),
+            })
             .columns
             .push(row.column_name);
     }
@@ -98,7 +100,13 @@ pub async fn list_keys(
             last.4.push(row.column_name);
             continue;
         }
-        grouped.push((row.table_name, row.index_name, row.is_unique, row.is_primary, vec![row.column_name]));
+        grouped.push((
+            row.table_name,
+            row.index_name,
+            row.is_unique,
+            row.is_primary,
+            vec![row.column_name],
+        ));
     }
 
     for (table_name, index_name, is_unique, is_primary, columns) in grouped {

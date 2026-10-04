@@ -30,9 +30,13 @@ impl MigrationGenerator for SqliteMigrationGenerator {
         database_model: &DatabaseModel,
         writer: &mut dyn Write,
     ) -> Result<(), MigrationGeneratorError> {
-        let context = GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::Sqlite);
+        let context =
+            GeneratorContext::for_model(Rc::new(database_model.clone()), DatabaseType::Sqlite);
         let type_generator = SqliteColumnTypeGenerator::new(context.clone());
-        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer(Rc::new(database_model.clone()), DatabaseType::Sqlite);
+        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer(
+            Rc::new(database_model.clone()),
+            DatabaseType::Sqlite,
+        );
         let table_generator = SqliteTableGenerator::new(table_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
 
@@ -46,7 +50,8 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::AddColumn { table_name, column } => {
-                    let type_sql = format!(" {}", type_generator.column_type_sql(&dummy_table, column));
+                    let type_sql =
+                        format!(" {}", type_generator.column_type_sql(&dummy_table, column));
                     let default_value = default_sql(database_model, column);
                     // SQLite's `ADD COLUMN` rejects `NOT NULL` outright unless a non-null
                     // `DEFAULT` is also given - a hard syntax-level restriction, not a runtime
@@ -56,8 +61,14 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     // that - see `ModifyColumn` below), the column has to go in nullable, with
                     // enforcing `NOT NULL` left to a manual rebuild.
                     let needs_manual_not_null = column.required() && default_value.is_none();
-                    let not_null = if column.required() && !needs_manual_not_null { " not null" } else { "" };
-                    let default = default_value.map(|d| format!(" default {}", d)).unwrap_or_default();
+                    let not_null = if column.required() && !needs_manual_not_null {
+                        " not null"
+                    } else {
+                        ""
+                    };
+                    let default = default_value
+                        .map(|d| format!(" default {}", d))
+                        .unwrap_or_default();
                     // SQLite has no `alter table ... add constraint` (see the `AddConstraint`
                     // arm below), so a new column's CHECK constraint must be declared inline
                     // in the column definition instead of as a separate statement.
@@ -94,11 +105,22 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                 }
                 // SQLite does not support DROP COLUMN before version 3.35.0.
                 // Generate a comment noting a manual table-rebuild may be needed.
-                SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
+                SchemaChange::DropColumn {
+                    table_name,
+                    column_name,
+                    rename_candidates,
+                } => {
                     if !rename_candidates.is_empty() {
-                        writeln!(writer, "-- TODO: possible rename? Consider replacing the DROP + ADD below with:")?;
+                        writeln!(
+                            writer,
+                            "-- TODO: possible rename? Consider replacing the DROP + ADD below with:"
+                        )?;
                         for candidate in rename_candidates {
-                            writeln!(writer, "--   alter table {} rename column {} to {};", table_name, column_name, candidate)?;
+                            writeln!(
+                                writer,
+                                "--   alter table {} rename column {} to {};",
+                                table_name, column_name, candidate
+                            )?;
                         }
                     }
                     writeln!(
@@ -106,45 +128,75 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                         "-- SQLite 3.35+: alter table {} drop column {};",
                         table_name, column_name
                     )?;
-                    writeln!(writer, "-- For older SQLite: manually recreate the table without this column.")?;
+                    writeln!(
+                        writer,
+                        "-- For older SQLite: manually recreate the table without this column."
+                    )?;
                     writeln!(writer)?;
                 }
                 // SQLite does not support ALTER COLUMN — requires table rebuild.
-                SchemaChange::ModifyColumn { table_name, old_column: _, new_column } => {
+                SchemaChange::ModifyColumn {
+                    table_name,
+                    old_column: _,
+                    new_column,
+                } => {
                     writeln!(
                         writer,
                         "-- SQLite does not support modifying column '{}' on table '{}' in-place.",
                         new_column.name(),
                         table_name
                     )?;
-                    writeln!(writer, "-- Manually recreate the table with the updated column definition.")?;
+                    writeln!(
+                        writer,
+                        "-- Manually recreate the table with the updated column definition."
+                    )?;
                     writeln!(writer)?;
                 }
-                SchemaChange::AddKey { table_name, key, ordinal } => {
+                SchemaChange::AddKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_add_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::DropKey { table_name, key, ordinal } => {
+                SchemaChange::DropKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_drop_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::AddConstraint { table_name, constraint } if constraint.database_type() == DatabaseType::Sqlite => {
+                SchemaChange::AddConstraint {
+                    table_name,
+                    constraint,
+                } if constraint.database_type() == DatabaseType::Sqlite => {
                     writeln!(
                         writer,
                         "-- SQLite does not support adding constraint '{}' to table '{}' in-place.",
                         constraint.name(),
                         table_name
                     )?;
-                    writeln!(writer, "-- Manually recreate the table with the constraint.")?;
+                    writeln!(
+                        writer,
+                        "-- Manually recreate the table with the constraint."
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddConstraint { .. } => {}
-                SchemaChange::DropConstraint { table_name, constraint_name, database_type } if *database_type == DatabaseType::Sqlite => {
+                SchemaChange::DropConstraint {
+                    table_name,
+                    constraint_name,
+                    database_type,
+                } if *database_type == DatabaseType::Sqlite => {
                     writeln!(
                         writer,
                         "-- SQLite does not support dropping constraint '{}' from table '{}' in-place.",
-                        constraint_name,
-                        table_name
+                        constraint_name, table_name
                     )?;
-                    writeln!(writer, "-- Manually recreate the table without the constraint.")?;
+                    writeln!(
+                        writer,
+                        "-- Manually recreate the table without the constraint."
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropConstraint { .. } => {}
@@ -152,27 +204,37 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     write_add_relation(writer, relation)?;
                 }
                 SchemaChange::DropRelation { relation, .. } => {
-                    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
+                    let from_columns = relation
+                        .column_pairs()
+                        .iter()
+                        .map(|(from, _)| from.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     writeln!(
                         writer,
                         "-- SQLite does not support dropping foreign key on '{}.({})'.",
                         relation.from_table_name(),
                         from_columns
                     )?;
-                    writeln!(writer, "-- Manually recreate the table without this foreign key.")?;
+                    writeln!(
+                        writer,
+                        "-- Manually recreate the table without this foreign key."
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddView { view }
-                    if view.database_type().is_none() || view.database_type() == Some(DatabaseType::Sqlite) =>
+                    if view.database_type().is_none()
+                        || view.database_type() == Some(DatabaseType::Sqlite) =>
                 {
                     writeln!(writer, "create view if not exists {} as", view.name())?;
                     writeln!(writer, "{};", view.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddView { .. } => {}
-                SchemaChange::DropView { view_name, database_type }
-                    if database_type.is_none() || *database_type == Some(DatabaseType::Sqlite) =>
-                {
+                SchemaChange::DropView {
+                    view_name,
+                    database_type,
+                } if database_type.is_none() || *database_type == Some(DatabaseType::Sqlite) => {
                     writeln!(writer, "drop view if exists {};", view_name)?;
                     writeln!(writer)?;
                 }
@@ -188,40 +250,69 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                             "-- SQLite does not support altering a CHECK constraint in-place; enum '{}' changed.",
                             new_enum_type.name()
                         )?;
-                        writeln!(writer, "-- Manually recreate the following tables with the updated value list:")?;
+                        writeln!(
+                            writer,
+                            "-- Manually recreate the following tables with the updated value list:"
+                        )?;
                         for (table_name, column) in affected {
                             writeln!(writer, "--   {}.{}", table_name, column.name())?;
                         }
                         writeln!(writer)?;
                     }
                 }
-                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::Sqlite => {
+                SchemaChange::AddFunction { function }
+                    if function.database_type() == DatabaseType::Sqlite =>
+                {
                     writeln!(writer, "{};", function.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddFunction { .. } => {}
-                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::Sqlite => {
-                    writeln!(writer, "-- SQLite has no generic DROP FUNCTION; function '{}' removed - review manually.", function_name)?;
+                SchemaChange::DropFunction {
+                    function_name,
+                    database_type,
+                } if *database_type == DatabaseType::Sqlite => {
+                    writeln!(
+                        writer,
+                        "-- SQLite has no generic DROP FUNCTION; function '{}' removed - review manually.",
+                        function_name
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropFunction { .. } => {}
-                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::Sqlite => {
+                SchemaChange::AddProcedure { procedure }
+                    if procedure.database_type() == DatabaseType::Sqlite =>
+                {
                     writeln!(writer, "{};", procedure.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddProcedure { .. } => {}
-                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::Sqlite => {
-                    writeln!(writer, "-- SQLite has no generic DROP PROCEDURE; procedure '{}' removed - review manually.", procedure_name)?;
+                SchemaChange::DropProcedure {
+                    procedure_name,
+                    database_type,
+                } if *database_type == DatabaseType::Sqlite => {
+                    writeln!(
+                        writer,
+                        "-- SQLite has no generic DROP PROCEDURE; procedure '{}' removed - review manually.",
+                        procedure_name
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropProcedure { .. } => {}
-                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Sqlite => {
+                SchemaChange::AddOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::Sqlite =>
+                {
                     writeln!(writer, "{};", other_sql.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddOtherSql { .. } => {}
-                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::Sqlite => {
-                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                SchemaChange::DropOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::Sqlite =>
+                {
+                    writeln!(
+                        writer,
+                        "-- TODO: other_sql entry removed, review manually: {}",
+                        other_sql.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropOtherSql { .. } => {}
@@ -229,16 +320,22 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                 // `SqliteTriggerGenerator`); nothing to regenerate here either.
                 SchemaChange::AddTrigger { .. } | SchemaChange::DropTrigger { .. } => {}
                 SchemaChange::AddInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
                 {
                     writeln!(writer, "{};", initial_data.sql())?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddInitialData { .. } => {}
                 SchemaChange::DropInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::Sqlite) =>
                 {
-                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(
+                        writer,
+                        "-- TODO: initial_data entry removed, review manually: {}",
+                        initial_data.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropInitialData { .. } => {}
@@ -285,7 +382,10 @@ fn write_add_table(
 /// manual rebuild (SQLite emulates enums as `varchar` + `CHECK (col IN (...))`, same as SQL
 /// Server, but can't alter a CHECK constraint in place - see the `AddConstraint`/
 /// `DropConstraint` arms above).
-fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) -> Vec<(String, &'a Column)> {
+fn columns_using_enum<'a>(
+    database_model: &'a DatabaseModel,
+    enum_name: &str,
+) -> Vec<(String, &'a Column)> {
     database_model
         .all_tables()
         .into_iter()
@@ -293,7 +393,10 @@ fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) ->
             table
                 .columns()
                 .iter()
-                .filter(|c| c.enum_type().is_some_and(|t| t.eq_ignore_ascii_case(enum_name)))
+                .filter(|c| {
+                    c.enum_type()
+                        .is_some_and(|t| t.eq_ignore_ascii_case(enum_name))
+                })
                 .map(|c| (table.name().to_string(), c))
         })
         .collect()
@@ -319,16 +422,44 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
     };
     Some(
         match boolean_mode {
-            BooleanMode::Native => if value { "true" } else { "false" },
-            BooleanMode::YesNo => if value { "'Yes'" } else { "'No'" },
-            BooleanMode::YN => if value { "'Y'" } else { "'N'" },
+            BooleanMode::Native => {
+                if value {
+                    "true"
+                } else {
+                    "false"
+                }
+            }
+            BooleanMode::YesNo => {
+                if value {
+                    "'Yes'"
+                } else {
+                    "'No'"
+                }
+            }
+            BooleanMode::YN => {
+                if value {
+                    "'Y'"
+                } else {
+                    "'N'"
+                }
+            }
         }
         .to_string(),
     )
 }
 
-fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
-    let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
+fn write_add_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
+    let cols: String = key
+        .columns()
+        .iter()
+        .map(|c| c.name())
+        .collect::<Vec<_>>()
+        .join(", ");
     match key.key_type() {
         KeyType::Primary => {
             writeln!(
@@ -336,7 +467,10 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
                 "-- SQLite does not support adding a PRIMARY KEY constraint in-place on table '{}'.",
                 table_name
             )?;
-            writeln!(writer, "-- Manually recreate the table with the primary key.")?;
+            writeln!(
+                writer,
+                "-- Manually recreate the table with the primary key."
+            )?;
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::Sqlite, table_name, ordinal);
@@ -349,7 +483,10 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::Sqlite, table_name, ordinal);
             let unique = if key.is_unique() { "unique " } else { "" };
-            let where_clause = key.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
+            let where_clause = key
+                .filter()
+                .map(|f| format!(" where {}", f))
+                .unwrap_or_default();
             writeln!(
                 writer,
                 "create {}index if not exists {} on {} ({}){};",
@@ -361,7 +498,12 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
     Ok(())
 }
 
-fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_drop_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     match key.key_type() {
         KeyType::Primary => {
             writeln!(
@@ -369,7 +511,10 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
                 "-- SQLite does not support dropping a PRIMARY KEY constraint in-place on table '{}'.",
                 table_name
             )?;
-            writeln!(writer, "-- Manually recreate the table without the primary key.")?;
+            writeln!(
+                writer,
+                "-- Manually recreate the table without the primary key."
+            )?;
         }
         KeyType::Unique => {
             let constraint_name = unique_key_name(DatabaseType::Sqlite, table_name, ordinal);
@@ -384,7 +529,10 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
     Ok(())
 }
 
-fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(), MigrationGeneratorError> {
+fn write_add_relation(
+    writer: &mut dyn Write,
+    relation: &Relation,
+) -> Result<(), MigrationGeneratorError> {
     if !relation.creates_foreign_key_constraint() {
         return Ok(());
     }
@@ -394,8 +542,18 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation) -> Result<(),
         RelationType::DoNothing => " on delete no action",
         RelationType::Enforce => "",
     };
-    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
-    let to_columns = relation.column_pairs().iter().map(|(_, to)| to.as_str()).collect::<Vec<_>>().join(", ");
+    let from_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(from, _)| from.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let to_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(_, to)| to.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     writeln!(
         writer,
         "-- SQLite foreign keys must be declared at table creation time."

@@ -32,17 +32,33 @@ mod tests {
     #[test]
     fn output_relations_renders_foreign_key_constraint() {
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
-            .add_relation(Relation::new("parent", "id", "child", "parent_id", RelationType::Enforce, false))
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
+            .add_relation(Relation::new(
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                RelationType::Enforce,
+                false,
+            ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerRelationGenerator::new(ctx);
@@ -58,7 +74,8 @@ mod tests {
     fn output_relations_does_nothing_when_no_relations_exist() {
         let table = TableBuilder::new(None::<&str>, "solo").build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerRelationGenerator::new(ctx);

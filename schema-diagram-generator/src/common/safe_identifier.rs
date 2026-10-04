@@ -8,7 +8,13 @@ use std::collections::HashSet;
 /// or attribute boundaries.
 pub fn sanitize_token(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -50,7 +56,10 @@ mod tests {
 
     #[test]
     fn leaves_already_safe_names_unchanged() {
-        assert_eq!(build_safe_identifiers(["CUSTOMER", "ORDER_ITEM"]), ["CUSTOMER", "ORDER_ITEM"]);
+        assert_eq!(
+            build_safe_identifiers(["CUSTOMER", "ORDER_ITEM"]),
+            ["CUSTOMER", "ORDER_ITEM"]
+        );
     }
 
     #[test]
@@ -62,7 +71,11 @@ mod tests {
     fn disambiguates_distinct_names_that_sanitize_to_the_same_token() {
         let ids = build_safe_identifiers(["ORDER-DETAIL", "ORDER DETAIL", "ORDER_DETAIL"]);
         let unique: HashSet<&String> = ids.iter().collect();
-        assert_eq!(unique.len(), 3, "all three distinct names must map to distinct ids: {ids:?}");
+        assert_eq!(
+            unique.len(),
+            3,
+            "all three distinct names must map to distinct ids: {ids:?}"
+        );
         // The first occurrence keeps the unsuffixed token so the common (already-safe)
         // case is unaffected.
         assert_eq!(ids[0], "ORDER_DETAIL");

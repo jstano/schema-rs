@@ -49,7 +49,10 @@ pub enum SchemaInstallerError {
     #[error(
         "Migration {version} (script {script_path}) was applied but its source file no longer exists in the migrations directory"
     )]
-    MissingMigrationSource { version: String, script_path: String },
+    MissingMigrationSource {
+        version: String,
+        script_path: String,
+    },
 
     #[error(
         "Out-of-order migration detected: {version} - {description} has not been applied, but version {highest_applied} has already been applied; refusing to apply it out of order"

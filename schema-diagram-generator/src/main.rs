@@ -67,8 +67,13 @@ fn run() -> Result<(), String> {
     if let Some(parent) = Path::new(&output_path).parent()
         && !parent.as_os_str().is_empty()
     {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "failed to create output directory '{}': {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
     fs::write(&output_path, &output)
         .map_err(|e| format!("failed to write output file '{}': {}", output_path, e))?;
@@ -77,16 +82,29 @@ fn run() -> Result<(), String> {
 }
 
 fn load_schema(schema_path: &Path) -> Result<DatabaseModel, String> {
-    let contents = fs::read_to_string(schema_path)
-        .map_err(|e| format!("failed to read the schema file '{}': {}", schema_path.display(), e))?;
-    parse_database_xml(contents.as_str())
-        .map_err(|e| format!("failed to parse the schema '{}': {}", schema_path.display(), e))
+    let contents = fs::read_to_string(schema_path).map_err(|e| {
+        format!(
+            "failed to read the schema file '{}': {}",
+            schema_path.display(),
+            e
+        )
+    })?;
+    parse_database_xml(contents.as_str()).map_err(|e| {
+        format!(
+            "failed to parse the schema '{}': {}",
+            schema_path.display(),
+            e
+        )
+    })
 }
 
 fn build_output_path(path: &Path, extension: &str) -> Result<String, String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("schema file path '{}' has no parent directory", path.display()))?;
+    let parent = path.parent().ok_or_else(|| {
+        format!(
+            "schema file path '{}' has no parent directory",
+            path.display()
+        )
+    })?;
     let stem = path
         .file_stem()
         .ok_or_else(|| format!("schema file path '{}' has no file name", path.display()))?

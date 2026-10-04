@@ -1,7 +1,10 @@
 use crate::error::SchemaReverseEngineerError;
 use sqlx::PgPool;
 
-pub async fn list_tables(pool: &PgPool, db_schema: &str) -> Result<Vec<String>, SchemaReverseEngineerError> {
+pub async fn list_tables(
+    pool: &PgPool,
+    db_schema: &str,
+) -> Result<Vec<String>, SchemaReverseEngineerError> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT table_name \
          FROM information_schema.tables \

@@ -7,14 +7,12 @@ use schema_model::model::types::BooleanMode;
 use std::cmp;
 
 pub struct SqlServerColumnTypeGenerator {
-    context: GeneratorContext
+    context: GeneratorContext,
 }
 
 impl SqlServerColumnTypeGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context
-        }
+        Self { context }
     }
 }
 
@@ -69,9 +67,9 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
 
     fn boolean_sql(&self) -> String {
         match self.context.settings().boolean_mode() {
-            BooleanMode::YesNo  => "nvarchar(3)".to_string(),
+            BooleanMode::YesNo => "nvarchar(3)".to_string(),
             BooleanMode::YN => "nchar(1)".to_string(),
-            BooleanMode::Native => "bit".to_string()
+            BooleanMode::Native => "bit".to_string(),
         }
     }
 
@@ -92,12 +90,20 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     }
 
     fn char_sql(&self, column: &Column) -> String {
-        let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
+        let length = if column.length() == -1 {
+            "max".to_string()
+        } else {
+            column.length().to_string()
+        };
         format!("nchar({})", length).to_string()
     }
 
     fn varchar_sql(&self, column: &Column) -> String {
-        let length = if column.length() == -1 { "max".to_string() } else { column.length().to_string() };
+        let length = if column.length() == -1 {
+            "max".to_string()
+        } else {
+            column.length().to_string()
+        };
         format!("nvarchar({})", length).to_string()
     }
 
@@ -116,7 +122,6 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
         }
     }
 
-
     fn native_boolean_sql(&self) -> String {
         "bit".to_string()
     }
@@ -131,7 +136,8 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
 
     fn enum_sql(&self, column: &Column) -> String {
         let database_model = self.context().settings().database_model();
-        let enum_type: &EnumType = database_model.find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
+        let enum_type: &EnumType = database_model
+            .find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
 
         let mut min_length = usize::MAX;
         let mut max_length = 0;
@@ -168,7 +174,8 @@ mod tests {
 
     fn make_context() -> (GeneratorContext, TableBuilder) {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let table = TableBuilder::new(None::<&str>, "test");
         let options = GenerateOptions::new(
             Rc::new(model),
@@ -188,9 +195,12 @@ mod tests {
         assert_eq!(generator.column_type_sql(&table, &col), expected);
     }
 
-    fn make_context_with_version(target_sqlserver_version: u32) -> (GeneratorContext, TableBuilder) {
+    fn make_context_with_version(
+        target_sqlserver_version: u32,
+    ) -> (GeneratorContext, TableBuilder) {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let table = TableBuilder::new(None::<&str>, "test");
         let mut options = GenerateOptions::new(
             Rc::new(model),
@@ -302,8 +312,11 @@ mod tests {
                 EnumValue::new("LONGER", Some("ABC".to_string())),
             ],
         );
-        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(enum_type)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
@@ -332,8 +345,11 @@ mod tests {
                 EnumValue::new("FEMALE", Some("F".to_string())),
             ],
         );
-        let schema = SchemaBuilder::new(None::<&str>).add_enum_type(enum_type).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_enum_type(enum_type)
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let options = GenerateOptions::new(
             Rc::new(model),
             Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),

@@ -12,7 +12,6 @@ impl SqlServerViewGenerator {
     pub fn new(context: GeneratorContext) -> Self {
         Self { context }
     }
-
 }
 
 impl ViewGenerator for SqlServerViewGenerator {
@@ -34,7 +33,11 @@ impl ViewGenerator for SqlServerViewGenerator {
                 for view in views {
                     let view_name = view.fully_qualified_view_name(database_type);
                     sql_println!(writer, "/* {} */", view_name);
-                    sql_println!(writer, "if object_id('{}', 'V') is not null", escape_sql_literal(&view_name));
+                    sql_println!(
+                        writer,
+                        "if object_id('{}', 'V') is not null",
+                        escape_sql_literal(&view_name)
+                    );
                     sql_println!(writer, "   drop view {}{}", view_name, separator);
                     sql_println!(writer, "create view {} as", view_name);
                     sql_println!(writer, "   {}{}", view.sql(), separator);
@@ -55,9 +58,15 @@ mod tests {
 
     #[test]
     fn output_views_maps_public_schema_to_dbo() {
-        let view = View::new(Some("public"), "active_users", "select * from users where active = 1", None);
+        let view = View::new(
+            Some("public"),
+            "active_users",
+            "select * from users where active = 1",
+            None,
+        );
         let schema = SchemaBuilder::new(Some("public")).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
@@ -74,26 +83,36 @@ mod tests {
     fn output_views_preserves_non_public_schema_name() {
         let view = View::new(Some("app"), "active_users", "select 1", None);
         let schema = SchemaBuilder::new(Some("app")).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("create view app.active_users as"));
+        assert!(
+            buffer
+                .contents()
+                .contains("create view app.active_users as")
+        );
     }
 
     #[test]
     fn output_views_uses_dbo_when_schema_is_none() {
         let view = View::new(Option::<&str>::None, "active_users", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("create view dbo.active_users as"));
+        assert!(
+            buffer
+                .contents()
+                .contains("create view dbo.active_users as")
+        );
     }
 
     #[test]
@@ -102,19 +121,25 @@ mod tests {
         // object_id existence-check SQL string literal.
         let view = View::new(None::<&str>, "o'brien", "select 1", None);
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);
         generator.output_views();
 
-        assert!(buffer.contents().contains("if object_id('dbo.o''brien', 'V') is not null"));
+        assert!(
+            buffer
+                .contents()
+                .contains("if object_id('dbo.o''brien', 'V') is not null")
+        );
     }
 
     #[test]
     fn output_views_does_nothing_when_no_views() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerViewGenerator::new(ctx);

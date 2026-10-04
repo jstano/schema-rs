@@ -5,10 +5,15 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "schema-reverse-engineer")]
-#[command(about = "Reverse-engineer a live PostgreSQL database into a schema-rs XML schema definition")]
+#[command(
+    about = "Reverse-engineer a live PostgreSQL database into a schema-rs XML schema definition"
+)]
 #[command(arg_required_else_help = true)]
 struct Args {
-    #[arg(long, help = "PostgreSQL connection string, e.g. postgres://user:pass@host:5432/dbname")]
+    #[arg(
+        long,
+        help = "PostgreSQL connection string, e.g. postgres://user:pass@host:5432/dbname"
+    )]
     connection_string: String,
 
     #[arg(long, default_value = "public", help = "Postgres schema to introspect")]

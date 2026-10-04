@@ -113,22 +113,25 @@ impl DefaultKeyGenerator {
                     // needlessly turned every SQL Server table into a heap even when nothing
                     // else wanted the clustered slot.
                     let other_key_is_clustered = self.nonclustered_primary_key
-                        && table
-                            .keys()
-                            .iter()
-                            .any(|k| !k.is_index() && k.key_type() != schema_model::model::types::KeyType::Primary && k.is_cluster());
-                    let primary_key_clause = if self.effective_cluster(table.name(), "primary key", key) {
-                        "primary key clustered"
-                    } else if other_key_is_clustered {
-                        "primary key nonclustered"
-                    } else {
-                        "primary key"
-                    };
-                    let compress_clause = if self.effective_compress(table.name(), "primary key", key) {
-                        " with (data_compression = page)"
-                    } else {
-                        ""
-                    };
+                        && table.keys().iter().any(|k| {
+                            !k.is_index()
+                                && k.key_type() != schema_model::model::types::KeyType::Primary
+                                && k.is_cluster()
+                        });
+                    let primary_key_clause =
+                        if self.effective_cluster(table.name(), "primary key", key) {
+                            "primary key clustered"
+                        } else if other_key_is_clustered {
+                            "primary key nonclustered"
+                        } else {
+                            "primary key"
+                        };
+                    let compress_clause =
+                        if self.effective_compress(table.name(), "primary key", key) {
+                            " with (data_compression = page)"
+                        } else {
+                            ""
+                        };
                     constraints.push(format!(
                         "   constraint {} {} ({}){}",
                         constraint_name,
@@ -140,7 +143,8 @@ impl DefaultKeyGenerator {
                 schema_model::model::types::KeyType::Unique => {
                     unique_key_counter += 1;
                     let database_type = self.context.settings().database_type();
-                    let constraint_name = unique_key_name(database_type, table.name(), unique_key_counter);
+                    let constraint_name =
+                        unique_key_name(database_type, table.name(), unique_key_counter);
                     let unique_clause = if self.effective_cluster(table.name(), "unique", key) {
                         "unique clustered"
                     } else {
@@ -189,7 +193,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -199,13 +204,12 @@ mod tests {
     #[test]
     fn primary_key_single_column() {
         let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
-        let table = TableBuilder::new(None::<&str>, "users")
-            .add_key(pk)
-            .build();
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).build();
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -216,35 +220,36 @@ mod tests {
 
     #[test]
     fn primary_key_multiple_columns() {
-        let pk = Key::new(KeyType::Primary, vec![
-            KeyColumn::new("org_id"),
-            KeyColumn::new("user_id"),
-        ]);
-        let table = TableBuilder::new(None::<&str>, "users")
-            .add_key(pk)
-            .build();
+        let pk = Key::new(
+            KeyType::Primary,
+            vec![KeyColumn::new("org_id"), KeyColumn::new("user_id")],
+        );
+        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).build();
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
         let constraints = generator.key_constraints(&table);
         assert_eq!(constraints.len(), 1);
-        assert_eq!(constraints[0], "   constraint pk_users primary key (org_id,user_id)");
+        assert_eq!(
+            constraints[0],
+            "   constraint pk_users primary key (org_id,user_id)"
+        );
     }
 
     #[test]
     fn unique_key_single_column() {
         let uq = Key::new(KeyType::Unique, vec![KeyColumn::new("email")]);
-        let table = TableBuilder::new(None::<&str>, "users")
-            .add_key(uq)
-            .build();
+        let table = TableBuilder::new(None::<&str>, "users").add_key(uq).build();
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -255,23 +260,27 @@ mod tests {
 
     #[test]
     fn unique_key_multiple_columns() {
-        let uq = Key::new(KeyType::Unique, vec![
-            KeyColumn::new("tenant_id"),
-            KeyColumn::new("code"),
-        ]);
+        let uq = Key::new(
+            KeyType::Unique,
+            vec![KeyColumn::new("tenant_id"), KeyColumn::new("code")],
+        );
         let table = TableBuilder::new(None::<&str>, "products")
             .add_key(uq)
             .build();
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
         let constraints = generator.key_constraints(&table);
         assert_eq!(constraints.len(), 1);
-        assert_eq!(constraints[0], "   constraint ak_products1 unique (tenant_id,code)");
+        assert_eq!(
+            constraints[0],
+            "   constraint ak_products1 unique (tenant_id,code)"
+        );
     }
 
     #[test]
@@ -287,7 +296,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -309,7 +319,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -330,14 +341,18 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
         let constraints = generator.key_constraints(&table);
         assert_eq!(constraints.len(), 2);
         assert_eq!(constraints[0], "   constraint ak_products1 unique (email)");
-        assert_eq!(constraints[1], "   constraint ak_products2 unique (username)");
+        assert_eq!(
+            constraints[1],
+            "   constraint ak_products2 unique (username)"
+        );
     }
 
     #[test]
@@ -352,7 +367,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -365,10 +381,15 @@ mod tests {
         assert!(pk_constraint.contains("primary key (id)"));
         // Extract the constraint name part (between "constraint " and " primary")
         if let Some(start) = pk_constraint.find("constraint ")
-            && let Some(end) = pk_constraint.find(" primary") {
-                let constraint_name = &pk_constraint[start + 11..end];
-                assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
-            }
+            && let Some(end) = pk_constraint.find(" primary")
+        {
+            let constraint_name = &pk_constraint[start + 11..end];
+            assert!(
+                constraint_name.len() <= 63,
+                "Constraint name {} exceeds 63 chars",
+                constraint_name
+            );
+        }
 
         // ak_*1 constraint name should be <= 63 chars
         let ak_constraint = &constraints[1];
@@ -376,10 +397,15 @@ mod tests {
         assert!(ak_constraint.contains("unique (code)"));
         // Extract the constraint name part
         if let Some(start) = ak_constraint.find("constraint ")
-            && let Some(end) = ak_constraint.find(" unique") {
-                let constraint_name = &ak_constraint[start + 11..end];
-                assert!(constraint_name.len() <= 63, "Constraint name {} exceeds 63 chars", constraint_name);
-            }
+            && let Some(end) = ak_constraint.find(" unique")
+        {
+            let constraint_name = &ak_constraint[start + 11..end];
+            assert!(
+                constraint_name.len() <= 63,
+                "Constraint name {} exceeds 63 chars",
+                constraint_name
+            );
+        }
     }
 
     #[test]
@@ -394,7 +420,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -419,7 +446,8 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
@@ -434,7 +462,14 @@ mod tests {
         // The one case NONCLUSTERED is actually needed: a unique key has claimed the
         // table's single clustered slot, so the PK must be pushed off it.
         let pk = Key::new(KeyType::Primary, vec![KeyColumn::new("id")]);
-        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("location_id")], true, false, false, None::<String>);
+        let uq = Key::new_full(
+            KeyType::Unique,
+            vec![KeyColumn::new("location_id")],
+            true,
+            false,
+            false,
+            None::<String>,
+        );
         let table = TableBuilder::new(None::<&str>, "users")
             .add_key(pk)
             .add_key(uq)
@@ -442,14 +477,21 @@ mod tests {
         let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
             .add_table(table.clone())
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
         let constraints = generator.key_constraints(&table);
         assert_eq!(constraints.len(), 2);
-        assert_eq!(constraints[0], "   constraint pk_users primary key nonclustered (id)");
-        assert_eq!(constraints[1], "   constraint ak_users1 unique clustered (location_id)");
+        assert_eq!(
+            constraints[0],
+            "   constraint pk_users primary key nonclustered (id)"
+        );
+        assert_eq!(
+            constraints[1],
+            "   constraint ak_users1 unique clustered (location_id)"
+        );
     }
 
     #[test]
@@ -457,39 +499,85 @@ mod tests {
         // Regression test for M1: `sqlserver_key_generator.rs` hard-codes
         // `with_nonclustered_primary_key(true)`, so `<primary cluster="true">` used to
         // render `primary key nonclustered` - the exact opposite of what was asked.
-        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, false, false, None::<String>);
+        let pk = Key::new_full(
+            KeyType::Primary,
+            vec![KeyColumn::new("id")],
+            true,
+            false,
+            false,
+            None::<String>,
+        );
         let table = TableBuilder::new(None::<&str>, "users").add_key(pk).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
         let constraints = generator.key_constraints(&table);
-        assert_eq!(constraints, vec!["   constraint pk_users primary key clustered (id)"]);
+        assert_eq!(
+            constraints,
+            vec!["   constraint pk_users primary key clustered (id)"]
+        );
     }
 
     #[test]
     fn cluster_true_on_sql_server_unique_key_adds_clustered_keyword() {
-        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
+        let uq = Key::new_full(
+            KeyType::Unique,
+            vec![KeyColumn::new("email")],
+            true,
+            false,
+            false,
+            None::<String>,
+        );
         let table = TableBuilder::new(None::<&str>, "users").add_key(uq).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx);
         let constraints = generator.key_constraints(&table);
-        assert_eq!(constraints, vec!["   constraint ak_users1 unique clustered (email)"]);
+        assert_eq!(
+            constraints,
+            vec!["   constraint ak_users1 unique clustered (email)"]
+        );
     }
 
     #[test]
     fn cluster_true_is_ignored_on_dialects_without_clustered_constraints() {
         // PostgreSQL/SQLite have no clustered/nonclustered constraint syntax - `cluster`
         // is ignored (with a warning) rather than rendering invalid SQL (M1).
-        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, false, false, None::<String>);
-        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], true, false, false, None::<String>);
-        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let pk = Key::new_full(
+            KeyType::Primary,
+            vec![KeyColumn::new("id")],
+            true,
+            false,
+            false,
+            None::<String>,
+        );
+        let uq = Key::new_full(
+            KeyType::Unique,
+            vec![KeyColumn::new("email")],
+            true,
+            false,
+            false,
+            None::<String>,
+        );
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_key(pk)
+            .add_key(uq)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);
@@ -500,11 +588,31 @@ mod tests {
 
     #[test]
     fn compress_true_on_sql_server_adds_data_compression_clause() {
-        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], false, true, false, None::<String>);
-        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], false, true, false, None::<String>);
-        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let pk = Key::new_full(
+            KeyType::Primary,
+            vec![KeyColumn::new("id")],
+            false,
+            true,
+            false,
+            None::<String>,
+        );
+        let uq = Key::new_full(
+            KeyType::Unique,
+            vec![KeyColumn::new("email")],
+            false,
+            true,
+            false,
+            None::<String>,
+        );
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_key(pk)
+            .add_key(uq)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
@@ -521,17 +629,29 @@ mod tests {
 
     #[test]
     fn compress_true_combines_with_clustered_keyword() {
-        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], true, true, false, None::<String>);
+        let pk = Key::new_full(
+            KeyType::Primary,
+            vec![KeyColumn::new("id")],
+            true,
+            true,
+            false,
+            None::<String>,
+        );
         let table = TableBuilder::new(None::<&str>, "users").add_key(pk).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = DefaultKeyGenerator::new(ctx).with_nonclustered_primary_key(true);
         let constraints = generator.key_constraints(&table);
         assert_eq!(
             constraints,
-            vec!["   constraint pk_users primary key clustered (id) with (data_compression = page)"]
+            vec![
+                "   constraint pk_users primary key clustered (id) with (data_compression = page)"
+            ]
         );
     }
 
@@ -539,11 +659,31 @@ mod tests {
     fn compress_true_is_ignored_on_dialects_without_key_compression() {
         // PostgreSQL/SQLite have no key-level compression syntax - `compress` is ignored
         // (with a warning) rather than rendering invalid SQL, matching `cluster` handling (M1).
-        let pk = Key::new_full(KeyType::Primary, vec![KeyColumn::new("id")], false, true, false, None::<String>);
-        let uq = Key::new_full(KeyType::Unique, vec![KeyColumn::new("email")], false, true, false, None::<String>);
-        let table = TableBuilder::new(None::<&str>, "users").add_key(pk).add_key(uq).build();
-        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let pk = Key::new_full(
+            KeyType::Primary,
+            vec![KeyColumn::new("id")],
+            false,
+            true,
+            false,
+            None::<String>,
+        );
+        let uq = Key::new_full(
+            KeyType::Unique,
+            vec![KeyColumn::new("email")],
+            false,
+            true,
+            false,
+            None::<String>,
+        );
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_key(pk)
+            .add_key(uq)
+            .build();
+        let schema = schema_model::builder::SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultKeyGenerator::new(ctx);

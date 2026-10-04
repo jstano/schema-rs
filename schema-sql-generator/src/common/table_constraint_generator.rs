@@ -14,9 +14,7 @@ pub struct DefaultTableConstraintGenerator {
 
 impl DefaultTableConstraintGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
+        Self { context }
     }
 
     pub fn context(&self) -> &GeneratorContext {
@@ -24,20 +22,19 @@ impl DefaultTableConstraintGenerator {
     }
 
     fn generator_constraint(&self, constraint: &Constraint) -> String {
-        format!("   constraint {} {}",
-               constraint.name(),
-               constraint.sql())
+        format!("   constraint {} {}", constraint.name(), constraint.sql())
     }
 }
 
 impl TableConstraintGenerator for DefaultTableConstraintGenerator {
     fn table_check_constraints(&self, table: &Table) -> Vec<String> {
         let database_type = self.context.settings().database_type();
-        table.constraints().iter()
+        table
+            .constraints()
+            .iter()
             .filter(|constraint| constraint.database_type() == database_type)
-            .map(|constraint| {
-                self.generator_constraint(constraint)
-            }).collect()
+            .map(|constraint| self.generator_constraint(constraint))
+            .collect()
     }
 }
 
@@ -55,11 +52,22 @@ mod tests {
     #[test]
     fn table_check_constraints_filters_by_database_type() {
         let table = TableBuilder::new(None::<&str>, "users")
-            .add_constraint(Constraint::new("ck_email_pg", "check (email ~ '^[^@]+@')", DatabaseType::Postgresql))
-            .add_constraint(Constraint::new("ck_email_lite", "check (email like '%@%')", DatabaseType::Sqlite))
+            .add_constraint(Constraint::new(
+                "ck_email_pg",
+                "check (email ~ '^[^@]+@')",
+                DatabaseType::Postgresql,
+            ))
+            .add_constraint(Constraint::new(
+                "ck_email_lite",
+                "check (email like '%@%')",
+                DatabaseType::Sqlite,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
 
         let generator = DefaultTableConstraintGenerator::new(ctx);

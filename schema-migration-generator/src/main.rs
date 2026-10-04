@@ -116,9 +116,16 @@ fn run() -> Result<(), String> {
             ((format!("HEAD:{}", file), old), (file.clone(), new))
         }
         None => {
-            let old_source = arguments.get_one::<String>("old").ok_or("--old is required")?;
-            let new_source = arguments.get_one::<String>("new").ok_or("--new is required")?;
-            ((old_source.clone(), read_schema_source(old_source)?), (new_source.clone(), read_schema_source(new_source)?))
+            let old_source = arguments
+                .get_one::<String>("old")
+                .ok_or("--old is required")?;
+            let new_source = arguments
+                .get_one::<String>("new")
+                .ok_or("--new is required")?;
+            (
+                (old_source.clone(), read_schema_source(old_source)?),
+                (new_source.clone(), read_schema_source(new_source)?),
+            )
         }
     };
 
@@ -130,7 +137,11 @@ fn run() -> Result<(), String> {
 
     let target_postgres_version = parse_version(&arguments, "postgresql-version")?;
     let target_sqlserver_version = parse_version(&arguments, "sqlserver-version")?;
-    let generator = create_generator_with_versions(database_type, target_postgres_version, target_sqlserver_version);
+    let generator = create_generator_with_versions(
+        database_type,
+        target_postgres_version,
+        target_sqlserver_version,
+    );
     let mut output = Vec::new();
     generator
         .generate(&change_set, &new_model, &mut output)
@@ -138,17 +149,36 @@ fn run() -> Result<(), String> {
     let output = normalize_trailing_newline(output);
 
     if arguments.get_flag("auto-generate-name") {
-        let description = arguments.get_one::<String>("description").map(String::as_str);
-        let output_dir = arguments.get_one::<String>("output-dir").map(String::as_str);
-        let output_path = generate_migration_path(file_arg.map(String::as_str), output_dir, Utc::now(), description);
+        let description = arguments
+            .get_one::<String>("description")
+            .map(String::as_str);
+        let output_dir = arguments
+            .get_one::<String>("output-dir")
+            .map(String::as_str);
+        let output_path = generate_migration_path(
+            file_arg.map(String::as_str),
+            output_dir,
+            Utc::now(),
+            description,
+        );
         if let Some(parent) = output_path.parent()
             && !parent.as_os_str().is_empty()
         {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+            fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "failed to create output directory '{}': {}",
+                    parent.display(),
+                    e
+                )
+            })?;
         }
-        fs::write(&output_path, &output)
-            .map_err(|e| format!("failed to write output file '{}': {}", output_path.display(), e))?;
+        fs::write(&output_path, &output).map_err(|e| {
+            format!(
+                "failed to write output file '{}': {}",
+                output_path.display(),
+                e
+            )
+        })?;
         println!("Wrote migration to {}", output_path.display());
         return Ok(());
     }
@@ -158,8 +188,13 @@ fn run() -> Result<(), String> {
             if let Some(parent) = std::path::Path::new(output_file).parent()
                 && !parent.as_os_str().is_empty()
             {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("failed to create output directory '{}': {}", parent.display(), e))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    format!(
+                        "failed to create output directory '{}': {}",
+                        parent.display(),
+                        e
+                    )
+                })?;
             }
             fs::write(output_file, &output)
                 .map_err(|e| format!("failed to write output file '{}': {}", output_file, e))?;
@@ -213,7 +248,11 @@ fn load_schema(source: &str, contents: String) -> Result<DatabaseModel, String> 
     let errors = database_model.validate();
     if !errors.is_empty() {
         let details: Vec<String> = errors.iter().map(|e| format!("  {}", e)).collect();
-        return Err(format!("the schema '{}' is invalid:\n{}", source, details.join("\n")));
+        return Err(format!(
+            "the schema '{}' is invalid:\n{}",
+            source,
+            details.join("\n")
+        ));
     }
 
     Ok(database_model)
@@ -222,7 +261,11 @@ fn load_schema(source: &str, contents: String) -> Result<DatabaseModel, String> 
 fn diff_models(old_model: &DatabaseModel, new_model: &DatabaseModel) -> ChangeSet {
     let mut change_set = ChangeSet::new();
 
-    let mut schema_names: Vec<Option<&str>> = old_model.schemas().iter().map(Schema::schema_name).collect();
+    let mut schema_names: Vec<Option<&str>> = old_model
+        .schemas()
+        .iter()
+        .map(Schema::schema_name)
+        .collect();
     for name in new_model.schemas().iter().map(Schema::schema_name) {
         if !schema_names.contains(&name) {
             schema_names.push(name);
@@ -242,7 +285,10 @@ fn diff_models(old_model: &DatabaseModel, new_model: &DatabaseModel) -> ChangeSe
 }
 
 fn find_schema<'a>(model: &'a DatabaseModel, schema_name: Option<&str>) -> Option<&'a Schema> {
-    model.schemas().iter().find(|s| s.schema_name() == schema_name)
+    model
+        .schemas()
+        .iter()
+        .find(|s| s.schema_name() == schema_name)
 }
 
 #[cfg(test)]
@@ -252,19 +298,28 @@ mod tests {
     #[test]
     fn collapses_trailing_blank_lines_to_a_single_newline() {
         let output = b"alter table t add column c integer;\n\n".to_vec();
-        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\n");
+        assert_eq!(
+            normalize_trailing_newline(output),
+            b"alter table t add column c integer;\n"
+        );
     }
 
     #[test]
     fn collapses_multiple_trailing_blank_lines() {
         let output = b"alter table t add column c integer;\nGO\n\n\n".to_vec();
-        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\nGO\n");
+        assert_eq!(
+            normalize_trailing_newline(output),
+            b"alter table t add column c integer;\nGO\n"
+        );
     }
 
     #[test]
     fn adds_a_newline_when_none_is_present() {
         let output = b"alter table t add column c integer;".to_vec();
-        assert_eq!(normalize_trailing_newline(output), b"alter table t add column c integer;\n");
+        assert_eq!(
+            normalize_trailing_newline(output),
+            b"alter table t add column c integer;\n"
+        );
     }
 
     #[test]

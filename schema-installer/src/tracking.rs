@@ -5,8 +5,7 @@ pub struct SchemaMigrationDdl;
 impl SchemaMigrationDdl {
     pub fn schema_migration_ddl(database_type: &GeneratorType) -> String {
         match database_type {
-            GeneratorType::Postgresql => {
-                r#"CREATE TABLE IF NOT EXISTS schema_migration (
+            GeneratorType::Postgresql => r#"CREATE TABLE IF NOT EXISTS schema_migration (
     id BIGSERIAL PRIMARY KEY,
     version TEXT NOT NULL,
     script_path TEXT NOT NULL,
@@ -18,8 +17,7 @@ impl SchemaMigrationDdl {
     tool_version TEXT NOT NULL,
     CONSTRAINT schema_migration_version_key UNIQUE (version)
 );"#
-                    .to_string()
-            }
+            .to_string(),
             GeneratorType::SqlServer => {
                 // `version` must be a bounded type - SQL Server forbids LOB types (NVARCHAR(MAX)
                 // included) as index/constraint key columns (Msg 1919), so
@@ -44,8 +42,7 @@ BEGIN
 END"#
                     .to_string()
             }
-            GeneratorType::Sqlite => {
-                r#"CREATE TABLE IF NOT EXISTS schema_migration (
+            GeneratorType::Sqlite => r#"CREATE TABLE IF NOT EXISTS schema_migration (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     version TEXT NOT NULL,
     script_path TEXT NOT NULL,
@@ -57,8 +54,7 @@ END"#
     tool_version TEXT NOT NULL,
     UNIQUE (version)
 );"#
-                    .to_string()
-            }
+            .to_string(),
         }
     }
 
@@ -164,14 +160,19 @@ mod tests {
 
     #[test]
     fn test_fresh_ddl_has_description_column_for_every_dialect() {
-        for db in [GeneratorType::Postgresql, GeneratorType::SqlServer, GeneratorType::Sqlite] {
+        for db in [
+            GeneratorType::Postgresql,
+            GeneratorType::SqlServer,
+            GeneratorType::Sqlite,
+        ] {
             assert!(SchemaMigrationDdl::schema_migration_ddl(&db).contains("description"));
         }
     }
 
     #[test]
     fn test_add_description_column_ddl_is_idempotent_for_postgres_and_sqlserver() {
-        let pg = SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::Postgresql).unwrap();
+        let pg =
+            SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::Postgresql).unwrap();
         assert!(pg.contains("ADD COLUMN IF NOT EXISTS description"));
         let ss = SchemaMigrationDdl::add_description_column_ddl(&GeneratorType::SqlServer).unwrap();
         assert!(ss.contains("COL_LENGTH('dbo.schema_migration', 'description') IS NULL"));
@@ -215,7 +216,13 @@ mod tests {
     #[test]
     fn test_sqlserver_repair_ddl_checks_all_originally_max_columns() {
         let ddl = SchemaMigrationDdl::sqlserver_repair_ddl();
-        for column in ["version", "script_path", "checksum", "status", "tool_version"] {
+        for column in [
+            "version",
+            "script_path",
+            "checksum",
+            "status",
+            "tool_version",
+        ] {
             assert!(
                 ddl.contains(&format!("COLUMN_NAME = '{}'", column)),
                 "repair DDL should check column '{}' for the old NVARCHAR(MAX) type",
@@ -227,8 +234,12 @@ mod tests {
     #[test]
     fn test_sqlserver_repair_ddl_fixes_version_column_and_constraint() {
         let ddl = SchemaMigrationDdl::sqlserver_repair_ddl();
-        assert!(ddl.contains("ALTER TABLE dbo.schema_migration DROP CONSTRAINT UQ_schema_migration_version"));
-        assert!(ddl.contains("ALTER TABLE dbo.schema_migration ALTER COLUMN version NVARCHAR(200) NOT NULL"));
+        assert!(ddl.contains(
+            "ALTER TABLE dbo.schema_migration DROP CONSTRAINT UQ_schema_migration_version"
+        ));
+        assert!(ddl.contains(
+            "ALTER TABLE dbo.schema_migration ALTER COLUMN version NVARCHAR(200) NOT NULL"
+        ));
         assert!(ddl.contains("ALTER TABLE dbo.schema_migration ADD CONSTRAINT UQ_schema_migration_version UNIQUE (version)"));
     }
 

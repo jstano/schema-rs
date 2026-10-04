@@ -28,7 +28,10 @@ mod tests {
 
     #[test]
     fn constructor_and_getters() {
-        let i = InitialData::new("insert into t values (1)", Option::from(DatabaseType::Postgresql));
+        let i = InitialData::new(
+            "insert into t values (1)",
+            Option::from(DatabaseType::Postgresql),
+        );
         assert_eq!(i.sql(), "insert into t values (1)");
         assert_eq!(i.database_type(), Option::from(DatabaseType::Postgresql));
     }

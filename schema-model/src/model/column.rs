@@ -11,6 +11,7 @@ use crate::model::types::BooleanMode;
 /// Returns `Err(())` for anything else - shared by `Schema::validate()` (which reports it as a
 /// validation error up front) and the SQL generator (which can then treat any value reaching it
 /// as already validated, rather than silently guessing).
+#[allow(clippy::result_unit_err)] // the only failure is "not a recognized boolean"; callers supply their own message
 pub fn parse_boolean_default(value: &str) -> Result<Option<bool>, ()> {
     let trimmed = value.trim();
 
@@ -68,6 +69,7 @@ impl Column {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // flat constructor mirroring every Column field; builders are the normal entry point
     pub fn new_all<S: Into<String>>(
         schema_name: Option<S>,
         name: S,
@@ -189,14 +191,24 @@ mod tests {
     #[test]
     fn parse_boolean_default_recognizes_truthy_spellings() {
         for value in ["true", "TRUE", " true ", "1", "yes", "YES", "on"] {
-            assert_eq!(parse_boolean_default(value), Ok(Some(true)), "value: {:?}", value);
+            assert_eq!(
+                parse_boolean_default(value),
+                Ok(Some(true)),
+                "value: {:?}",
+                value
+            );
         }
     }
 
     #[test]
     fn parse_boolean_default_recognizes_falsy_spellings() {
         for value in ["false", "FALSE", " false ", "0", "no", "NO", "off"] {
-            assert_eq!(parse_boolean_default(value), Ok(Some(false)), "value: {:?}", value);
+            assert_eq!(
+                parse_boolean_default(value),
+                Ok(Some(false)),
+                "value: {:?}",
+                value
+            );
         }
     }
 

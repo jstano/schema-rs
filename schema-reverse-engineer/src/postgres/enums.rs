@@ -4,7 +4,10 @@ use sqlx::PgPool;
 use std::collections::BTreeMap;
 
 /// Reads native Postgres enum types (`CREATE TYPE ... AS ENUM (...)`) defined in `db_schema`.
-pub async fn list_enum_types(pool: &PgPool, db_schema: &str) -> Result<Vec<EnumType>, SchemaReverseEngineerError> {
+pub async fn list_enum_types(
+    pool: &PgPool,
+    db_schema: &str,
+) -> Result<Vec<EnumType>, SchemaReverseEngineerError> {
     let rows: Vec<(String, String, i32)> = sqlx::query_as(
         "SELECT t.typname, e.enumlabel, e.enumsortorder::int4 \
          FROM pg_type t \

@@ -18,9 +18,7 @@ pub struct DefaultTriggerGenerator {
 
 impl DefaultTriggerGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
+        Self { context }
     }
 
     pub fn context(&self) -> &GeneratorContext {
@@ -29,9 +27,7 @@ impl DefaultTriggerGenerator {
 }
 
 impl TriggerGenerator for DefaultTriggerGenerator {
-    fn output_triggers(&self) {
-    }
+    fn output_triggers(&self) {}
 
-    fn output_triggers_for_table(&self, _table: &Table) {
-    }
+    fn output_triggers_for_table(&self, _table: &Table) {}
 }

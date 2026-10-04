@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use schema_installer::{Baseline, DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder};
+use schema_installer::{
+    Baseline, DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder,
+};
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_sql_generator::common::generator_type::GeneratorType;
 use std::path::PathBuf;
@@ -11,19 +13,37 @@ struct Args {
     #[command(subcommand)]
     command: Commands,
 
-    #[arg(long, global = true, help = "Database type (postgresql, sqlite, sqlserver)")]
+    #[arg(
+        long,
+        global = true,
+        help = "Database type (postgresql, sqlite, sqlserver)"
+    )]
     database_type: Option<String>,
 
     #[arg(long, global = true, help = "Database connection string")]
     connection_string: Option<String>,
 
-    #[arg(long, global = true, default_value = "native", help = "Boolean mode (native, yesno, yn)")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "native",
+        help = "Boolean mode (native, yesno, yn)"
+    )]
     boolean_mode: String,
 
-    #[arg(long, global = true, default_value = "relations", help = "Foreign key mode (none, relations, triggers)")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "relations",
+        help = "Foreign key mode (none, relations, triggers)"
+    )]
     foreign_key_mode: String,
 
-    #[arg(long, global = true, help = "SQL Server only: trust the server certificate without verification (for self-signed certs)")]
+    #[arg(
+        long,
+        global = true,
+        help = "SQL Server only: trust the server certificate without verification (for self-signed certs)"
+    )]
     trust_server_certificate: bool,
 }
 
@@ -35,7 +55,10 @@ enum Commands {
         migrations_dir: PathBuf,
         #[arg(long, help = "Only apply migrations up to and including this version")]
         target: Option<String>,
-        #[arg(long, help = "Don't apply anything; write the pending migrations' SQL to this file instead")]
+        #[arg(
+            long,
+            help = "Don't apply anything; write the pending migrations' SQL to this file instead"
+        )]
         dry_run: Option<PathBuf>,
     },
     /// Show migration status
@@ -57,9 +80,15 @@ enum Commands {
     Install {
         #[arg(long, help = "Path to XML schema file")]
         schema_file: PathBuf,
-        #[arg(long, help = "Mark migrations up to this version as already applied, without running them (requires --migrations-dir)")]
+        #[arg(
+            long,
+            help = "Mark migrations up to this version as already applied, without running them (requires --migrations-dir)"
+        )]
         baseline_version: Option<String>,
-        #[arg(long, help = "Path to migrations directory (required with --baseline-version)")]
+        #[arg(
+            long,
+            help = "Path to migrations directory (required with --baseline-version)"
+        )]
         migrations_dir: Option<PathBuf>,
     },
     /// Check if there are pending migrations (exits 0 = none, 1 = pending)
@@ -80,9 +109,13 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let database_type_str = args.database_type.as_ref()
+    let database_type_str = args
+        .database_type
+        .as_ref()
         .ok_or("--database-type is required")?;
-    let connection_string = args.connection_string.as_ref()
+    let connection_string = args
+        .connection_string
+        .as_ref()
         .ok_or("--connection-string is required")?;
 
     let database_type = parse_database_type(database_type_str)?;
@@ -90,7 +123,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let foreign_key_mode = parse_foreign_key_mode(&args.foreign_key_mode)?;
 
     match args.command {
-        Commands::Migrate { migrations_dir, target, dry_run } => {
+        Commands::Migrate {
+            migrations_dir,
+            target,
+            dry_run,
+        } => {
             let config = SchemaInstallerConfigBuilder::new()
                 .database_type(database_type)
                 .connection_string(connection_string.clone())
@@ -99,7 +136,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
-            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let source = Box::new(DirectoryMigrationSource {
+                path: migrations_dir,
+            });
             match dry_run {
                 Some(output_path) => {
                     Migrator::dry_run(&config, source, target.as_deref(), &output_path).await?;
@@ -118,7 +157,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
-            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let source = Box::new(DirectoryMigrationSource {
+                path: migrations_dir,
+            });
             Migrator::info(&config, source).await?;
         }
         Commands::Validate { migrations_dir } => {
@@ -130,7 +171,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
-            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let source = Box::new(DirectoryMigrationSource {
+                path: migrations_dir,
+            });
             Migrator::validate(&config, source).await?;
         }
         Commands::Repair { migrations_dir } => {
@@ -142,7 +185,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
-            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let source = Box::new(DirectoryMigrationSource {
+                path: migrations_dir,
+            });
             Migrator::repair(&config, source).await?;
         }
         Commands::PendingCheck { migrations_dir } => {
@@ -154,7 +199,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .trust_server_certificate(args.trust_server_certificate)
                 .build()?;
 
-            let source = Box::new(DirectoryMigrationSource { path: migrations_dir });
+            let source = Box::new(DirectoryMigrationSource {
+                path: migrations_dir,
+            });
             let pending = Migrator::has_pending_migrations(&config, source).await?;
             if pending {
                 println!("Pending migrations exist");
@@ -163,7 +210,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 println!("No pending migrations");
             }
         }
-        Commands::Install { schema_file, baseline_version, migrations_dir } => {
+        Commands::Install {
+            schema_file,
+            baseline_version,
+            migrations_dir,
+        } => {
             let config = SchemaInstallerConfigBuilder::new()
                 .database_type(database_type)
                 .connection_string(connection_string.clone())
@@ -182,7 +233,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 (Some(version), Some(dir)) => {
                     let source = DirectoryMigrationSource { path: dir.clone() };
-                    let baseline = Baseline { version, source: &source };
+                    let baseline = Baseline {
+                        version,
+                        source: &source,
+                    };
                     SchemaInstaller::install_with_baseline(&config, Some(baseline)).await?;
                 }
                 (None, None) => {
@@ -200,7 +254,11 @@ fn parse_database_type(db_type: &str) -> Result<GeneratorType, Box<dyn std::erro
         "postgresql" => Ok(GeneratorType::Postgresql),
         "sqlite" => Ok(GeneratorType::Sqlite),
         "sqlserver" | "mssql" => Ok(GeneratorType::SqlServer),
-        _ => Err(format!("Unknown database type '{}'. Supported: postgresql, sqlite, sqlserver", db_type).into()),
+        _ => Err(format!(
+            "Unknown database type '{}'. Supported: postgresql, sqlite, sqlserver",
+            db_type
+        )
+        .into()),
     }
 }
 
@@ -209,7 +267,11 @@ fn parse_boolean_mode(mode: &str) -> Result<BooleanMode, Box<dyn std::error::Err
         "native" => Ok(BooleanMode::Native),
         "yesno" | "yes_no" => Ok(BooleanMode::YesNo),
         "yn" => Ok(BooleanMode::YN),
-        _ => Err(format!("Unknown boolean mode '{}'. Supported: native, yesno, yn", mode).into()),
+        _ => Err(format!(
+            "Unknown boolean mode '{}'. Supported: native, yesno, yn",
+            mode
+        )
+        .into()),
     }
 }
 
@@ -218,6 +280,10 @@ fn parse_foreign_key_mode(mode: &str) -> Result<ForeignKeyMode, Box<dyn std::err
         "none" => Ok(ForeignKeyMode::None),
         "relations" => Ok(ForeignKeyMode::Relations),
         "triggers" => Ok(ForeignKeyMode::Triggers),
-        _ => Err(format!("Unknown foreign key mode '{}'. Supported: none, relations, triggers", mode).into()),
+        _ => Err(format!(
+            "Unknown foreign key mode '{}'. Supported: none, relations, triggers",
+            mode
+        )
+        .into()),
     }
 }

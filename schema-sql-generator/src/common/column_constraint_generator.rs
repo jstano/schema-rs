@@ -76,7 +76,11 @@ impl DefaultColumnConstraintGenerator {
             1 => Some(format!("check({})", clauses.remove(0))),
             _ => Some(format!(
                 "check({})",
-                clauses.iter().map(|clause| format!("({})", clause)).collect::<Vec<_>>().join(" and ")
+                clauses
+                    .iter()
+                    .map(|clause| format!("({})", clause))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
             )),
         }
     }
@@ -88,7 +92,10 @@ impl DefaultColumnConstraintGenerator {
     fn strip_check_wrapper(expression: &str) -> String {
         let trimmed = expression.trim();
 
-        if let Some(rest) = trimmed.get(5..).filter(|_| trimmed.to_ascii_lowercase().starts_with("check")) {
+        if let Some(rest) = trimmed
+            .get(5..)
+            .filter(|_| trimmed.to_ascii_lowercase().starts_with("check"))
+        {
             let rest = rest.trim();
             if let Some(inner) = rest.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
                 return inner.to_string();
@@ -179,8 +186,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnConstraintGenerator::new(ctx);
@@ -200,8 +210,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnConstraintGenerator::new(ctx);
@@ -226,8 +239,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnConstraintGenerator::new(ctx);
@@ -253,8 +269,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnConstraintGenerator::new(ctx);
@@ -283,8 +302,11 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = DefaultColumnConstraintGenerator::new(ctx);
@@ -321,10 +343,16 @@ mod tests {
                     .build(),
             )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
-        let mut options = GenerateOptions::new(Rc::new(model), Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))));
+        let mut options = GenerateOptions::new(
+            Rc::new(model),
+            Rc::new(RefCell::new(PrintWriter::new(Box::new(Vec::<u8>::new())))),
+        );
         options.boolean_mode = BooleanMode::YesNo;
         let settings = SqlGeneratorSettings::new(DatabaseType::Postgresql, &options);
         let writer = SqlWriter::new(options.writer.clone());

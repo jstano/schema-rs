@@ -1,4 +1,6 @@
-use crate::common::column_generator::{ColumnGenerator, DefaultColumnGenerator, DefaultConstraintNaming};
+use crate::common::column_generator::{
+    ColumnGenerator, DefaultColumnGenerator, DefaultConstraintNaming,
+};
 use crate::common::generator_context::GeneratorContext;
 use crate::sqlserver::sqlserver_column_type_generator::SqlServerColumnTypeGenerator;
 use schema_model::model::column::Column;

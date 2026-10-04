@@ -99,7 +99,7 @@ pub trait ColumnTypeGenerator {
         match self.context().settings().boolean_mode() {
             BooleanMode::Native => self.native_boolean_sql(),
             BooleanMode::YesNo => "varchar(3)".to_string(),
-            BooleanMode::YN => "char(1)".to_string()
+            BooleanMode::YN => "char(1)".to_string(),
         }
     }
 
@@ -152,7 +152,8 @@ pub trait ColumnTypeGenerator {
 
     fn enum_sql(&self, column: &Column) -> String {
         let database_model = self.context().settings().database_model();
-        let enum_type: &EnumType = database_model.find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
+        let enum_type: &EnumType = database_model
+            .find_enum_type(column.schema_name(), column.enum_type().as_ref().unwrap());
 
         let mut min_length = usize::MAX;
         let mut max_length = 0;

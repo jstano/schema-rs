@@ -19,8 +19,12 @@ pub fn create_generator_with_versions(
     target_sqlserver_version: u32,
 ) -> Box<dyn MigrationGenerator> {
     match db_type {
-        DatabaseType::Postgresql => Box::new(PostgresqlMigrationGenerator::new(target_postgres_version)),
+        DatabaseType::Postgresql => {
+            Box::new(PostgresqlMigrationGenerator::new(target_postgres_version))
+        }
         DatabaseType::Sqlite => Box::new(SqliteMigrationGenerator),
-        DatabaseType::SqlServer => Box::new(SqlServerMigrationGenerator::new(target_sqlserver_version)),
+        DatabaseType::SqlServer => {
+            Box::new(SqlServerMigrationGenerator::new(target_sqlserver_version))
+        }
     }
 }

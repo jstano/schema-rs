@@ -7,7 +7,10 @@ use std::time::{Duration, Instant};
 use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
-use crate::migration::{Migration, MigrationSource, MigrationStatus, RESERVED_INSTALL_VERSION, compare_versions, compute_checksum};
+use crate::migration::{
+    Migration, MigrationSource, MigrationStatus, RESERVED_INSTALL_VERSION, compare_versions,
+    compute_checksum,
+};
 
 /// How often to re-check a colliding migration's status while waiting for whichever
 /// process is currently applying it to finish.
@@ -24,7 +27,6 @@ const LOCK_MAX_WAIT: Duration = Duration::from_secs(60);
 /// this mainly guards against `repair` racing a process that is still within its normal
 /// (possibly long-running) execution window.
 const STALE_PENDING_THRESHOLD: Duration = Duration::from_secs(600);
-
 
 /// Outcome of claiming the "pending" slot for a migration version.
 enum Slot {
@@ -97,8 +99,16 @@ async fn insert_pending(
     checksum: &str,
     tool_version: &str,
 ) -> Result<i64, SchemaInstallerError> {
-    pool.insert_migration(&migration.version, &migration.script_path, &migration.description, checksum, 0, MigrationStatus::Pending.as_str(), tool_version)
-        .await
+    pool.insert_migration(
+        &migration.version,
+        &migration.script_path,
+        &migration.description,
+        checksum,
+        0,
+        MigrationStatus::Pending.as_str(),
+        tool_version,
+    )
+    .await
 }
 
 /// The description `info` shows for an applied row. Rows written before the `description`
@@ -134,10 +144,14 @@ impl Migrator {
         source: Box<dyn MigrationSource>,
         target: Option<&str>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
-        pool.ensure_migration_table(&config.database_type)
-            .await?;
+        pool.ensure_migration_table(&config.database_type).await?;
 
         let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
 
@@ -150,19 +164,22 @@ impl Migrator {
 
         for migration in migrations {
             let checksum = compute_checksum(&migration.sql);
-            let migration_id = match wait_for_slot(&pool, &migration, &checksum, tool_version).await? {
-                Slot::Owned(id) => id,
-                Slot::AlreadyApplied => {
-                    println!(
-                        "Migration {} - {} was already applied by another process; skipping",
-                        migration.version, migration.description
-                    );
-                    continue;
-                }
-            };
+            let migration_id =
+                match wait_for_slot(&pool, &migration, &checksum, tool_version).await? {
+                    Slot::Owned(id) => id,
+                    Slot::AlreadyApplied => {
+                        println!(
+                            "Migration {} - {} was already applied by another process; skipping",
+                            migration.version, migration.description
+                        );
+                        continue;
+                    }
+                };
 
             let start = Instant::now();
-            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql).await {
+            match execute_migration(&pool, &config.database_type, migration_id, &migration.sql)
+                .await
+            {
                 Ok(_) => {
                     println!(
                         "Applied migration: {} - {}",
@@ -171,8 +188,12 @@ impl Migrator {
                 }
                 Err(e) => {
                     let elapsed_ms = start.elapsed().as_millis() as i64;
-                    pool.update_migration_status(migration_id, MigrationStatus::Failed.as_str(), elapsed_ms)
-                        .await?;
+                    pool.update_migration_status(
+                        migration_id,
+                        MigrationStatus::Failed.as_str(),
+                        elapsed_ms,
+                    )
+                    .await?;
                     return Err(SchemaInstallerError::MigrationFailed {
                         version: migration.version,
                         error: e.to_string(),
@@ -195,10 +216,14 @@ impl Migrator {
         target: Option<&str>,
         output_path: &Path,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
-        pool.ensure_migration_table(&config.database_type)
-            .await?;
+        pool.ensure_migration_table(&config.database_type).await?;
 
         let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
 
@@ -291,7 +316,8 @@ impl Migrator {
         migrations.retain(|m| !applied_versions.contains(&m.version));
 
         if let Some(target) = target {
-            migrations.retain(|m| compare_versions(&m.version, target) != std::cmp::Ordering::Greater);
+            migrations
+                .retain(|m| compare_versions(&m.version, target) != std::cmp::Ordering::Greater);
         }
 
         if migrations.is_empty() {
@@ -303,7 +329,9 @@ impl Migrator {
         // silently running it against a schema state it was never designed for - e.g. a
         // branch's migration merged after a later-numbered one already dropped a table
         // it depends on.
-        if let Some(highest_applied) = applied_versions.iter().max_by(|a, b| compare_versions(a, b))
+        if let Some(highest_applied) = applied_versions
+            .iter()
+            .max_by(|a, b| compare_versions(a, b))
             && let Some(out_of_order) = migrations
                 .iter()
                 .find(|m| compare_versions(&m.version, highest_applied) == std::cmp::Ordering::Less)
@@ -322,7 +350,12 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
         pool.ensure_migration_table(&config.database_type).await?;
 
@@ -369,7 +402,8 @@ impl Migrator {
                     applied_mig.installed_at,
                     applied_mig.execution_time_ms
                 );
-            } else if let Some(source_mig) = source_migrations.iter().find(|m| m.version == version) {
+            } else if let Some(source_mig) = source_migrations.iter().find(|m| m.version == version)
+            {
                 let status = match &highest_applied {
                     Some(highest)
                         if compare_versions(&version, highest) == std::cmp::Ordering::Less =>
@@ -392,10 +426,14 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
-        pool.ensure_migration_table(&config.database_type)
-            .await?;
+        pool.ensure_migration_table(&config.database_type).await?;
 
         let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;
@@ -458,10 +496,14 @@ impl Migrator {
         // rejects this with `OutOfOrderMigration` as soon as it tries to run it; Flyway
         // reports the same state as "Detected resolved migration not applied to database".
         // Without this, `validate` never looks at unapplied source migrations at all.
-        if let Some(highest_applied) = applied_versions.iter().max_by(|a, b| compare_versions(a, b)) {
+        if let Some(highest_applied) = applied_versions
+            .iter()
+            .max_by(|a, b| compare_versions(a, b))
+        {
             for source_migration in &source_migrations {
                 if !applied_versions.contains(&source_migration.version)
-                    && compare_versions(&source_migration.version, highest_applied) == std::cmp::Ordering::Less
+                    && compare_versions(&source_migration.version, highest_applied)
+                        == std::cmp::Ordering::Less
                 {
                     issue_count += 1;
                     eprintln!(
@@ -487,7 +529,12 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<bool, SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
         // Propagate failures (bad credentials, missing permissions, ...) rather than
         // reporting them as "everything is pending".
@@ -512,10 +559,14 @@ impl Migrator {
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
     ) -> Result<(), SchemaInstallerError> {
-        let pool = AnyPool::connect(&config.database_type, &config.connection_string, config.trust_server_certificate).await?;
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
 
-        pool.ensure_migration_table(&config.database_type)
-            .await?;
+        pool.ensure_migration_table(&config.database_type).await?;
 
         let failed = pool.delete_failed_migrations().await?;
         println!("Deleted {} failed migration(s)", failed);
@@ -567,5 +618,6 @@ async fn execute_migration(
     // All statements in a migration file, plus the tracking row's "success" update,
     // commit or roll back together as one transaction - see `execute_migration_transactional`
     // for why (BUGS_AND_GAPS H9).
-    pool.execute_migration_transactional(&statements, migration_id).await
+    pool.execute_migration_transactional(&statements, migration_id)
+        .await
 }

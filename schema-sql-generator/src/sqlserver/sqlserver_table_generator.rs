@@ -78,14 +78,24 @@ impl TableGenerator for SqlServerTableGenerator {
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "/* {} */", table_name);
-            sql_println!(writer, "if object_id('{}', 'U') is not null", escape_sql_literal(&fully_qualified_table_name));
-            sql_println!(writer, "drop table {}{}", fully_qualified_table_name, separator);
+            sql_println!(
+                writer,
+                "if object_id('{}', 'U') is not null",
+                escape_sql_literal(&fully_qualified_table_name)
+            );
+            sql_println!(
+                writer,
+                "drop table {}{}",
+                fully_qualified_table_name,
+                separator
+            );
             sql_println!(writer, "");
         });
     }
 
     fn output_table_header(&self, table: &Table) {
-        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
+        let fully_qualified_table_name =
+            table.fully_qualified_table_name(self.context.settings().database_type());
 
         self.context.with_writer(|writer| {
             sql_println!(writer, "create table {}", fully_qualified_table_name);
@@ -108,7 +118,8 @@ impl TableGenerator for SqlServerTableGenerator {
             LockEscalation::Table => "table",
         };
         let separator = self.context.settings().statement_separator();
-        let fully_qualified_table_name = table.fully_qualified_table_name(self.context.settings().database_type());
+        let fully_qualified_table_name =
+            table.fully_qualified_table_name(self.context.settings().database_type());
         self.context.with_writer(|writer| {
             sql_println!(
                 writer,
@@ -142,11 +153,23 @@ mod tests {
     #[test]
     fn output_table_renders_header_and_columns() {
         let table = TableBuilder::new(None::<&str>, "users")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
-            .add_column(ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar).length(50).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "name", ColumnType::Varchar)
+                    .length(50)
+                    .required(true)
+                    .build(),
+            )
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
@@ -169,8 +192,11 @@ mod tests {
         // Regression test: an unescaped embedded quote would break the generated
         // object_id existence-check SQL string literal.
         let table = TableBuilder::new(None::<&str>, "o'brien").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
@@ -189,19 +215,33 @@ mod tests {
         // it. All drops must be emitted up front, in reverse-dependency order (child
         // before parent), ahead of every create.
         let parent = TableBuilder::new(None::<&str>, "parent")
-            .add_column(ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "id", ColumnType::Sequence)
+                    .required(true)
+                    .build(),
+            )
             .build();
         let child = TableBuilder::new(None::<&str>, "child")
-            .add_column(ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int).required(true).build())
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "parent_id", ColumnType::Int)
+                    .required(true)
+                    .build(),
+            )
             .add_relation(schema_model::model::relation::Relation::new(
-                "parent", "id", "child", "parent_id", schema_model::model::types::RelationType::Cascade, false,
+                "parent",
+                "id",
+                "child",
+                "parent_id",
+                schema_model::model::types::RelationType::Cascade,
+                false,
             ))
             .build();
         let schema = SchemaBuilder::new(None::<&str>)
             .add_table(parent)
             .add_table(child)
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
@@ -213,9 +253,18 @@ mod tests {
         let create_child = output.find("create table dbo.child").unwrap();
         let create_parent = output.find("create table dbo.parent").unwrap();
 
-        assert!(drop_child < drop_parent, "child must be dropped before the parent it references");
-        assert!(drop_parent < create_child, "every drop must precede every create");
-        assert!(drop_parent < create_parent, "every drop must precede every create");
+        assert!(
+            drop_child < drop_parent,
+            "child must be dropped before the parent it references"
+        );
+        assert!(
+            drop_parent < create_child,
+            "every drop must precede every create"
+        );
+        assert!(
+            drop_parent < create_parent,
+            "every drop must precede every create"
+        );
     }
 
     #[test]
@@ -223,14 +272,21 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "users")
             .lock_escalation(LockEscalation::Table)
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = table)\ngo"));
+        assert!(
+            buffer
+                .contents()
+                .contains("alter table dbo.users set (lock_escalation = table)\ngo")
+        );
     }
 
     #[test]
@@ -238,8 +294,11 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "users")
             .lock_escalation(LockEscalation::Auto)
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
@@ -251,8 +310,11 @@ mod tests {
     #[test]
     fn output_table_footer_omits_lock_escalation_when_unset() {
         let table = TableBuilder::new(None::<&str>, "users").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
@@ -266,14 +328,21 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "users")
             .lock_escalation(LockEscalation::Disable)
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table dbo.users set (lock_escalation = disable)\ngo"));
+        assert!(
+            buffer
+                .contents()
+                .contains("alter table dbo.users set (lock_escalation = disable)\ngo")
+        );
     }
 
     #[test]
@@ -286,13 +355,20 @@ mod tests {
         let table = TableBuilder::new(Some("app"), "orders")
             .lock_escalation(LockEscalation::Table)
             .build();
-        let schema = SchemaBuilder::new(Some("app")).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(Some("app"))
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableGenerator::new(ctx);
         generator.output_table_footer(&table);
 
-        assert!(buffer.contents().contains("alter table app.orders set (lock_escalation = table)\ngo"));
+        assert!(
+            buffer
+                .contents()
+                .contains("alter table app.orders set (lock_escalation = table)\ngo")
+        );
     }
 }

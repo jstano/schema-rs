@@ -1165,9 +1165,11 @@ remediation plan) is worth more than any individual fix below.
   `lockEscalation`. Deliberately left open: `schema-reverse-engineer`'s DB reader doesn't
   introspect any of these from a live database yet, so this is currently dead code, not real
   data loss - fixing it for real needs Postgres catalog introspection work first.
-- [ ] **L16.** No CI: no `.github/` at all, `.githooks/` is empty. 326 tests and `cargo clippy`
+- [x] **L16.** No CI: no `.github/` at all, `.githooks/` is empty. 326 tests and `cargo clippy`
   run only when someone remembers, and the 28 `#[ignore]`d PostgreSQL/SQL Server integration
   tests never run — which is how C6 shipped.
+
+  **Fixed 2026-10-03 (uncommitted).** Added `.github/workflows/ci.yml`: a `check` job (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`) and a `postgres-integration` job that sets `RUN_DOCKER_TESTS=1` and runs the testcontainers Postgres tests in `schema-installer` and `schema-reverse-engineer` (without that env var they silently pass). SQL Server tests stay `#[ignore]`d and are not in CI (deliberate; QEMU crash on Apple Silicon, large image). To make the gates pass: `cargo fmt --all` over the workspace (131 files; best committed on its own) and the 5 remaining clippy warnings (`map_entry` in `Schema::validate`, `needless_option_as_deref` in a test, justified `#[allow]`s on `parse_boolean_default`, `Column::new_all`, `insert_migration`). The workflow has not been run on GitHub yet.
 - [x] **L17.** `.DS_Store` and `.idea/*` are tracked in git despite `.gitignore` listing `.idea/`.
 
   **Fixed 2026-10-03 (uncommitted).** `git rm --cached` on `.DS_Store` and `.idea/`; added `.DS_Store` to `.gitignore`.

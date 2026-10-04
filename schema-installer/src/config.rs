@@ -65,15 +65,20 @@ impl SchemaInstallerConfigBuilder {
     }
 
     pub fn build(self) -> Result<SchemaInstallerConfig, SchemaInstallerError> {
-        let database_type = self.database_type
-            .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("database_type required".to_string()))?;
-        let connection_string = self.connection_string
-            .ok_or_else(|| SchemaInstallerError::InvalidConfiguration("connection_string required".to_string()))?;
+        let database_type = self.database_type.ok_or_else(|| {
+            SchemaInstallerError::InvalidConfiguration("database_type required".to_string())
+        })?;
+        let connection_string = self.connection_string.ok_or_else(|| {
+            SchemaInstallerError::InvalidConfiguration("connection_string required".to_string())
+        })?;
 
         if let Some(ref schema_file) = self.schema_file
-            && !schema_file.exists() {
-                return Err(SchemaInstallerError::SchemaFileNotFound(schema_file.display().to_string()));
-            }
+            && !schema_file.exists()
+        {
+            return Err(SchemaInstallerError::SchemaFileNotFound(
+                schema_file.display().to_string(),
+            ));
+        }
 
         Ok(SchemaInstallerConfig {
             database_type,
@@ -109,6 +114,12 @@ mod tests {
 
     #[test]
     fn trust_server_certificate_can_be_enabled() {
-        assert!(builder().trust_server_certificate(true).build().unwrap().trust_server_certificate);
+        assert!(
+            builder()
+                .trust_server_certificate(true)
+                .build()
+                .unwrap()
+                .trust_server_certificate
+        );
     }
 }

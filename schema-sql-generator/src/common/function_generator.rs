@@ -10,7 +10,6 @@ pub trait FunctionGenerator {
         statement_separator: &str,
         function: &Function,
     );
-
 }
 
 pub struct DefaultFunctionGenerator {
@@ -19,9 +18,7 @@ pub struct DefaultFunctionGenerator {
 
 impl DefaultFunctionGenerator {
     pub fn new(context: GeneratorContext) -> Self {
-        Self {
-            context,
-        }
+        Self { context }
     }
 
     pub fn context(&self) -> &GeneratorContext {
@@ -59,7 +56,12 @@ impl FunctionGenerator for DefaultFunctionGenerator {
         self.output_functions_via(self);
     }
 
-    fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
+    fn output_function(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        function: &Function,
+    ) {
         writer.print(function.sql());
         writer.println(statement_separator);
         writer.newline();
@@ -81,9 +83,15 @@ mod tests {
             self.0.output_functions_via(self);
         }
 
-        fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
+        fn output_function(
+            &self,
+            writer: &mut SqlWriter,
+            statement_separator: &str,
+            function: &Function,
+        ) {
             writer.print("-- tagged\n");
-            self.0.output_function(writer, statement_separator, function);
+            self.0
+                .output_function(writer, statement_separator, function);
         }
     }
 
@@ -97,9 +105,15 @@ mod tests {
         // wrapper's override, exactly the trap that made `SqlServerFunctionGenerator`'s
         // drop-guard unreachable before it was fixed.
         let schema = SchemaBuilder::new(None::<&str>)
-            .add_functions(vec![Function::new(None::<&str>, "f", DatabaseType::Postgresql, "create function f()")])
+            .add_functions(vec![Function::new(
+                None::<&str>,
+                "f",
+                DatabaseType::Postgresql,
+                "create function f()",
+            )])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = TaggingFunctionGenerator(DefaultFunctionGenerator::new(ctx));

@@ -4,7 +4,7 @@ use crate::common::sql_writer::SqlWriter;
 use schema_model::model::function::Function;
 
 pub struct PostgresFunctionGenerator {
-    function_generator: DefaultFunctionGenerator
+    function_generator: DefaultFunctionGenerator,
 }
 
 impl PostgresFunctionGenerator {
@@ -25,8 +25,14 @@ impl FunctionGenerator for PostgresFunctionGenerator {
         self.function_generator.output_functions_via(self);
     }
 
-    fn output_function(&self, writer: &mut SqlWriter, statement_separator: &str, function: &Function) {
-        self.function_generator.output_function(writer, statement_separator, function);
+    fn output_function(
+        &self,
+        writer: &mut SqlWriter,
+        statement_separator: &str,
+        function: &Function,
+    ) {
+        self.function_generator
+            .output_function(writer, statement_separator, function);
     }
 }
 
@@ -42,11 +48,22 @@ mod tests {
     fn output_functions_renders_matching_database_type_only() {
         let schema = SchemaBuilder::new(None::<&str>)
             .add_functions(vec![
-                Function::new(None::<&str>, "pg_only", DatabaseType::Postgresql, "create function pg_only() returns void as $$ begin end $$ language plpgsql"),
-                Function::new(None::<&str>, "sqlite_only", DatabaseType::Sqlite, "create function sqlite_only"),
+                Function::new(
+                    None::<&str>,
+                    "pg_only",
+                    DatabaseType::Postgresql,
+                    "create function pg_only() returns void as $$ begin end $$ language plpgsql",
+                ),
+                Function::new(
+                    None::<&str>,
+                    "sqlite_only",
+                    DatabaseType::Sqlite,
+                    "create function sqlite_only",
+                ),
             ])
             .build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::Postgresql);
 
         let generator = PostgresFunctionGenerator::new(ctx);

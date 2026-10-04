@@ -80,7 +80,9 @@ fn diff_drop_tables(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 fn diff_add_tables(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
         if old.get_optional_table(new_table.name()).is_none() {
-            cs.add_change(SchemaChange::AddTable { table: new_table.clone() });
+            cs.add_change(SchemaChange::AddTable {
+                table: new_table.clone(),
+            });
         }
     }
 }
@@ -93,7 +95,10 @@ fn diff_drop_columns(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                     let rename_candidates: Vec<String> = new_table
                         .columns()
                         .iter()
-                        .filter(|nc| !old_table.has_column(nc.name()) && nc.column_type() == old_col.column_type())
+                        .filter(|nc| {
+                            !old_table.has_column(nc.name())
+                                && nc.column_type() == old_col.column_type()
+                        })
                         .map(|nc| nc.name().to_string())
                         .collect();
                     cs.add_change(SchemaChange::DropColumn {
@@ -167,7 +172,9 @@ fn diff_drop_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                 if old_key.key_type() == KeyType::Unique {
                     unique_ordinal += 1;
                 }
-                if !key_exists_in(old_key, new_table.keys()) && !key_exists_in(old_key, new_table.indexes()) {
+                if !key_exists_in(old_key, new_table.keys())
+                    && !key_exists_in(old_key, new_table.indexes())
+                {
                     cs.add_change(SchemaChange::DropKey {
                         table_name: old_table.name().to_string(),
                         key: old_key.clone(),
@@ -181,7 +188,9 @@ fn diff_drop_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                 if old_key.is_index() {
                     index_ordinal += 1;
                 }
-                if !key_exists_in(old_key, new_table.keys()) && !key_exists_in(old_key, new_table.indexes()) {
+                if !key_exists_in(old_key, new_table.keys())
+                    && !key_exists_in(old_key, new_table.indexes())
+                {
                     cs.add_change(SchemaChange::DropKey {
                         table_name: old_table.name().to_string(),
                         key: old_key.clone(),
@@ -203,7 +212,9 @@ fn diff_add_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                 if new_key.key_type() == KeyType::Unique {
                     unique_ordinal += 1;
                 }
-                if !key_exists_in(new_key, old_table.keys()) && !key_exists_in(new_key, old_table.indexes()) {
+                if !key_exists_in(new_key, old_table.keys())
+                    && !key_exists_in(new_key, old_table.indexes())
+                {
                     cs.add_change(SchemaChange::AddKey {
                         table_name: new_table.name().to_string(),
                         key: new_key.clone(),
@@ -217,7 +228,9 @@ fn diff_add_keys(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
                 if new_key.is_index() {
                     index_ordinal += 1;
                 }
-                if !key_exists_in(new_key, old_table.keys()) && !key_exists_in(new_key, old_table.indexes()) {
+                if !key_exists_in(new_key, old_table.keys())
+                    && !key_exists_in(new_key, old_table.indexes())
+                {
                     cs.add_change(SchemaChange::AddKey {
                         table_name: new_table.name().to_string(),
                         key: new_key.clone(),
@@ -240,9 +253,10 @@ fn keys_equal(a: &Key, b: &Key) -> bool {
         && a.include() == b.include()
         && a.filter() == b.filter()
         && a.columns().len() == b.columns().len()
-        && a.columns().iter().zip(b.columns().iter()).all(|(ac, bc)| {
-            ac.name().eq_ignore_ascii_case(bc.name())
-        })
+        && a.columns()
+            .iter()
+            .zip(b.columns().iter())
+            .all(|(ac, bc)| ac.name().eq_ignore_ascii_case(bc.name()))
 }
 
 fn diff_drop_constraints(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
@@ -309,7 +323,10 @@ fn diff_add_relations(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
         // A brand-new table (no `old_table`) still needs its relations emitted - `AddTable`'s
         // rendered `CREATE TABLE` doesn't include them (see diff_add_tables) - so compare
         // against an empty slice rather than skipping the table entirely.
-        let old_relations: &[Relation] = old.get_optional_table(new_table.name()).map(|t| t.relations()).unwrap_or(&[]);
+        let old_relations: &[Relation] = old
+            .get_optional_table(new_table.name())
+            .map(|t| t.relations())
+            .unwrap_or(&[]);
 
         // See diff_drop_relations - same ordinal so an added relation gets the name
         // the create path would give it.
@@ -329,7 +346,8 @@ fn relation_exists_in(rel: &Relation, relations: &[Relation]) -> bool {
 }
 
 fn relations_equal(a: &Relation, b: &Relation) -> bool {
-    a.from_table_name().eq_ignore_ascii_case(b.from_table_name())
+    a.from_table_name()
+        .eq_ignore_ascii_case(b.from_table_name())
         && a.to_table_name().eq_ignore_ascii_case(b.to_table_name())
         && a.relation_type() == b.relation_type()
         && column_pairs_equal(a.column_pairs(), b.column_pairs())
@@ -337,9 +355,9 @@ fn relations_equal(a: &Relation, b: &Relation) -> bool {
 
 fn column_pairs_equal(a: &[(String, String)], b: &[(String, String)]) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|((af, at), (bf, bt))| {
-            af.eq_ignore_ascii_case(bf) && at.eq_ignore_ascii_case(bt)
-        })
+        && a.iter()
+            .zip(b.iter())
+            .all(|((af, at), (bf, bt))| af.eq_ignore_ascii_case(bf) && at.eq_ignore_ascii_case(bt))
 }
 
 fn diff_drop_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
@@ -376,7 +394,9 @@ fn views_equal(a: &View, b: &View) -> bool {
 fn diff_add_enum_types(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_enum in new.enum_types() {
         match find_enum_type(old, new_enum.name()) {
-            None => cs.add_change(SchemaChange::AddEnumType { enum_type: new_enum.clone() }),
+            None => cs.add_change(SchemaChange::AddEnumType {
+                enum_type: new_enum.clone(),
+            }),
             Some(old_enum) if !enum_types_equal(old_enum, new_enum) => {
                 cs.add_change(SchemaChange::ModifyEnumType {
                     old_enum_type: old_enum.clone(),
@@ -399,7 +419,9 @@ fn diff_drop_enum_types(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 }
 
 fn find_enum_type<'a>(schema: &'a Schema, name: &str) -> Option<&'a EnumType> {
-    schema.enum_types().find(|e| e.name().eq_ignore_ascii_case(name))
+    schema
+        .enum_types()
+        .find(|e| e.name().eq_ignore_ascii_case(name))
 }
 
 fn enum_types_equal(a: &EnumType, b: &EnumType) -> bool {
@@ -414,7 +436,9 @@ fn enum_types_equal(a: &EnumType, b: &EnumType) -> bool {
 fn diff_add_functions(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_fn in new.functions() {
         if !functions_contains(old.functions(), new_fn) {
-            cs.add_change(SchemaChange::AddFunction { function: new_fn.clone() });
+            cs.add_change(SchemaChange::AddFunction {
+                function: new_fn.clone(),
+            });
         }
     }
 }
@@ -443,7 +467,9 @@ fn functions_equal(a: &Function, b: &Function) -> bool {
 fn diff_add_procedures(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_proc in new.procedures() {
         if !procedures_contains(old.procedures(), new_proc) {
-            cs.add_change(SchemaChange::AddProcedure { procedure: new_proc.clone() });
+            cs.add_change(SchemaChange::AddProcedure {
+                procedure: new_proc.clone(),
+            });
         }
     }
 }
@@ -472,7 +498,9 @@ fn procedures_equal(a: &Procedure, b: &Procedure) -> bool {
 fn diff_add_other_sql(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_sql in new.other_sql() {
         if !other_sql_contains(old.other_sql(), new_sql) {
-            cs.add_change(SchemaChange::AddOtherSql { other_sql: new_sql.clone() });
+            cs.add_change(SchemaChange::AddOtherSql {
+                other_sql: new_sql.clone(),
+            });
         }
     }
 }
@@ -480,7 +508,9 @@ fn diff_add_other_sql(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
 fn diff_drop_other_sql(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for old_sql in old.other_sql() {
         if !other_sql_contains(new.other_sql(), old_sql) {
-            cs.add_change(SchemaChange::DropOtherSql { other_sql: old_sql.clone() });
+            cs.add_change(SchemaChange::DropOtherSql {
+                other_sql: old_sql.clone(),
+            });
         }
     }
 }
@@ -490,7 +520,9 @@ fn other_sql_contains(entries: &[OtherSql], target: &OtherSql) -> bool {
 }
 
 fn other_sql_equal(a: &OtherSql, b: &OtherSql) -> bool {
-    a.database_type() == b.database_type() && a.order() == b.order() && a.sql().trim() == b.sql().trim()
+    a.database_type() == b.database_type()
+        && a.order() == b.order()
+        && a.sql().trim() == b.sql().trim()
 }
 
 // Initial data is table-scoped and - like `diff_add_columns` - only diffed for tables present in
@@ -502,7 +534,10 @@ fn other_sql_equal(a: &OtherSql, b: &OtherSql) -> bool {
 // against an empty slice rather than skipping the table when there's no `old_table`.
 fn diff_add_triggers(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
     for new_table in new.tables() {
-        let old_triggers: &[Trigger] = old.get_optional_table(new_table.name()).map(|t| t.triggers()).unwrap_or(&[]);
+        let old_triggers: &[Trigger] = old
+            .get_optional_table(new_table.name())
+            .map(|t| t.triggers())
+            .unwrap_or(&[]);
         for new_trigger in new_table.triggers() {
             if !triggers_contains(old_triggers, new_trigger) {
                 cs.add_change(SchemaChange::AddTrigger {

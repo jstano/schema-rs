@@ -36,7 +36,9 @@ pub struct SqlServerMigrationGenerator {
 
 impl SqlServerMigrationGenerator {
     pub fn new(target_sqlserver_version: u32) -> Self {
-        Self { target_sqlserver_version }
+        Self {
+            target_sqlserver_version,
+        }
     }
 }
 
@@ -53,17 +55,19 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
             self.target_sqlserver_version,
         );
         let type_generator = SqlServerColumnTypeGenerator::new(context.clone());
-        let (trigger_context, trigger_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
-            Rc::new(database_model.clone()),
-            DatabaseType::SqlServer,
-            self.target_sqlserver_version,
-        );
+        let (trigger_context, trigger_buffer) =
+            GeneratorContext::for_model_with_buffer_and_target_version(
+                Rc::new(database_model.clone()),
+                DatabaseType::SqlServer,
+                self.target_sqlserver_version,
+            );
         let trigger_generator = SqlServerTriggerGenerator::new(trigger_context);
-        let (table_context, table_buffer) = GeneratorContext::for_model_with_buffer_and_target_version(
-            Rc::new(database_model.clone()),
-            DatabaseType::SqlServer,
-            self.target_sqlserver_version,
-        );
+        let (table_context, table_buffer) =
+            GeneratorContext::for_model_with_buffer_and_target_version(
+                Rc::new(database_model.clone()),
+                DatabaseType::SqlServer,
+                self.target_sqlserver_version,
+            );
         let table_generator = SqlServerTableGenerator::new(table_context);
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
         let mut triggers_regenerated: HashSet<String> = HashSet::new();
@@ -83,16 +87,27 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::AddColumn { table_name, column } => {
-                    let type_sql = format!(" {}", type_generator.column_type_sql(&dummy_table, column));
+                    let type_sql =
+                        format!(" {}", type_generator.column_type_sql(&dummy_table, column));
                     let default_value = default_sql(database_model, column);
 
                     if column.required() && default_value.is_none() {
-                        write_not_null_column_with_backfill_guard(writer, table_name, column.name(), &type_sql)?;
+                        write_not_null_column_with_backfill_guard(
+                            writer,
+                            table_name,
+                            column.name(),
+                            &type_sql,
+                        )?;
                     } else {
-                        let not_null = if column.required() { " not null" } else { " null" };
+                        let not_null = if column.required() {
+                            " not null"
+                        } else {
+                            " null"
+                        };
                         let default = default_value
                             .map(|d| {
-                                let name = default_constraint::constraint_name(table_name, column.name());
+                                let name =
+                                    default_constraint::constraint_name(table_name, column.name());
                                 format!(" constraint {} default {}", name, d)
                             })
                             .unwrap_or_default();
@@ -116,11 +131,22 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
 
                     write_add_check_constraint(writer, &context, table_name, column)?;
                 }
-                SchemaChange::DropColumn { table_name, column_name, rename_candidates } => {
+                SchemaChange::DropColumn {
+                    table_name,
+                    column_name,
+                    rename_candidates,
+                } => {
                     if !rename_candidates.is_empty() {
-                        writeln!(writer, "-- TODO: possible rename? Consider replacing the DROP + ADD below with:")?;
+                        writeln!(
+                            writer,
+                            "-- TODO: possible rename? Consider replacing the DROP + ADD below with:"
+                        )?;
                         for candidate in rename_candidates {
-                            writeln!(writer, "--   exec sp_rename '{}.{}', '{}', 'COLUMN';", table_name, column_name, candidate)?;
+                            writeln!(
+                                writer,
+                                "--   exec sp_rename '{}.{}', '{}', 'COLUMN';",
+                                table_name, column_name, candidate
+                            )?;
                         }
                     }
                     write_drop_default_constraint(writer, table_name, column_name)?;
@@ -134,7 +160,11 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                         &format!("alter table {} drop column {};", table_name, column_name),
                     )?;
                 }
-                SchemaChange::ModifyColumn { table_name, old_column, new_column } => {
+                SchemaChange::ModifyColumn {
+                    table_name,
+                    old_column,
+                    new_column,
+                } => {
                     // SQL Server also refuses ALTER COLUMN outright while the column
                     // participates in a PRIMARY KEY/UNIQUE constraint, a plain index, or a
                     // foreign key (either as the FK's own column, or as the column another
@@ -142,9 +172,15 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     // exception for any of these. Find and drop them first, guarded, in
                     // dependency order (a relation can depend on a unique/PK index, so it has
                     // to come off first and go back on last).
-                    let table = database_model.all_tables().into_iter().find(|t| t.name().eq_ignore_ascii_case(table_name));
-                    let blocking_keys = table.map(|t| dependent_keys(t, old_column.name())).unwrap_or_default();
-                    let blocking_relations = dependent_relations(database_model, table_name, old_column.name());
+                    let table = database_model
+                        .all_tables()
+                        .into_iter()
+                        .find(|t| t.name().eq_ignore_ascii_case(table_name));
+                    let blocking_keys = table
+                        .map(|t| dependent_keys(t, old_column.name()))
+                        .unwrap_or_default();
+                    let blocking_relations =
+                        dependent_relations(database_model, table_name, old_column.name());
 
                     for (ordinal, relation) in &blocking_relations {
                         write_drop_relation(writer, relation, *ordinal)?;
@@ -168,7 +204,10 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     // retarget an identity column's underlying type - that needs a manual
                     // column rebuild, so flag it instead of emitting DDL that would either fail
                     // or silently do the wrong thing.
-                    let is_identity = matches!(new_column.column_type(), ColumnType::Sequence | ColumnType::LongSequence);
+                    let is_identity = matches!(
+                        new_column.column_type(),
+                        ColumnType::Sequence | ColumnType::LongSequence
+                    );
                     if is_identity {
                         writeln!(
                             writer,
@@ -183,9 +222,16 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                             _ => unreachable!(),
                         }
                     } else {
-                        format!(" {}", type_generator.column_type_sql(&dummy_table, new_column))
+                        format!(
+                            " {}",
+                            type_generator.column_type_sql(&dummy_table, new_column)
+                        )
                     };
-                    let null = if new_column.required() { " not null" } else { " null" };
+                    let null = if new_column.required() {
+                        " not null"
+                    } else {
+                        " null"
+                    };
                     writeln!(
                         writer,
                         "alter table {} alter column {}{}{};",
@@ -207,20 +253,34 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                         write_add_relation(writer, relation, *ordinal)?;
                     }
                 }
-                SchemaChange::AddKey { table_name, key, ordinal } => {
+                SchemaChange::AddKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_add_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::DropKey { table_name, key, ordinal } => {
+                SchemaChange::DropKey {
+                    table_name,
+                    key,
+                    ordinal,
+                } => {
                     write_drop_key(writer, table_name, key, *ordinal)?;
                 }
-                SchemaChange::AddConstraint { table_name, constraint } if constraint.database_type() == DatabaseType::SqlServer => {
+                SchemaChange::AddConstraint {
+                    table_name,
+                    constraint,
+                } if constraint.database_type() == DatabaseType::SqlServer => {
                     // `constraint.sql()` is already the full `check (...)` clause - same
                     // convention as `DefaultTableConstraintGenerator` on the create path
                     // (`constraint {name} {sql}`, no wrapper added) - so this must not
                     // re-wrap it, or it comes out as `check (check (...))`.
                     write_guarded(
                         writer,
-                        &format!("not exists (select 1 from sys.check_constraints where name = '{}')", constraint.name()),
+                        &format!(
+                            "not exists (select 1 from sys.check_constraints where name = '{}')",
+                            constraint.name()
+                        ),
                         &format!(
                             "alter table {} add constraint {} {};",
                             table_name,
@@ -230,14 +290,21 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     )?;
                 }
                 SchemaChange::AddConstraint { .. } => {}
-                SchemaChange::DropConstraint { table_name, constraint_name, database_type } if *database_type == DatabaseType::SqlServer => {
+                SchemaChange::DropConstraint {
+                    table_name,
+                    constraint_name,
+                    database_type,
+                } if *database_type == DatabaseType::SqlServer => {
                     write_guarded(
                         writer,
                         &format!(
                             "exists (select 1 from sys.objects where name = '{}' and parent_object_id = object_id('{}'))",
                             constraint_name, table_name
                         ),
-                        &format!("alter table {} drop constraint {};", table_name, constraint_name),
+                        &format!(
+                            "alter table {} drop constraint {};",
+                            table_name, constraint_name
+                        ),
                     )?;
                 }
                 SchemaChange::DropConstraint { .. } => {}
@@ -248,7 +315,8 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     write_drop_relation(writer, relation, *ordinal)?;
                 }
                 SchemaChange::AddView { view }
-                    if view.database_type().is_none() || view.database_type() == Some(DatabaseType::SqlServer) =>
+                    if view.database_type().is_none()
+                        || view.database_type() == Some(DatabaseType::SqlServer) =>
                 {
                     writeln!(writer, "create or alter view {} as", view.name())?;
                     writeln!(writer, "{};", view.sql())?;
@@ -256,9 +324,10 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     writeln!(writer)?;
                 }
                 SchemaChange::AddView { .. } => {}
-                SchemaChange::DropView { view_name, database_type }
-                    if database_type.is_none() || *database_type == Some(DatabaseType::SqlServer) =>
-                {
+                SchemaChange::DropView {
+                    view_name,
+                    database_type,
+                } if database_type.is_none() || *database_type == Some(DatabaseType::SqlServer) => {
                     writeln!(
                         writer,
                         "if object_id('{}', 'V') is not null drop view {};",
@@ -271,58 +340,102 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                 // SQL Server has no native enum type (enums are emulated as a CHECK
                 // constraint per column, same as SQLite) - nothing to do at the type level.
                 SchemaChange::AddEnumType { .. } | SchemaChange::DropEnumType { .. } => {}
-                SchemaChange::ModifyEnumType { old_enum_type, new_enum_type } => {
+                SchemaChange::ModifyEnumType {
+                    old_enum_type,
+                    new_enum_type,
+                } => {
                     write_removed_enum_value_guards(writer, old_enum_type, new_enum_type)?;
-                    for (table_name, column) in columns_using_enum(database_model, new_enum_type.name()) {
+                    for (table_name, column) in
+                        columns_using_enum(database_model, new_enum_type.name())
+                    {
                         write_drop_check_constraint(writer, &table_name, column.name())?;
                         write_add_check_constraint(writer, &context, &table_name, column)?;
                     }
                 }
-                SchemaChange::AddFunction { function } if function.database_type() == DatabaseType::SqlServer => {
+                SchemaChange::AddFunction { function }
+                    if function.database_type() == DatabaseType::SqlServer =>
+                {
                     writeln!(writer, "{}", function.sql())?;
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddFunction { .. } => {}
-                SchemaChange::DropFunction { function_name, database_type } if *database_type == DatabaseType::SqlServer => {
+                SchemaChange::DropFunction {
+                    function_name,
+                    database_type,
+                } if *database_type == DatabaseType::SqlServer => {
                     writeln!(writer, "drop function if exists {};", function_name)?;
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropFunction { .. } => {}
-                SchemaChange::AddProcedure { procedure } if procedure.database_type() == DatabaseType::SqlServer => {
+                SchemaChange::AddProcedure { procedure }
+                    if procedure.database_type() == DatabaseType::SqlServer =>
+                {
                     writeln!(writer, "{}", procedure.sql())?;
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddProcedure { .. } => {}
-                SchemaChange::DropProcedure { procedure_name, database_type } if *database_type == DatabaseType::SqlServer => {
+                SchemaChange::DropProcedure {
+                    procedure_name,
+                    database_type,
+                } if *database_type == DatabaseType::SqlServer => {
                     writeln!(writer, "drop procedure if exists {};", procedure_name)?;
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropProcedure { .. } => {}
-                SchemaChange::AddOtherSql { other_sql } if other_sql.database_type() == DatabaseType::SqlServer => {
+                SchemaChange::AddOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::SqlServer =>
+                {
                     writeln!(writer, "{}", other_sql.sql())?;
                     writeln!(writer, "go")?;
                     writeln!(writer)?;
                 }
                 SchemaChange::AddOtherSql { .. } => {}
-                SchemaChange::DropOtherSql { other_sql } if other_sql.database_type() == DatabaseType::SqlServer => {
-                    writeln!(writer, "-- TODO: other_sql entry removed, review manually: {}", other_sql.sql())?;
+                SchemaChange::DropOtherSql { other_sql }
+                    if other_sql.database_type() == DatabaseType::SqlServer =>
+                {
+                    writeln!(
+                        writer,
+                        "-- TODO: other_sql entry removed, review manually: {}",
+                        other_sql.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropOtherSql { .. } => {}
-                SchemaChange::AddTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::SqlServer => {
-                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                SchemaChange::AddTrigger {
+                    table_name,
+                    trigger,
+                } if trigger.database_type() == DatabaseType::SqlServer => {
+                    regenerate_triggers(
+                        &trigger_generator,
+                        &trigger_buffer,
+                        database_model,
+                        table_name,
+                        &mut triggers_regenerated,
+                        &mut *writer,
+                    )?;
                 }
                 SchemaChange::AddTrigger { .. } => {}
-                SchemaChange::DropTrigger { table_name, trigger } if trigger.database_type() == DatabaseType::SqlServer => {
-                    regenerate_triggers(&trigger_generator, &trigger_buffer, database_model, table_name, &mut triggers_regenerated, &mut *writer)?;
+                SchemaChange::DropTrigger {
+                    table_name,
+                    trigger,
+                } if trigger.database_type() == DatabaseType::SqlServer => {
+                    regenerate_triggers(
+                        &trigger_generator,
+                        &trigger_buffer,
+                        database_model,
+                        table_name,
+                        &mut triggers_regenerated,
+                        &mut *writer,
+                    )?;
                 }
                 SchemaChange::DropTrigger { .. } => {}
                 SchemaChange::AddInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
                 {
                     writeln!(writer, "{}", initial_data.sql())?;
                     writeln!(writer, "go")?;
@@ -330,9 +443,14 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                 }
                 SchemaChange::AddInitialData { .. } => {}
                 SchemaChange::DropInitialData { initial_data, .. }
-                    if initial_data.database_type().is_none() || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
+                    if initial_data.database_type().is_none()
+                        || initial_data.database_type() == Some(DatabaseType::SqlServer) =>
                 {
-                    writeln!(writer, "-- TODO: initial_data entry removed, review manually: {}", initial_data.sql())?;
+                    writeln!(
+                        writer,
+                        "-- TODO: initial_data entry removed, review manually: {}",
+                        initial_data.sql()
+                    )?;
                     writeln!(writer)?;
                 }
                 SchemaChange::DropInitialData { .. } => {}
@@ -381,7 +499,11 @@ fn dependent_keys<'a>(table: &'a Table, column_name: &str) -> Vec<(&'a Key, usiz
 /// exact name the create path (or `AddRelation`/`DropRelation`) would give it. SQL Server blocks
 /// `ALTER COLUMN` for both roles - the referencing column and the column being referenced - with
 /// no exception, so both need to be found and cycled around a `ModifyColumn`.
-fn dependent_relations<'a>(database_model: &'a DatabaseModel, table_name: &str, column_name: &str) -> Vec<(usize, &'a Relation)> {
+fn dependent_relations<'a>(
+    database_model: &'a DatabaseModel,
+    table_name: &str,
+    column_name: &str,
+) -> Vec<(usize, &'a Relation)> {
     let mut found = Vec::new();
 
     for owning_table in database_model.all_tables() {
@@ -391,11 +513,17 @@ fn dependent_relations<'a>(database_model: &'a DatabaseModel, table_name: &str, 
             }
             let ordinal = index + 1;
             let from_matches = owning_table.name().eq_ignore_ascii_case(table_name)
-                && relation.column_pairs().iter().any(|(from, _)| from.eq_ignore_ascii_case(column_name));
+                && relation
+                    .column_pairs()
+                    .iter()
+                    .any(|(from, _)| from.eq_ignore_ascii_case(column_name));
             let to_matches = database_model
                 .find_table_by_qualified_name_checked(relation.to_table_name())
                 .is_some_and(|t| t.name().eq_ignore_ascii_case(table_name))
-                && relation.column_pairs().iter().any(|(_, to)| to.eq_ignore_ascii_case(column_name));
+                && relation
+                    .column_pairs()
+                    .iter()
+                    .any(|(_, to)| to.eq_ignore_ascii_case(column_name));
             if from_matches || to_matches {
                 found.push((ordinal, relation));
             }
@@ -409,7 +537,10 @@ fn dependent_relations<'a>(database_model: &'a DatabaseModel, table_name: &str, 
 /// (case-insensitive) - used by `ModifyEnumType` to find every CHECK constraint that needs
 /// regenerating for SQLite and SQL Server, which emulate enums as `varchar` + `CHECK (col IN
 /// (...))` rather than a native type (see `DefaultColumnConstraintGenerator::enum_check_constraint_sql`).
-fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) -> Vec<(String, &'a Column)> {
+fn columns_using_enum<'a>(
+    database_model: &'a DatabaseModel,
+    enum_name: &str,
+) -> Vec<(String, &'a Column)> {
     database_model
         .all_tables()
         .into_iter()
@@ -417,7 +548,10 @@ fn columns_using_enum<'a>(database_model: &'a DatabaseModel, enum_name: &str) ->
             table
                 .columns()
                 .iter()
-                .filter(|c| c.enum_type().is_some_and(|t| t.eq_ignore_ascii_case(enum_name)))
+                .filter(|c| {
+                    c.enum_type()
+                        .is_some_and(|t| t.eq_ignore_ascii_case(enum_name))
+                })
                 .map(|c| (table.name().to_string(), c))
         })
         .collect()
@@ -439,8 +573,17 @@ fn write_removed_enum_value_guards(
     let name = new_enum_type.name();
 
     for value in old_enum_type.values() {
-        if !new_enum_type.values().iter().any(|v| v.name() == value.name()) {
-            writeln!(writer, "-- WARNING: enum value '{}' was removed from '{}'.", value.name(), name)?;
+        if !new_enum_type
+            .values()
+            .iter()
+            .any(|v| v.name() == value.name())
+        {
+            writeln!(
+                writer,
+                "-- WARNING: enum value '{}' was removed from '{}'.",
+                value.name(),
+                name
+            )?;
             writeln!(
                 writer,
                 "--   1. If rows still use '{}', add UPDATE statements above this line to migrate them to a valid value, then delete the block below, OR",
@@ -484,7 +627,10 @@ fn write_not_null_column_with_backfill_guard(
             "not exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}')",
             table_name, column_name
         ),
-        &format!("alter table {} add {}{} null;", table_name, column_name, type_sql),
+        &format!(
+            "alter table {} add {}{} null;",
+            table_name, column_name, type_sql
+        ),
     )?;
     writeln!(
         writer,
@@ -496,7 +642,11 @@ fn write_not_null_column_with_backfill_guard(
         "--   1. If '{}' has rows, add UPDATE statements above this line to give '{}' a value, then delete the block below, OR",
         table_name, column_name
     )?;
-    writeln!(writer, "--   2. If '{}' is empty, delete the block below to confirm that.", table_name)?;
+    writeln!(
+        writer,
+        "--   2. If '{}' is empty, delete the block below to confirm that.",
+        table_name
+    )?;
     writeln!(
         writer,
         "throw 50000, 'Migration halted: {} has no value for {} - see comment above.', 1;",
@@ -504,7 +654,11 @@ fn write_not_null_column_with_backfill_guard(
     )?;
     writeln!(writer, "go")?;
     writeln!(writer)?;
-    writeln!(writer, "alter table {} alter column {}{} not null;", table_name, column_name, type_sql)?;
+    writeln!(
+        writer,
+        "alter table {} alter column {}{} not null;",
+        table_name, column_name, type_sql
+    )?;
     writeln!(writer, "go")?;
     writeln!(writer)?;
     Ok(())
@@ -531,9 +685,27 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
     };
     Some(
         match boolean_mode {
-            BooleanMode::Native => if value { "1" } else { "0" },
-            BooleanMode::YesNo => if value { "'Yes'" } else { "'No'" },
-            BooleanMode::YN => if value { "'Y'" } else { "'N'" },
+            BooleanMode::Native => {
+                if value {
+                    "1"
+                } else {
+                    "0"
+                }
+            }
+            BooleanMode::YesNo => {
+                if value {
+                    "'Yes'"
+                } else {
+                    "'No'"
+                }
+            }
+            BooleanMode::YN => {
+                if value {
+                    "'Y'"
+                } else {
+                    "'N'"
+                }
+            }
         }
         .to_string(),
     )
@@ -543,20 +715,34 @@ fn boolean_default_literal(boolean_mode: BooleanMode, raw: &str) -> Option<Strin
 /// still references the column - drop each by its computed name first, guarded so this is a
 /// safe no-op when it doesn't exist (the caller may not know either way, e.g. `DropColumn`
 /// carries no `Column`/type info).
-fn write_drop_default_constraint(writer: &mut dyn Write, table_name: &str, column_name: &str) -> Result<(), MigrationGeneratorError> {
+fn write_drop_default_constraint(
+    writer: &mut dyn Write,
+    table_name: &str,
+    column_name: &str,
+) -> Result<(), MigrationGeneratorError> {
     let name = default_constraint::constraint_name(table_name, column_name);
     write_guarded(
         writer,
-        &format!("exists (select 1 from sys.default_constraints where name = '{}')", name),
+        &format!(
+            "exists (select 1 from sys.default_constraints where name = '{}')",
+            name
+        ),
         &format!("alter table {} drop constraint {};", table_name, name),
     )
 }
 
-fn write_drop_check_constraint(writer: &mut dyn Write, table_name: &str, column_name: &str) -> Result<(), MigrationGeneratorError> {
+fn write_drop_check_constraint(
+    writer: &mut dyn Write,
+    table_name: &str,
+    column_name: &str,
+) -> Result<(), MigrationGeneratorError> {
     let name = check_constraint::constraint_name(table_name, column_name);
     write_guarded(
         writer,
-        &format!("exists (select 1 from sys.check_constraints where name = '{}')", name),
+        &format!(
+            "exists (select 1 from sys.check_constraints where name = '{}')",
+            name
+        ),
         &format!("alter table {} drop constraint {};", table_name, name),
     )
 }
@@ -574,8 +760,17 @@ fn write_add_default_constraint(
         let name = default_constraint::constraint_name(table_name, column.name());
         write_guarded(
             writer,
-            &format!("not exists (select 1 from sys.default_constraints where name = '{}')", name),
-            &format!("alter table {} add constraint {} default {} for {};", table_name, name, default, column.name()),
+            &format!(
+                "not exists (select 1 from sys.default_constraints where name = '{}')",
+                name
+            ),
+            &format!(
+                "alter table {} add constraint {} default {} for {};",
+                table_name,
+                name,
+                default,
+                column.name()
+            ),
         )?;
     }
     Ok(())
@@ -591,8 +786,14 @@ fn write_add_check_constraint(
         let name = check_constraint::constraint_name(table_name, column.name());
         write_guarded(
             writer,
-            &format!("not exists (select 1 from sys.check_constraints where name = '{}')", name),
-            &format!("alter table {} add constraint {} {};", table_name, name, check_sql),
+            &format!(
+                "not exists (select 1 from sys.check_constraints where name = '{}')",
+                name
+            ),
+            &format!(
+                "alter table {} add constraint {} {};",
+                table_name, name, check_sql
+            ),
         )?;
     }
     Ok(())
@@ -630,13 +831,21 @@ fn write_add_table(
 
     table_generator.output_table_definition(table);
     let body = table_buffer.take();
-    let create_sql = format!("create table {} (\n{}\n);", qualified_name, body.trim_end_matches('\n'));
+    let create_sql = format!(
+        "create table {} (\n{}\n);",
+        qualified_name,
+        body.trim_end_matches('\n')
+    );
 
     // Schema-qualified, matching `qualified_name` above - a bare `table.name()` would be
     // schema-blind (the same bug H15 fixed for SQL Server's drop guards: a same-named table
     // in a different schema, e.g. `dbo.orders`, would falsely satisfy the guard and skip
     // creating `s.orders` entirely).
-    write_guarded(writer, &format!("object_id('{}', 'U') is null", qualified_name), &create_sql)?;
+    write_guarded(
+        writer,
+        &format!("object_id('{}', 'U') is null", qualified_name),
+        &create_sql,
+    )?;
 
     // See diff_add_keys - a brand-new table's keys/indexes are skipped there (they're already
     // covered by `output_table_definition` above for primary/unique) except indexes, which are
@@ -654,12 +863,26 @@ fn write_add_table(
         }
         let idx_name = index_name(DatabaseType::SqlServer, table.name(), index_ordinal);
         let unique = if index.is_unique() { "unique " } else { "" };
-        let cols: String = index.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
-        let where_clause = index.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
+        let cols: String = index
+            .columns()
+            .iter()
+            .map(|c| c.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let where_clause = index
+            .filter()
+            .map(|f| format!(" where {}", f))
+            .unwrap_or_default();
         write_guarded(
             writer,
-            &format!("not exists (select 1 from sys.indexes where name = '{}')", idx_name),
-            &format!("create {}index {} on {} ({}){};", unique, idx_name, qualified_name, cols, where_clause),
+            &format!(
+                "not exists (select 1 from sys.indexes where name = '{}')",
+                idx_name
+            ),
+            &format!(
+                "create {}index {} on {} ({}){};",
+                unique, idx_name, qualified_name, cols, where_clause
+            ),
         )?;
     }
 
@@ -668,7 +891,11 @@ fn write_add_table(
     Ok(())
 }
 
-fn write_guarded(writer: &mut dyn Write, condition_sql: &str, body_sql: &str) -> Result<(), MigrationGeneratorError> {
+fn write_guarded(
+    writer: &mut dyn Write,
+    condition_sql: &str,
+    body_sql: &str,
+) -> Result<(), MigrationGeneratorError> {
     writeln!(writer, "if {} begin", condition_sql)?;
     writeln!(writer, "  {}", body_sql)?;
     writeln!(writer, "end")?;
@@ -677,8 +904,18 @@ fn write_guarded(writer: &mut dyn Write, condition_sql: &str, body_sql: &str) ->
     Ok(())
 }
 
-fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
-    let cols: String = key.columns().iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
+fn write_add_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
+    let cols: String = key
+        .columns()
+        .iter()
+        .map(|c| c.name())
+        .collect::<Vec<_>>()
+        .join(", ");
     match key.key_type() {
         KeyType::Primary => {
             let constraint_name = primary_key_name(DatabaseType::SqlServer, table_name);
@@ -688,7 +925,10 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
                     "not exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
                     constraint_name, table_name
                 ),
-                &format!("alter table {} add constraint {} primary key ({});", table_name, constraint_name, cols),
+                &format!(
+                    "alter table {} add constraint {} primary key ({});",
+                    table_name, constraint_name, cols
+                ),
             )?;
         }
         KeyType::Unique => {
@@ -699,24 +939,41 @@ fn write_add_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: u
                     "not exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
                     constraint_name, table_name
                 ),
-                &format!("alter table {} add constraint {} unique ({});", table_name, constraint_name, cols),
+                &format!(
+                    "alter table {} add constraint {} unique ({});",
+                    table_name, constraint_name, cols
+                ),
             )?;
         }
         KeyType::Index => {
             let idx_name = index_name(DatabaseType::SqlServer, table_name, ordinal);
             let unique = if key.is_unique() { "unique " } else { "" };
-            let where_clause = key.filter().map(|f| format!(" where {}", f)).unwrap_or_default();
+            let where_clause = key
+                .filter()
+                .map(|f| format!(" where {}", f))
+                .unwrap_or_default();
             write_guarded(
                 writer,
-                &format!("not exists (select 1 from sys.indexes where name = '{}')", idx_name),
-                &format!("create {}index {} on {} ({}){};", unique, idx_name, table_name, cols, where_clause),
+                &format!(
+                    "not exists (select 1 from sys.indexes where name = '{}')",
+                    idx_name
+                ),
+                &format!(
+                    "create {}index {} on {} ({}){};",
+                    unique, idx_name, table_name, cols, where_clause
+                ),
             )?;
         }
     }
     Ok(())
 }
 
-fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_drop_key(
+    writer: &mut dyn Write,
+    table_name: &str,
+    key: &Key,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     match key.key_type() {
         KeyType::Primary => {
             let constraint_name = primary_key_name(DatabaseType::SqlServer, table_name);
@@ -726,7 +983,10 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
                     "exists (select 1 from sys.key_constraints where name = '{}' and parent_object_id = object_id('{}'))",
                     constraint_name, table_name
                 ),
-                &format!("alter table {} drop constraint {};", table_name, constraint_name),
+                &format!(
+                    "alter table {} drop constraint {};",
+                    table_name, constraint_name
+                ),
             )?;
         }
         KeyType::Unique => {
@@ -753,19 +1013,34 @@ fn write_drop_key(writer: &mut dyn Write, table_name: &str, key: &Key, ordinal: 
     Ok(())
 }
 
-fn write_drop_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_drop_relation(
+    writer: &mut dyn Write,
+    relation: &Relation,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     if !relation.creates_foreign_key_constraint() {
         return Ok(());
     }
     let fk_name = foreign_key_name(DatabaseType::SqlServer, relation.from_table_name(), ordinal);
     write_guarded(
         writer,
-        &format!("exists (select 1 from sys.foreign_keys where name = '{}')", fk_name),
-        &format!("alter table {} drop constraint {};", relation.from_table_name(), fk_name),
+        &format!(
+            "exists (select 1 from sys.foreign_keys where name = '{}')",
+            fk_name
+        ),
+        &format!(
+            "alter table {} drop constraint {};",
+            relation.from_table_name(),
+            fk_name
+        ),
     )
 }
 
-fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usize) -> Result<(), MigrationGeneratorError> {
+fn write_add_relation(
+    writer: &mut dyn Write,
+    relation: &Relation,
+    ordinal: usize,
+) -> Result<(), MigrationGeneratorError> {
     if !relation.creates_foreign_key_constraint() {
         return Ok(());
     }
@@ -776,11 +1051,24 @@ fn write_add_relation(writer: &mut dyn Write, relation: &Relation, ordinal: usiz
         RelationType::DoNothing => " on delete no action",
         RelationType::Enforce => "",
     };
-    let from_columns = relation.column_pairs().iter().map(|(from, _)| from.as_str()).collect::<Vec<_>>().join(", ");
-    let to_columns = relation.column_pairs().iter().map(|(_, to)| to.as_str()).collect::<Vec<_>>().join(", ");
+    let from_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(from, _)| from.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let to_columns = relation
+        .column_pairs()
+        .iter()
+        .map(|(_, to)| to.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     write_guarded(
         writer,
-        &format!("not exists (select 1 from sys.foreign_keys where name = '{}')", fk_name),
+        &format!(
+            "not exists (select 1 from sys.foreign_keys where name = '{}')",
+            fk_name
+        ),
         &format!(
             "alter table {} add constraint {} foreign key ({}) references {}({}){};",
             relation.from_table_name(),
@@ -808,7 +1096,11 @@ fn regenerate_triggers(
     if !regenerated.insert(table_name.to_string()) {
         return Ok(());
     }
-    if let Some(table) = database_model.all_tables().into_iter().find(|t| t.name().eq_ignore_ascii_case(table_name)) {
+    if let Some(table) = database_model
+        .all_tables()
+        .into_iter()
+        .find(|t| t.name().eq_ignore_ascii_case(table_name))
+    {
         trigger_generator.output_triggers_for_table(table);
         write!(writer, "{}", trigger_buffer.take())?;
     }

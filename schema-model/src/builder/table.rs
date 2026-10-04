@@ -139,7 +139,14 @@ mod tests {
     fn build_table_with_columns_and_pk() {
         let t = TableBuilder::new(Some("s"), "t")
             .add_column(Column::new(Some("s"), "id", ColumnType::Int, 0, 0, true))
-            .add_column(Column::new(Some("s"), "name", ColumnType::Varchar, 255, 0, false))
+            .add_column(Column::new(
+                Some("s"),
+                "name",
+                ColumnType::Varchar,
+                255,
+                0,
+                false,
+            ))
             .add_key(Key::new(KeyType::Primary, vec![KeyColumn::new("id")]))
             .build();
         assert_eq!(t.name(), "t");

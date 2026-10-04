@@ -5,7 +5,8 @@ use schema_model::model::database_model::DatabaseModel;
 
 /// parse a string containing XML into a DatabaseModel.
 pub fn parse_database_xml(xml: &str) -> Result<DatabaseModel, String> {
-    let database_xml: DatabaseXml = parse_database_roxml(xml).map_err(|e| format!("XML parse error: {e}"))?;
+    let database_xml: DatabaseXml =
+        parse_database_roxml(xml).map_err(|e| format!("XML parse error: {e}"))?;
     convert_database(database_xml)
 
     // let database_xml: DatabaseXml = qx_from_str(xml).map_err(|e| format!("XML parse error: {e}"))?;
@@ -102,7 +103,11 @@ mod tests {
 
         let database = parse_database_xml(&xml).expect("parse ok");
 
-        let default_schema = database.schemas().iter().find(|s| s.schema_name().is_none()).unwrap();
+        let default_schema = database
+            .schemas()
+            .iter()
+            .find(|s| s.schema_name().is_none())
+            .unwrap();
         let product = default_schema.get_table("Product");
         let reverse_relations = product.reverse_relations();
         assert_eq!(reverse_relations.len(), 1);

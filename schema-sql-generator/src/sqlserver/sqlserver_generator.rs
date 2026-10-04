@@ -29,9 +29,7 @@ impl SqlServerGenerator {
             Box::new(SqlServerOtherSqlGenerator::new(context.clone())),
         );
 
-        Self {
-            sql_generator,
-        }
+        Self { sql_generator }
     }
 
     /// Emits an existence-guarded `create schema` for every non-default schema the model
@@ -59,8 +57,17 @@ impl SqlServerGenerator {
 
         context.with_writer(|writer| {
             for schema_name in schema_names {
-                sql_println!(writer, "if not exists (select 1 from sys.schemas where name = '{}')", escape_sql_literal(schema_name));
-                sql_println!(writer, "   exec('create schema {}'){}", schema_name, separator);
+                sql_println!(
+                    writer,
+                    "if not exists (select 1 from sys.schemas where name = '{}')",
+                    escape_sql_literal(schema_name)
+                );
+                sql_println!(
+                    writer,
+                    "   exec('create schema {}'){}",
+                    schema_name,
+                    separator
+                );
             }
             sql_println!(writer, "");
         });
@@ -134,7 +141,11 @@ mod tests {
     fn output_header_creates_non_default_schemas() {
         let default_schema = SchemaBuilder::new(None::<&str>).build();
         let app_schema = SchemaBuilder::new(Some("app")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![default_schema, app_schema]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![default_schema, app_schema],
+        );
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerGenerator::new(ctx);
@@ -149,7 +160,8 @@ mod tests {
     fn output_header_never_creates_the_dbo_schema() {
         // `dbo` always exists in SQL Server; guarding and creating it is unnecessary noise.
         let schema = SchemaBuilder::new(Some("dbo")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerGenerator::new(ctx);
@@ -161,7 +173,8 @@ mod tests {
     #[test]
     fn output_header_omits_schema_creation_when_only_default_schema_present() {
         let schema = SchemaBuilder::new(None::<&str>).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerGenerator::new(ctx);
@@ -178,7 +191,11 @@ mod tests {
         // it. Delegating `generate`/`output_sql` to the inner `sql_generator` field bypassed
         // this silently.
         let app_schema = SchemaBuilder::new(Some("app")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![app_schema]);
+        let model = DatabaseModel::new(
+            BooleanMode::Native,
+            ForeignKeyMode::Relations,
+            vec![app_schema],
+        );
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator: Box<dyn SqlGenerator> = Box::new(SqlServerGenerator::new(ctx));
@@ -190,7 +207,8 @@ mod tests {
     #[test]
     fn output_header_escapes_single_quote_in_schema_name() {
         let schema = SchemaBuilder::new(Some("o'brien")).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerGenerator::new(ctx);

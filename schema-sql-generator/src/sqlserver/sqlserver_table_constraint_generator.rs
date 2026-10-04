@@ -1,5 +1,7 @@
 use crate::common::generator_context::GeneratorContext;
-use crate::common::table_constraint_generator::{DefaultTableConstraintGenerator, TableConstraintGenerator};
+use crate::common::table_constraint_generator::{
+    DefaultTableConstraintGenerator, TableConstraintGenerator,
+};
 use schema_model::model::table::Table;
 
 pub struct SqlServerTableConstraintGenerator {
@@ -11,12 +13,13 @@ impl SqlServerTableConstraintGenerator {
         Self {
             table_constraint_generator: DefaultTableConstraintGenerator::new(context),
         }
-    }   
+    }
 }
 
 impl TableConstraintGenerator for SqlServerTableConstraintGenerator {
     fn table_check_constraints(&self, table: &Table) -> Vec<String> {
-        self.table_constraint_generator.table_check_constraints(table)
+        self.table_constraint_generator
+            .table_check_constraints(table)
     }
 }
 
@@ -32,10 +35,17 @@ mod tests {
     #[test]
     fn table_check_constraints_renders_each_constraint() {
         let table = TableBuilder::new(None::<&str>, "orders")
-            .add_constraint(Constraint::new("ck_total_positive", "check (total > 0)", DatabaseType::SqlServer))
+            .add_constraint(Constraint::new(
+                "ck_total_positive",
+                "check (total > 0)",
+                DatabaseType::SqlServer,
+            ))
             .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableConstraintGenerator::new(ctx);
@@ -48,8 +58,11 @@ mod tests {
     #[test]
     fn no_constraints_when_table_has_none() {
         let table = TableBuilder::new(None::<&str>, "orders").build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table.clone()).build();
-        let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
         let (ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
 
         let generator = SqlServerTableConstraintGenerator::new(ctx);

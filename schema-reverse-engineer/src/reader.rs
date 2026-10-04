@@ -9,13 +9,18 @@ use std::collections::{HashMap, HashSet};
 /// Introspects the given Postgres schema (`db_schema`, e.g. `"public"`) and builds a
 /// `DatabaseModel` describing its tables, columns, keys, foreign keys, check/exclusion
 /// constraints, enum types, and views.
-pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel, SchemaReverseEngineerError> {
+pub async fn read_schema(
+    pool: &PgPool,
+    db_schema: &str,
+) -> Result<DatabaseModel, SchemaReverseEngineerError> {
     let table_names = tables::list_tables(pool, db_schema).await?;
     let enum_types = enums::list_enum_types(pool, db_schema).await?;
-    let enum_type_names: HashSet<String> = enum_types.iter().map(|e| e.name().to_string()).collect();
+    let enum_type_names: HashSet<String> =
+        enum_types.iter().map(|e| e.name().to_string()).collect();
 
     let all_columns = columns::list_columns(pool, db_schema, &enum_type_names).await?;
-    let exclusion_constraint_names = constraints::list_exclusion_constraint_names(pool, db_schema).await?;
+    let exclusion_constraint_names =
+        constraints::list_exclusion_constraint_names(pool, db_schema).await?;
     let mut table_keys = keys::list_keys(pool, db_schema, &exclusion_constraint_names).await?;
     let mut table_relations = relations::list_foreign_keys(pool, db_schema).await?;
     let mut table_constraints = constraints::list_constraints(pool, db_schema).await?;
@@ -23,7 +28,10 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
 
     let mut columns_by_table: HashMap<String, Vec<columns::ColumnInfo>> = HashMap::new();
     for column in all_columns {
-        columns_by_table.entry(column.table_name.clone()).or_default().push(column);
+        columns_by_table
+            .entry(column.table_name.clone())
+            .or_default()
+            .push(column);
     }
 
     let mut schema_builder = SchemaBuilder::new(Some(db_schema));
@@ -39,15 +47,19 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
 
         for column in columns_by_table.remove(table_name).unwrap_or_default() {
             table_builder = table_builder.add_column(
-                ColumnBuilder::new(Some(db_schema), column.column_name.as_str(), column.column_type)
-                    .length(column.length)
-                    .scale(column.scale)
-                    .required(column.required)
-                    .default_constraint(column.default_constraint)
-                    .generated(column.generated)
-                    .enum_type(column.enum_type)
-                    .element_type(column.element_type)
-                    .build(),
+                ColumnBuilder::new(
+                    Some(db_schema),
+                    column.column_name.as_str(),
+                    column.column_type,
+                )
+                .length(column.length)
+                .scale(column.scale)
+                .required(column.required)
+                .default_constraint(column.default_constraint)
+                .generated(column.generated)
+                .enum_type(column.enum_type)
+                .element_type(column.element_type)
+                .build(),
             );
         }
 
@@ -76,7 +88,11 @@ pub async fn read_schema(pool: &PgPool, db_schema: &str) -> Result<DatabaseModel
 
     let schema = schema_builder.build();
 
-    Ok(DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]))
+    Ok(DatabaseModel::new(
+        BooleanMode::Native,
+        ForeignKeyMode::Relations,
+        vec![schema],
+    ))
 }
 
 fn build_key(key_type: KeyType, columns: Vec<String>) -> schema_model::model::key::Key {

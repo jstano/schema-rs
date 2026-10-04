@@ -4,9 +4,7 @@ use schema_model::builder::SchemaBuilder;
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
-use schema_model::model::types::{
-    BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder,
-};
+use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, OtherSqlOrder};
 use schema_model::model::view::View;
 use schema_model::model::{
     aggregation::AggregationFrequency,
@@ -246,16 +244,24 @@ pub(crate) fn str_to_database_type(s: Option<&str>) -> Option<DatabaseType> {
 /// rather than silently discarding the element when the attribute is missing or doesn't
 /// match a known database type; a typo here used to make the whole element vanish from
 /// the parsed model with no warning.
-pub(crate) fn required_database_type(value: Option<&str>, context: &str) -> Result<DatabaseType, String> {
-    let value = value.ok_or_else(|| format!("{context}: missing required databaseType attribute"))?;
-    str_to_database_type(Some(value)).ok_or_else(|| format!("{context}: unrecognized databaseType '{value}'"))
+pub(crate) fn required_database_type(
+    value: Option<&str>,
+    context: &str,
+) -> Result<DatabaseType, String> {
+    let value =
+        value.ok_or_else(|| format!("{context}: missing required databaseType attribute"))?;
+    str_to_database_type(Some(value))
+        .ok_or_else(|| format!("{context}: unrecognized databaseType '{value}'"))
 }
 
 /// Parses an optional `databaseType` attribute where absence has a real meaning: "applies
 /// to every database type" (mirrors `View`/`InitialData`'s `Option<DatabaseType>`). An
 /// attribute that IS present but unrecognized is still always an error, so a typo never
 /// silently broadens an element's scope to every database instead of the one intended.
-pub(crate) fn optional_database_type(value: Option<&str>, context: &str) -> Result<Option<DatabaseType>, String> {
+pub(crate) fn optional_database_type(
+    value: Option<&str>,
+    context: &str,
+) -> Result<Option<DatabaseType>, String> {
     match value {
         None => Ok(None),
         Some(v) => str_to_database_type(Some(v))
@@ -299,7 +305,8 @@ fn reverse_relations(database_model: &mut DatabaseModel) -> Result<(), String> {
             // reverse relation stored on the parent can resolve the child table
             // correctly (via `find_table_by_qualified_name`) even when the child
             // lives in a non-default schema.
-            let qualified_from_table_name = qualify_table_name(table.schema_name(), relation.from_table_name());
+            let qualified_from_table_name =
+                qualify_table_name(table.schema_name(), relation.from_table_name());
 
             let reverse_relation = if relation.is_composite() {
                 Relation::new_composite(

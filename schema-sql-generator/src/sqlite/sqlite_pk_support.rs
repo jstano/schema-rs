@@ -17,5 +17,9 @@ pub(crate) fn inline_autoincrement_pk_column(table: &Table) -> Option<&Column> {
 
     let column = table.column(&columns[0]);
 
-    matches!(column.column_type(), ColumnType::Sequence | ColumnType::LongSequence).then_some(column)
+    matches!(
+        column.column_type(),
+        ColumnType::Sequence | ColumnType::LongSequence
+    )
+    .then_some(column)
 }
