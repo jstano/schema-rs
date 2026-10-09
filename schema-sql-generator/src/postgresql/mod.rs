@@ -1,3 +1,4 @@
+mod postgres_aggregation_sql;
 mod postgres_column_constraint_generator;
 mod postgres_column_generator;
 pub mod postgres_column_type_generator;

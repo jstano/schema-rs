@@ -1,3 +1,4 @@
+mod sqlserver_aggregation_sql;
 mod sqlserver_column_constraint_generator;
 mod sqlserver_column_generator;
 pub mod sqlserver_column_type_generator;

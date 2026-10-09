@@ -1,5 +1,6 @@
 use crate::common::generator_context::GeneratorContext;
 use crate::common::trigger_generator::TriggerGenerator;
+use crate::postgresql::postgres_aggregation_sql::{delete_aggregation_sql, upsert_aggregation_sql};
 use crate::sql_println;
 use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
@@ -155,6 +156,12 @@ impl PostgresTriggerGenerator {
                 }
             }
 
+            for aggregation in table.aggregations() {
+                for line in delete_aggregation_sql(table, aggregation) {
+                    sql_println!(writer, "{}", line);
+                }
+            }
+
             for custom_trigger in table.triggers() {
                 if custom_trigger.trigger_type() == TriggerType::Delete
                     && custom_trigger.database_type() == DatabaseType::Postgresql
@@ -244,6 +251,12 @@ impl PostgresTriggerGenerator {
                         }
                         RelationType::DoNothing => {}
                     }
+                }
+            }
+
+            for aggregation in table.aggregations() {
+                for line in upsert_aggregation_sql(table, aggregation) {
+                    sql_println!(writer, "{}", line);
                 }
             }
 

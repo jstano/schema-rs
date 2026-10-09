@@ -2,6 +2,7 @@ use crate::common::generator_context::GeneratorContext;
 use crate::common::sql_string::escape_sql_literal;
 use crate::common::trigger_generator::TriggerGenerator;
 use crate::sql_println;
+use crate::sqlserver::sqlserver_aggregation_sql::{delete_aggregation_sql, upsert_aggregation_sql};
 use schema_model::model::relation::Relation;
 use schema_model::model::table::Table;
 use schema_model::model::types::{DatabaseType, ForeignKeyMode, RelationType, TriggerType};
@@ -216,6 +217,12 @@ impl SqlServerTriggerGenerator {
                 }
             }
 
+            for aggregation in table.aggregations() {
+                for line in delete_aggregation_sql(table, aggregation) {
+                    sql_println!(writer, "{}", line);
+                }
+            }
+
             for custom_trigger in table.triggers() {
                 if custom_trigger.trigger_type() == TriggerType::Delete
                     && custom_trigger.database_type() == DatabaseType::SqlServer
@@ -313,6 +320,12 @@ impl SqlServerTriggerGenerator {
                         }
                         RelationType::DoNothing => {}
                     }
+                }
+            }
+
+            for aggregation in table.aggregations() {
+                for line in upsert_aggregation_sql(table, aggregation) {
+                    sql_println!(writer, "{}", line);
                 }
             }
 

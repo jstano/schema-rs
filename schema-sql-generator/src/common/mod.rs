@@ -1,3 +1,4 @@
+pub mod aggregation_sql;
 pub mod column_constraint_generator;
 pub mod column_generator;
 pub mod column_type_generator;

@@ -697,10 +697,28 @@ remediation plan) is worth more than any individual fix below.
     shared temp-file name under parallel execution, unrelated to this change - passed clean on
     rerun and in isolation); `cargo clippy -p schema-sql-generator -p schema-migration-generator
     -p schema-installer --all-targets` clean.
-- [ ] **M7. `<aggregations>` emits empty trigger shells and nothing else.**
+- [x] **M7. `<aggregations>` emits empty trigger shells and nothing else.**
   `postgres_trigger_generator.rs:25,39` gates trigger emission on
   `!table.aggregations().is_empty()`, but no aggregation SQL is ever generated —
   `Aggregation::aggregation_columns/groups/frequency` have no non-test call sites.
+
+  **Fixed 2026-10-04.** Ported the aggregation SQL from `schema-java`, rewritten to be
+  coherent (the Java Postgres version ignored the date bucket and wrote to the wrong
+  columns). The destination keeps one row per (group columns, date bucket of `dateColumn`),
+  maintained incrementally: insert adds the new row's contribution, delete subtracts the old
+  row's, update subtracts old and adds new. Sums contribute `coalesce(sourceColumn, 0)`,
+  counts contribute 1; `criteria` filters contributing rows; `timestampColumn` is stamped on
+  every touched destination row; a group's `source` may be an expression, and
+  `sourceDerivedFrom` names the column that decides whether an update must re-aggregate
+  (skipped entirely when `criteria` is set, since its columns are unknown). New
+  `postgres_aggregation_sql.rs` (per-row `insert ... on conflict`/`update ... from`; the
+  destination needs a unique key over the group columns + date column) and
+  `sqlserver_aggregation_sql.rs` (inserted/deleted CTEs + `merge`). Verified Postgres against a
+  live PostgreSQL 16 (insert/update/move-bucket/criteria flip/delete); SQL Server is covered
+  by unit tests only (no SQL Server instance runnable here).
+  Not ported: the Java SQL Server `usp_primeAggregates_*` priming procedure (rebuild the
+  destination from existing rows), and no validation yet that destination tables/columns
+  exist.
 - [x] **M8. Truncated identifiers can still exceed PostgreSQL's limit** (BUGS #15 partially
   fixed): `key_generator.rs:34-60` etc. test with `full_name.len()` (**bytes**) but truncate
   with `.chars().take(available)`. PostgreSQL's 63 is a byte limit, so a Cyrillic table name
