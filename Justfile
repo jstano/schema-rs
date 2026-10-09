@@ -13,7 +13,7 @@ version := `grep -m1 'version = ' Cargo.toml | sed -E 's/.*version = "([^"]+)".*
 binaries := "schema-installer schema-diagram-generator schema-sql-generator schema-reverse-engineer schema-migration-generator"
 
 # Docker Hub repository to publish images to
-docker_repo := env_var_or_default("DOCKER_REPO", "stano/schema-rs")
+docker_repo := env_var_or_default("DOCKER_REPO", "jstano/schema-rs")
 
 # Crates to publish to crates.io, in dependency order
 crates := "schema-model schema-parser schema-diff schema-sql-generator schema-migration-generator schema-reverse-engineer schema-installer schema-diagram-generator"

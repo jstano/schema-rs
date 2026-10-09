@@ -284,7 +284,7 @@ xattr -dr com.apple.quarantine ./schema-installer ./schema-diagram-generator ./s
 
 A Docker image bundling all 4 binaries (`schema-installer`, `schema-diagram-generator`,
 `schema-sql-generator`, `schema-reverse-engineer`) is published to Docker Hub as
-[`stano/schema-rs`](https://hub.docker.com/r/stano/schema-rs), tagged with both the
+[`jstano/schema-rs`](https://hub.docker.com/r/jstano/schema-rs), tagged with both the
 release version (e.g. `0.4.0`) and `latest`, for `linux/amd64` and `linux/arm64`.
 
 Run any of the bundled tools with `docker run`, passing the tool name as the first argument.
@@ -292,14 +292,14 @@ The container is isolated from your host filesystem, so any schema/migration fil
 to read or write must be shared in with a bind mount (`-v host/path:container/path`):
 
 ```bash
-docker run --rm stano/schema-rs schema-installer --help
+docker run --rm jstano/schema-rs schema-installer --help
 
-docker run --rm -v $(pwd)/migrations:/migrations stano/schema-rs schema-installer \
+docker run --rm -v $(pwd)/migrations:/migrations jstano/schema-rs schema-installer \
   --database-type postgresql \
   --connection-string "postgres://user:pass@host:5432/mydb" \
   migrate --migrations-dir /migrations
 
-docker run --rm -v $(pwd)/schemas:/data stano/schema-rs schema-sql-generator \
+docker run --rm -v $(pwd)/schemas:/data jstano/schema-rs schema-sql-generator \
   --database-type postgresql \
   --schema-file /data/schema.xml \
   --foreign-key-mode relations \
