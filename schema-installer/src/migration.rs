@@ -1,6 +1,7 @@
 use crate::error::SchemaInstallerError;
+use schema_sql_generator::common::generator_type::GeneratorType;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The fixed, reserved version of the legacy XML `install` command (see `installer.rs`)
 /// records its single tracking row under, so it can never collide with real migration
@@ -213,6 +214,78 @@ impl MigrationSource for EmbeddedMigrationSource {
         check_no_duplicate_versions(&self.migrations)?;
 
         Ok(self.migrations.clone())
+    }
+}
+
+/// Vendor subfolder names recognised by [`resolve_migrations_dir`] (L21).
+const VENDOR_DIRS: [&str; 3] = ["postgresql", "sqlserver", "sqlite"];
+
+fn vendor_dir_name(database_type: &GeneratorType) -> &'static str {
+    match database_type {
+        GeneratorType::Postgresql => "postgresql",
+        GeneratorType::SqlServer => "sqlserver",
+        GeneratorType::Sqlite => "sqlite",
+    }
+}
+
+/// Resolves `--migrations-dir` to the directory actually scanned (L21). The layout is
+/// detected from the directory's contents:
+///
+/// - `.sql` files directly inside, no vendor subfolders: flat layout, returned unchanged.
+/// - vendor subfolders (`postgresql/`, `sqlserver/`, `sqlite/`) and no direct `.sql` files:
+///   vendor layout, resolves to `{dir}/{database-type}/`; a missing folder for the connected
+///   database is an error.
+/// - both: ambiguous, an error.
+/// - neither: returned unchanged, so the normal empty/missing-directory handling applies.
+pub fn resolve_migrations_dir(
+    path: &Path,
+    database_type: &GeneratorType,
+) -> Result<PathBuf, SchemaInstallerError> {
+    if !path.is_dir() {
+        return Ok(path.to_path_buf());
+    }
+
+    let mut has_sql_files = false;
+    let mut vendor_dirs: Vec<&str> = Vec::new();
+    for entry in std::fs::read_dir(path).map_err(SchemaInstallerError::Io)? {
+        let entry_path = entry.map_err(SchemaInstallerError::Io)?.path();
+        let name = entry_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if entry_path.is_dir() {
+            if let Some(vendor) = VENDOR_DIRS.iter().find(|v| **v == name) {
+                vendor_dirs.push(vendor);
+            }
+        } else if entry_path.is_file() && name.ends_with(".sql") {
+            has_sql_files = true;
+        }
+    }
+
+    match (has_sql_files, vendor_dirs.is_empty()) {
+        (true, false) => Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Ambiguous migrations directory {:?}: it contains .sql files directly and also \
+             vendor subfolders ({}). Use either one flat directory or per-database subfolders, \
+             not both.",
+            path,
+            vendor_dirs.join(", ")
+        ))),
+        (false, false) => {
+            let wanted = vendor_dir_name(database_type);
+            if vendor_dirs.contains(&wanted) {
+                Ok(path.join(wanted))
+            } else {
+                Err(SchemaInstallerError::InvalidConfiguration(format!(
+                    "Migrations directory {:?} uses per-database subfolders ({}) but has no \
+                     '{}' folder for the connected database",
+                    path,
+                    vendor_dirs.join(", "),
+                    wanted
+                )))
+            }
+        }
+        _ => Ok(path.to_path_buf()),
     }
 }
 
@@ -595,6 +668,43 @@ mod tests {
         };
         let err = source.migrations().unwrap_err();
         assert!(err.to_string().contains("Duplicate migration version '1'"));
+    }
+
+    #[test]
+    fn test_resolve_migrations_dir_layouts() {
+        let flat = tempfile::tempdir().unwrap();
+        std::fs::write(flat.path().join("V1__a.sql"), "x").unwrap();
+        assert_eq!(
+            resolve_migrations_dir(flat.path(), &GeneratorType::Postgresql).unwrap(),
+            flat.path()
+        );
+
+        // Non-vendor subfolders don't trigger vendor mode.
+        std::fs::create_dir(flat.path().join("archive")).unwrap();
+        assert_eq!(
+            resolve_migrations_dir(flat.path(), &GeneratorType::Sqlite).unwrap(),
+            flat.path()
+        );
+
+        let vendor = tempfile::tempdir().unwrap();
+        std::fs::create_dir(vendor.path().join("postgresql")).unwrap();
+        std::fs::create_dir(vendor.path().join("sqlserver")).unwrap();
+        assert_eq!(
+            resolve_migrations_dir(vendor.path(), &GeneratorType::SqlServer).unwrap(),
+            vendor.path().join("sqlserver")
+        );
+        let err = resolve_migrations_dir(vendor.path(), &GeneratorType::Sqlite).unwrap_err();
+        assert!(err.to_string().contains("no 'sqlite' folder"));
+
+        std::fs::write(vendor.path().join("V1__a.sql"), "x").unwrap();
+        let err = resolve_migrations_dir(vendor.path(), &GeneratorType::Postgresql).unwrap_err();
+        assert!(err.to_string().contains("Ambiguous"));
+
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_migrations_dir(empty.path(), &GeneratorType::Postgresql).unwrap(),
+            empty.path()
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use schema_installer::{
     Baseline, DirectoryMigrationSource, Migrator, SchemaInstaller, SchemaInstallerConfigBuilder,
+    resolve_migrations_dir,
 };
 use schema_model::model::types::{BooleanMode, ForeignKeyMode};
 use schema_sql_generator::common::generator_type::GeneratorType;
@@ -137,7 +138,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource {
-                path: migrations_dir,
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
             });
             match dry_run {
                 Some(output_path) => {
@@ -158,7 +159,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource {
-                path: migrations_dir,
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
             });
             Migrator::info(&config, source).await?;
         }
@@ -172,7 +173,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource {
-                path: migrations_dir,
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
             });
             Migrator::validate(&config, source).await?;
         }
@@ -186,7 +187,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource {
-                path: migrations_dir,
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
             });
             Migrator::repair(&config, source).await?;
         }
@@ -200,7 +201,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let source = Box::new(DirectoryMigrationSource {
-                path: migrations_dir,
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
             });
             let pending = Migrator::has_pending_migrations(&config, source).await?;
             if pending {
@@ -232,7 +233,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("--migrations-dir has no effect without --baseline-version".into());
                 }
                 (Some(version), Some(dir)) => {
-                    let source = DirectoryMigrationSource { path: dir.clone() };
+                    let source = DirectoryMigrationSource {
+                        path: resolve_migrations_dir(dir, &database_type)?,
+                    };
                     let baseline = Baseline {
                         version,
                         source: &source,

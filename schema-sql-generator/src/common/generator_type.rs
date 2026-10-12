@@ -24,6 +24,7 @@ const POSTGRES_ARRAY_ELEMENT_TYPES: &[ColumnType] = &[
     ColumnType::Text,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneratorType {
     Postgresql,
     Sqlite,

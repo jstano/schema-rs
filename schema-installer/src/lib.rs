@@ -12,6 +12,6 @@ pub use error::SchemaInstallerError;
 pub use installer::{Baseline, SchemaInstaller};
 pub use migration::{
     AppliedMigration, DirectoryMigrationSource, EmbeddedMigrationSource, Migration,
-    MigrationSource, MigrationStatus, compute_checksum,
+    MigrationSource, MigrationStatus, compute_checksum, resolve_migrations_dir,
 };
 pub use migrator::Migrator;

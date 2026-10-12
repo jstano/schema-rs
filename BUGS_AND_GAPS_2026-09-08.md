@@ -1258,7 +1258,7 @@ remediation plan) is worth more than any individual fix below.
     standalone `baseline`, `--out-of-order`, history-table name. `clean` (destructive) and `undo`
     (a paid Flyway feature) are probably better declined and documented as out of scope;
     repeatable migrations need re-run-on-checksum-change semantics and a design decision.
-- [ ] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
+- [x] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
   while closing L13). `--migrations-dir` takes one flat directory and applies every `.sql` file
   in it to whatever database is connected. Flyway handles this with `locations=db/migration/{vendor}`;
   it has no filename-suffix convention.
@@ -1273,6 +1273,17 @@ remediation plan) is worth more than any individual fix below.
   **Decided:** every directory stays flat (see L13; the vendor level is the only nesting), and a
   missing vendor folder is an error, not an empty migration set. **Rejected:** a filename suffix
   such as `V2__x.postgresql.sql`, which would put every dialect back into one directory.
+
+  **Fixed 2026-10-12.** Layout is detected from the directory's contents by
+  `resolve_migrations_dir` (`schema-installer/src/migration.rs`), so single-database users keep
+  a flat directory with no change: direct `.sql` files and no vendor folders = flat (unchanged);
+  `postgresql/`/`sqlserver/`/`sqlite/` subfolders and no direct `.sql` = vendor mode, resolving
+  to `{dir}/{database-type}/` (missing folder for the connected database = error); both = error
+  as ambiguous. Only those three exact names trigger vendor mode, so e.g. `archive/` doesn't.
+  Applied in the CLI for all commands, including `install --baseline-version`. The library's
+  `DirectoryMigrationSource` stays flat; library callers can call `resolve_migrations_dir`
+  first. `GeneratorType` gained `Debug, Clone, Copy, PartialEq, Eq`. Verified against real
+  SQLite via the CLI (vendor, missing-folder and ambiguous cases) plus a unit test.
 
   **Open:** fall back to the given directory when there is no `{database-type}` subfolder, or
   always require it? Support a shared `common/` folder as Flyway's multiple locations allow? If
