@@ -1243,11 +1243,22 @@ remediation plan) is worth more than any individual fix below.
   `TriggerGenerator::output_triggers_for_table` so migrations regenerate a table's full,
   already-idempotent trigger set rather than re-deriving it. Functions/procedures/other_sql/
   initial_data follow the existing `AddView`/`DropView` add-or-drop-by-content pattern.
-- [ ] **L15b.** `xml_writer.rs:36-46,73-84` (schema-reverse-engineer) never emits `<triggers>`,
+- [x] **L15b.** (partly fixed, rest won't fix) `xml_writer.rs:36-46,73-84` (schema-reverse-engineer) never emits `<triggers>`,
   `<functions>`, `<procedures>`, `<initialData>`, `<aggregations>`, `noExport` or
   `lockEscalation`. Deliberately left open: `schema-reverse-engineer`'s DB reader doesn't
   introspect any of these from a live database yet, so this is currently dead code, not real
   data loss - fixing it for real needs Postgres catalog introspection work first.
+
+  **Partly fixed 2026-10-12.** Functions and procedures are now introspected and exported:
+  `postgres/routines.rs` reads `pg_proc` (`prokind` `f`/`p`, skipping extension-owned objects
+  and the generator's own `generate_uuid`) via `pg_get_functiondef`, and `xml_writer.rs` emits
+  them as `<function>`/`<procedure>` with a `<sql databaseType="postgresql">` CDATA body. Covered
+  by a writer->real-parser round-trip unit test and the Docker integration test.
+  **Not done, by decision:** `<triggers>` (the model's `Trigger` is a typed snippet, and
+  FK-mode trigger output would need recognising to avoid double-emitting), `<initialData>`
+  (dumping rows), and `<aggregations>`/`noExport`/`lockEscalation` (schema-rs- or SQL
+  Server-only concepts with nothing to introspect from Postgres).
+
 - [x] **L16.** No CI: no `.github/` at all, `.githooks/` is empty. 326 tests and `cargo clippy`
   run only when someone remembers, and the 28 `#[ignore]`d PostgreSQL/SQL Server integration
   tests never run — which is how C6 shipped.

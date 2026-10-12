@@ -6,7 +6,7 @@ use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
 use schema_model::model::table::Table;
-use schema_model::model::types::{BooleanMode, ForeignKeyMode, KeyType};
+use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType};
 use schema_model::model::view::View;
 use std::fmt::Write as _;
 
@@ -52,6 +52,48 @@ fn write_schema_body(out: &mut String, schema: &Schema, indent: usize) {
     for view in schema.all_views() {
         write_view(out, view, indent);
     }
+    for function in schema.functions() {
+        write_routine(
+            out,
+            "function",
+            function.name(),
+            function.database_type(),
+            function.sql(),
+            indent,
+        );
+    }
+    for procedure in schema.procedures() {
+        write_routine(
+            out,
+            "procedure",
+            procedure.name(),
+            procedure.database_type(),
+            procedure.sql(),
+            indent,
+        );
+    }
+}
+
+fn write_routine(
+    out: &mut String,
+    tag: &str,
+    name: &str,
+    database_type: DatabaseType,
+    sql: &str,
+    indent: usize,
+) {
+    push_indent(out, indent);
+    let _ = writeln!(out, "<{} name=\"{}\">", tag, xml_escape_attr(name));
+    push_indent(out, indent + 1);
+    let _ = write!(
+        out,
+        "<sql databaseType=\"{}\">",
+        database_type_str(database_type)
+    );
+    write_cdata(out, sql);
+    out.push_str("</sql>\n");
+    push_indent(out, indent);
+    let _ = writeln!(out, "</{}>\n", tag);
 }
 
 fn write_enum(out: &mut String, enum_type: &EnumType, indent: usize) {
@@ -489,6 +531,39 @@ mod tests {
             .expect("XML containing a ]]> sequence inside a view's SQL must still be well-formed");
         let reparsed_view = &reparsed.default_schema().all_views()[0];
         assert_eq!(reparsed_view.sql(), "select * from t where arr[1:2]]>x");
+    }
+
+    #[test]
+    fn functions_and_procedures_round_trip_through_the_real_parser() {
+        use schema_model::model::function::Function;
+        use schema_model::model::procedure::Procedure;
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_functions(vec![Function::new(
+                None,
+                "f1",
+                DatabaseType::Postgresql,
+                "create or replace function f1() returns int as $$ select arr[1:2]]>1 $$",
+            )])
+            .add_procedures(vec![Procedure::new(
+                None,
+                "p1",
+                DatabaseType::Postgresql,
+                "create or replace procedure p1() language sql as $$ select 1 $$",
+            )])
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model);
+
+        let reparsed = schema_parser::parse_database_xml(&xml).expect("routines must be valid XML");
+        let default_schema = reparsed.default_schema();
+        assert_eq!(default_schema.functions()[0].name(), "f1");
+        assert!(default_schema.functions()[0].sql().contains("arr[1:2]]>1"));
+        assert_eq!(
+            default_schema.functions()[0].database_type(),
+            DatabaseType::Postgresql
+        );
+        assert_eq!(default_schema.procedures()[0].name(), "p1");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::error::SchemaReverseEngineerError;
 use crate::postgres::keys::{KeyInfo, TableKeys};
-use crate::postgres::{columns, constraints, enums, keys, relations, tables, views};
+use crate::postgres::{columns, constraints, enums, keys, relations, routines, tables, views};
 use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode, KeyType};
@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Introspects the given Postgres schema (`db_schema`, e.g. `"public"`) and builds a
 /// `DatabaseModel` describing its tables, columns, keys, foreign keys, check/exclusion
-/// constraints, enum types, and views.
+/// constraints, enum types, views, functions, and procedures.
 pub async fn read_schema(
     pool: &PgPool,
     db_schema: &str,
@@ -26,6 +26,7 @@ pub async fn read_schema(
     let mut table_relations = relations::list_foreign_keys(pool, db_schema).await?;
     let mut table_constraints = constraints::list_constraints(pool, db_schema).await?;
     let table_views = views::list_views(pool, db_schema).await?;
+    let (functions, procedures) = routines::list_routines(pool, db_schema).await?;
 
     let mut columns_by_table: HashMap<String, Vec<columns::ColumnInfo>> = HashMap::new();
     for column in all_columns {
@@ -42,6 +43,9 @@ pub async fn read_schema(
     for view in table_views {
         schema_builder = schema_builder.add_view(view);
     }
+    schema_builder = schema_builder
+        .add_functions(functions)
+        .add_procedures(procedures);
 
     for table_name in &table_names {
         let mut table_builder = TableBuilder::new(Some(db_schema), table_name.as_str());

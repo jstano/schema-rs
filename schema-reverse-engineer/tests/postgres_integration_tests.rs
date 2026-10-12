@@ -36,6 +36,10 @@ CREATE INDEX idx_orders_line_no ON orders (line_no);
 
 CREATE VIEW order_totals AS
 SELECT customer_id, sum(amount) AS total FROM orders GROUP BY customer_id;
+
+CREATE FUNCTION double_it(x int) RETURNS int LANGUAGE sql IMMUTABLE AS 'SELECT x * 2';
+
+CREATE PROCEDURE noop_proc() LANGUAGE sql AS 'SELECT 1';
 "#;
 
 async fn setup_pool() -> (testcontainers::ContainerAsync<Postgres>, PgPool) {
@@ -120,6 +124,13 @@ async fn test_reverse_engineer_postgres_schema() {
     assert_eq!(relation.relation_type(), RelationType::Cascade);
 
     assert!(schema.enum_types().any(|e| e.name() == "mood"));
+    assert!(
+        schema
+            .functions()
+            .iter()
+            .any(|f| f.name() == "double_it" && f.sql().contains("x * 2"))
+    );
+    assert!(schema.procedures().iter().any(|p| p.name() == "noop_proc"));
     assert!(
         schema
             .all_views()
