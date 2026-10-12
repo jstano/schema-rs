@@ -9,6 +9,7 @@ struct ForeignKeyRow {
     constraint_name: String,
     from_table: String,
     from_column: String,
+    to_schema: String,
     to_table: String,
     to_column: String,
     delete_rule: String,
@@ -17,6 +18,7 @@ struct ForeignKeyRow {
 /// One foreign-key constraint's worth of grouped rows, in column-declaration order.
 struct ConstraintGroup {
     from_table: String,
+    to_schema: String,
     to_table: String,
     delete_rule: String,
     column_pairs: Vec<(String, String)>,
@@ -39,7 +41,7 @@ pub async fn list_foreign_keys(
     let rows: Vec<ForeignKeyRow> = sqlx::query_as(
         "SELECT tc.constraint_name AS constraint_name, \
                 tc.table_name AS from_table, fkcu.column_name AS from_column, \
-                ucu.table_name AS to_table, ucu.column_name AS to_column, \
+                ucu.table_schema AS to_schema, ucu.table_name AS to_table, ucu.column_name AS to_column, \
                 rc.delete_rule AS delete_rule \
          FROM information_schema.table_constraints tc \
          JOIN information_schema.referential_constraints rc \
@@ -58,7 +60,7 @@ pub async fn list_foreign_keys(
     .await
     .map_err(|e| SchemaReverseEngineerError::Introspection(e.to_string()))?;
 
-    group_foreign_key_rows(rows)
+    group_foreign_key_rows(rows, db_schema)
 }
 
 /// Groups pre-sorted `(constraint_name, ordinal_position)` rows into one `Relation` per
@@ -67,6 +69,7 @@ pub async fn list_foreign_keys(
 /// caller having ordered rows by `constraint_name, ordinal_position` (the SQL query does this).
 fn group_foreign_key_rows(
     rows: Vec<ForeignKeyRow>,
+    db_schema: &str,
 ) -> Result<HashMap<String, Vec<Relation>>, SchemaReverseEngineerError> {
     let mut groups: Vec<(String, ConstraintGroup)> = Vec::new();
     for row in rows {
@@ -80,6 +83,7 @@ fn group_foreign_key_rows(
             row.constraint_name,
             ConstraintGroup {
                 from_table: row.from_table,
+                to_schema: row.to_schema,
                 to_table: row.to_table,
                 delete_rule: row.delete_rule,
                 column_pairs: vec![(row.from_column, row.to_column)],
@@ -89,6 +93,19 @@ fn group_foreign_key_rows(
 
     let mut by_table: HashMap<String, Vec<Relation>> = HashMap::new();
     for (constraint_name, group) in groups {
+        // A target in another schema is written schema-qualified (`other.parent`), which the
+        // parser resolves via `split_schema_table`. That schema isn't part of this run, so the
+        // generated XML only parses once it is merged with that schema's own reverse-engineer
+        // output.
+        let to_table = if group.to_schema == db_schema {
+            group.to_table
+        } else {
+            eprintln!(
+                "warning: foreign key {}.{} references {}.{} in another schema -- also reverse-engineer that schema, or the generated XML won't parse",
+                group.from_table, constraint_name, group.to_schema, group.to_table
+            );
+            format!("{}.{}", group.to_schema, group.to_table)
+        };
         let relation_type = map_delete_rule(&group.delete_rule).map_err(|e| {
             SchemaReverseEngineerError::Introspection(format!(
                 "foreign key constraint '{constraint_name}': {e}"
@@ -97,7 +114,7 @@ fn group_foreign_key_rows(
         let relation = if group.column_pairs.len() == 1 {
             let (from_column, to_column) = group.column_pairs.into_iter().next().unwrap();
             Relation::new(
-                group.to_table,
+                to_table,
                 to_column,
                 group.from_table.clone(),
                 from_column,
@@ -106,7 +123,7 @@ fn group_foreign_key_rows(
             )
         } else {
             Relation::new_composite(
-                group.to_table,
+                to_table,
                 group.from_table.clone(),
                 group.column_pairs,
                 relation_type,
@@ -153,10 +170,26 @@ mod tests {
             constraint_name: constraint_name.to_string(),
             from_table: from_table.to_string(),
             from_column: from_column.to_string(),
+            to_schema: "public".to_string(),
             to_table: to_table.to_string(),
             to_column: to_column.to_string(),
             delete_rule: delete_rule.to_string(),
         }
+    }
+
+    #[test]
+    fn cross_schema_foreign_key_gets_a_qualified_target() {
+        let mut other = row("fk_x", "child", "x_id", "parent_x", "id", "CASCADE");
+        other.to_schema = "other".to_string();
+        let rows = vec![
+            other,
+            row("fk_a", "child", "a_id", "parent_a", "id", "CASCADE"),
+        ];
+        let by_table = group_foreign_key_rows(rows, "public").unwrap();
+        let relations = &by_table["child"];
+        assert_eq!(relations.len(), 2);
+        assert_eq!(relations[0].to_table_name(), "other.parent_x");
+        assert_eq!(relations[1].to_table_name(), "parent_a");
     }
 
     #[test]
@@ -169,14 +202,16 @@ mod tests {
             "id",
             "SET DEFAULT",
         )];
-        let err = group_foreign_key_rows(rows).unwrap_err().to_string();
+        let err = group_foreign_key_rows(rows, "public")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("SET DEFAULT"), "got: {err}");
     }
 
     #[test]
     fn single_column_rows_produce_one_relation_per_row() {
         let rows = vec![row("fk_a", "child", "parent_id", "parent", "id", "CASCADE")];
-        let by_table = group_foreign_key_rows(rows).unwrap();
+        let by_table = group_foreign_key_rows(rows, "public").unwrap();
         let relations = &by_table["child"];
         assert_eq!(relations.len(), 1);
         assert!(!relations[0].is_composite());
@@ -205,7 +240,7 @@ mod tests {
                 "CASCADE",
             ),
         ];
-        let by_table = group_foreign_key_rows(rows).unwrap();
+        let by_table = group_foreign_key_rows(rows, "public").unwrap();
         let relations = &by_table["Assignment"];
         assert_eq!(relations.len(), 1);
         assert!(relations[0].is_composite());
@@ -224,7 +259,7 @@ mod tests {
             row("fk_a", "child", "a_id", "parent_a", "id", "CASCADE"),
             row("fk_b", "child", "b_id", "parent_b", "id", "SET NULL"),
         ];
-        let by_table = group_foreign_key_rows(rows).unwrap();
+        let by_table = group_foreign_key_rows(rows, "public").unwrap();
         let relations = &by_table["child"];
         assert_eq!(relations.len(), 2);
         assert_eq!(relations[0].to_table_name(), "parent_a");

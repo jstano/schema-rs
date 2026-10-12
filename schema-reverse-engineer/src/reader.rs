@@ -1,4 +1,5 @@
 use crate::error::SchemaReverseEngineerError;
+use crate::postgres::keys::{KeyInfo, TableKeys};
 use crate::postgres::{columns, constraints, enums, keys, relations, tables, views};
 use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
 use schema_model::model::database_model::DatabaseModel;
@@ -45,7 +46,8 @@ pub async fn read_schema(
     for table_name in &table_names {
         let mut table_builder = TableBuilder::new(Some(db_schema), table_name.as_str());
 
-        for column in columns_by_table.remove(table_name).unwrap_or_default() {
+        let table_columns = columns_by_table.remove(table_name).unwrap_or_default();
+        for column in table_columns.iter().cloned() {
             table_builder = table_builder.add_column(
                 ColumnBuilder::new(
                     Some(db_schema),
@@ -63,15 +65,16 @@ pub async fn read_schema(
             );
         }
 
-        if let Some(keys_for_table) = table_keys.remove(table_name) {
+        if let Some(mut keys_for_table) = table_keys.remove(table_name) {
+            promote_lone_unique_key(&mut keys_for_table, &table_columns);
             if let Some(primary) = keys_for_table.primary {
-                table_builder = table_builder.add_key(build_key(KeyType::Primary, primary.columns));
+                table_builder = table_builder.add_key(build_key(KeyType::Primary, primary));
             }
             for unique in keys_for_table.unique {
-                table_builder = table_builder.add_key(build_key(KeyType::Unique, unique.columns));
+                table_builder = table_builder.add_key(build_key(KeyType::Unique, unique));
             }
             for index in keys_for_table.index {
-                table_builder = table_builder.add_index(build_key(KeyType::Index, index.columns));
+                table_builder = table_builder.add_index(build_key(KeyType::Index, index));
             }
         }
 
@@ -95,10 +98,36 @@ pub async fn read_schema(
     ))
 }
 
-fn build_key(key_type: KeyType, columns: Vec<String>) -> schema_model::model::key::Key {
+/// A table with no primary key but exactly one unique key gets that key promoted to primary
+/// (mirrors a heuristic in the Java original). Only done when every key column is already
+/// `NOT NULL`: promoting a nullable column would invent a `NOT NULL` the database doesn't have.
+fn promote_lone_unique_key(keys: &mut TableKeys, table_columns: &[columns::ColumnInfo]) {
+    if keys.primary.is_some() || keys.unique.len() != 1 {
+        return;
+    }
+    let all_required = keys.unique[0].columns.iter().all(|key_column| {
+        table_columns
+            .iter()
+            .any(|c| c.column_name.eq_ignore_ascii_case(key_column) && c.required)
+    });
+    if all_required {
+        keys.primary = Some(keys.unique.remove(0));
+    }
+}
+
+fn build_key(key_type: KeyType, info: KeyInfo) -> schema_model::model::key::Key {
     let mut builder = KeyBuilder::new(key_type);
-    for column in columns {
+    for column in info.columns {
         builder = builder.add_column(column);
+    }
+    if key_type == KeyType::Index && info.unique {
+        builder = builder.unique(true);
+    }
+    if !info.include.is_empty() {
+        builder = builder.include(info.include.join(","));
+    }
+    if let Some(filter) = info.filter {
+        builder = builder.filter(filter);
     }
     builder.build()
 }

@@ -1020,7 +1020,7 @@ remediation plan) is worth more than any individual fix below.
   overwrites, so `sales.users` and `auth.users` both resolve to `USERS_2`.
 - [x] **M32. Diagram cardinality is derived from the delete action, not nullability**
   (`mermaid_generator.rs:94`, `plantuml_generator.rs:120`) — wrong in both directions.
-- [ ] **M33. Reverse engineer: cross-schema FKs, expression/partial/covering indexes,
+- [x] **M33. Reverse engineer: cross-schema FKs, expression/partial/covering indexes,
   materialized views.** `relations.rs:28-47` filters only the FK-owning table by schema and
   stores `to_table` bare → dangling relation → downstream `panic!("Unable to locate a
   table…")`. `keys.rs:72-86` ignores `indpred`/`indexprs`/`indnkeyatts`, so a partial unique
@@ -1030,6 +1030,30 @@ remediation plan) is worth more than any individual fix below.
   hard failure) and `information_schema.views` excludes materialized views.
   `keys.rs:114-119` promotes a lone nullable `UNIQUE` to `PRIMARY KEY`, inventing a
   `NOT NULL` the source database doesn't have.
+
+  **Fixed 2026-10-12.** Design choices (user): things the model can't represent are warned about and
+  skipped, not errored. (1) FKs whose target is in another schema are kept with a schema-qualified
+  target (`other.parent`; the parser already resolves that via `split_schema_table`, and the
+  writer leaves an already-qualified target as-is). A stderr warning notes the target schema
+  must also be reverse-engineered and merged, or the XML won't parse. (Initially skipped,
+  on the mistaken belief that `Relation` couldn't represent a target schema.) (2) `keys.rs` now unnests `indkey` with ordinality:
+  columns past `indnkeyatts` become `include`, `pg_get_expr(indpred)` becomes the key's
+  `filter` (a unique index with either is written as `<index unique="true">`, since `<unique>`
+  can't carry them), and expression indexes are skipped with a warning; `relkind IN ('r','p')`
+  keeps partitioned tables' keys. (3) The lone-unique-to-PK promotion moved into `reader.rs`
+  and only fires when every key column is already `NOT NULL`.
+  That left a nullable-unique-only table PK-less, which the XML writer used to reject with a
+  hard `PkLessTableHasKeys` error (H24's choice) - failing the whole run. Per user: now warn
+  and skip instead. The XSD requires `<primary>` whenever `<keys>` is present, so the writer
+  skips such a table's unique keys/indexes with a stderr warning; `write_database_xml` is now
+  infallible and `PkLessTableHasKeys` is removed. (4) `views.rs` reads
+  `view_definition` as nullable (skip with warning), and warns about each materialized view
+  from `pg_matviews`. Also fixed a pre-existing bug found while verifying: the XML writer
+  wrote relation targets unqualified inside a named `<schema>`, so its own output failed to
+  parse (`relation to 'customers' which does not exist`) - H24's schema wrapper broke the
+  existing round-trip integration test. Verified with a new real-Postgres test
+  (`test_reverse_engineer_m33_edge_cases`) plus the existing one, run via testcontainers on
+  colima (needs `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`, `RUN_DOCKER_TESTS=1`).
 - [x] **M34. `ON DELETE` mapping is inconsistent across the three crates.** Create path:
   `DoNothing → "no action"`. Migration path: `DoNothing → "ON DELETE RESTRICT"`. Reverse
   engineer: `"SET DEFAULT" => SetNull` (`relations.rs:66-73`) — so a real `ON DELETE SET
@@ -1444,7 +1468,7 @@ the crate is worth keeping in its current form.
   name; derive cardinality from the FK column's `required()`.
 - [x] H24: keep the schema name, write keys/indexes for PK-less tables, sort key output, and
   skip unsupported column types with a warning.
-- [ ] M33/M34 (M34 done; M33 open): cross-schema FKs, expression/partial/covering indexes, materialized views, and
+- [x] M33/M34: cross-schema FKs, expression/partial/covering indexes, materialized views, and
   align the `ON DELETE` mapping across all three crates.
 - [x] L1: convert both panicking `main.rs` files to `Result`-returning, like the other binaries.
 - [x] L16: add a GitHub Actions workflow — `cargo fmt --check`,

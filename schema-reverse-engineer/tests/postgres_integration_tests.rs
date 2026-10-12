@@ -129,8 +129,7 @@ async fn test_reverse_engineer_postgres_schema() {
 
     // Round-trip the generated XML back through the existing parser to make sure the writer
     // produces XML the rest of the toolkit can actually read.
-    let xml = write_database_xml(&model)
-        .expect("generated xml should include the primary keys/indexes captured above");
+    let xml = write_database_xml(&model);
     let parsed = schema_parser::parse_database_xml(&xml).expect("generated xml should parse");
     let parsed_schema = parsed.find_schema(Some("public"));
     assert!(parsed_schema.get_optional_table("customers").is_some());
@@ -141,4 +140,135 @@ async fn test_reverse_engineer_postgres_schema() {
         parsed_orders.relations()[0].relation_type(),
         RelationType::Cascade
     );
+}
+
+const M33_SQL: &str = r#"
+CREATE SCHEMA other;
+CREATE TABLE other.foreign_parent (id int PRIMARY KEY);
+
+CREATE TABLE events (
+    id int PRIMARY KEY,
+    code text,
+    name text,
+    deleted_at timestamp,
+    other_id int,
+    CONSTRAINT fk_events_other FOREIGN KEY (other_id) REFERENCES other.foreign_parent (id)
+);
+CREATE UNIQUE INDEX ux_events_code_live ON events (code) WHERE deleted_at IS NULL;
+CREATE INDEX ix_events_code_covering ON events (code) INCLUDE (name);
+CREATE INDEX ix_events_lower_name ON events (lower(name));
+
+-- lone unique key on a nullable column must not become a primary key
+CREATE TABLE nullable_unique (email text, CONSTRAINT nu_email UNIQUE (email));
+-- lone unique key on a NOT NULL column is still promoted
+CREATE TABLE required_unique (email text NOT NULL, CONSTRAINT ru_email UNIQUE (email));
+
+CREATE TABLE measurements (
+    id int NOT NULL,
+    logged date NOT NULL,
+    PRIMARY KEY (id, logged)
+) PARTITION BY RANGE (logged);
+CREATE INDEX ix_measurements_logged ON measurements (logged);
+
+CREATE VIEW plain_view AS SELECT id FROM events;
+CREATE MATERIALIZED VIEW mat_view AS SELECT id FROM events;
+"#;
+
+#[tokio::test]
+async fn test_reverse_engineer_m33_edge_cases() {
+    if !docker_tests_enabled() {
+        eprintln!("skipping test_reverse_engineer_m33_edge_cases: set RUN_DOCKER_TESTS=1 to run");
+        return;
+    }
+
+    let (_container, pool) = setup_pool().await;
+    sqlx::raw_sql(M33_SQL)
+        .execute(&pool)
+        .await
+        .expect("m33 schema setup should succeed");
+
+    let model = read_schema(&pool, "public")
+        .await
+        .expect("introspection should succeed");
+    let schema = model.find_schema(Some("public"));
+
+    // Cross-schema FK keeps a schema-qualified target.
+    let events = schema.get_table("events");
+    assert_eq!(events.relations().len(), 1);
+    assert_eq!(
+        events.relations()[0].to_table_name(),
+        "other.foreign_parent"
+    );
+
+    // Partial unique index keeps its predicate; covering index keeps INCLUDE columns;
+    // expression index is skipped.
+    let partial = events
+        .indexes()
+        .iter()
+        .find(|k| k.filter().is_some())
+        .expect("partial index present");
+    assert!(partial.is_unique());
+    assert_eq!(partial.columns().len(), 1);
+    assert!(partial.filter().unwrap().contains("deleted_at IS NULL"));
+    let covering = events
+        .indexes()
+        .iter()
+        .find(|k| k.include().is_some())
+        .expect("covering index present");
+    assert_eq!(covering.columns().len(), 1);
+    assert_eq!(covering.include(), Some("name"));
+    assert_eq!(
+        events.indexes().len(),
+        2,
+        "expression index must be skipped"
+    );
+
+    // Promotion only when the column is already NOT NULL.
+    assert!(schema.get_table("nullable_unique").primary_key().is_none());
+    // ...and its unique key is skipped (with a warning) when writing, not a hard error.
+    assert!(write_database_xml(&model).contains("nullable_unique"));
+    assert!(schema.get_table("required_unique").primary_key().is_some());
+
+    // Partitioned tables keep their keys and indexes.
+    let measurements = schema.get_table("measurements");
+    assert!(measurements.primary_key().is_some());
+    assert!(
+        measurements
+            .indexes()
+            .iter()
+            .any(|k| k.contains_column("logged"))
+    );
+
+    // Materialized view skipped, plain view kept.
+    assert!(schema.all_views().iter().any(|v| v.name() == "plain_view"));
+    assert!(!schema.all_views().iter().any(|v| v.name() == "mat_view"));
+}
+
+#[tokio::test]
+async fn test_reverse_engineer_cross_schema_fk_xml() {
+    if !docker_tests_enabled() {
+        eprintln!(
+            "skipping test_reverse_engineer_cross_schema_fk_xml: set RUN_DOCKER_TESTS=1 to run"
+        );
+        return;
+    }
+
+    let (_container, pool) = setup_pool().await;
+    sqlx::raw_sql(
+        "CREATE SCHEMA other; \
+         CREATE TABLE other.foreign_parent (id int PRIMARY KEY); \
+         CREATE TABLE child (id int PRIMARY KEY, other_id int REFERENCES other.foreign_parent (id));",
+    )
+    .execute(&pool)
+    .await
+    .expect("setup");
+
+    // Each schema is reverse-engineered separately; the cross-schema target stays qualified.
+    let public_xml = write_database_xml(&read_schema(&pool, "public").await.unwrap());
+    assert!(
+        public_xml.contains("table=\"other.foreign_parent\""),
+        "got: {public_xml}"
+    );
+    let other_xml = write_database_xml(&read_schema(&pool, "other").await.unwrap());
+    assert!(other_xml.contains("foreign_parent"));
 }

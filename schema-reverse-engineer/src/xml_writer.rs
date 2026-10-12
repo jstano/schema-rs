@@ -1,4 +1,3 @@
-use crate::error::SchemaReverseEngineerError;
 use schema_model::model::column::Column;
 use schema_model::model::constraint::Constraint;
 use schema_model::model::database_model::DatabaseModel;
@@ -15,7 +14,7 @@ const NAMESPACE: &str = "http://stano.com/database";
 
 /// Serializes a `DatabaseModel` to the schema-rs XML schema definition format (see
 /// `schema-xsd/schema.xsd`), the inverse of `schema_parser::parse_database_xml`.
-pub fn write_database_xml(model: &DatabaseModel) -> Result<String, SchemaReverseEngineerError> {
+pub fn write_database_xml(model: &DatabaseModel) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = writeln!(
@@ -31,33 +30,28 @@ pub fn write_database_xml(model: &DatabaseModel) -> Result<String, SchemaReverse
             Some(name) => {
                 push_indent(&mut out, 1);
                 let _ = writeln!(out, "<schema name=\"{}\">", xml_escape_attr(name));
-                write_schema_body(&mut out, schema, 2)?;
+                write_schema_body(&mut out, schema, 2);
                 push_indent(&mut out, 1);
                 out.push_str("</schema>\n");
             }
-            None => write_schema_body(&mut out, schema, 1)?,
+            None => write_schema_body(&mut out, schema, 1),
         }
     }
 
     out.push_str("</database>\n");
-    Ok(out)
+    out
 }
 
-fn write_schema_body(
-    out: &mut String,
-    schema: &Schema,
-    indent: usize,
-) -> Result<(), SchemaReverseEngineerError> {
+fn write_schema_body(out: &mut String, schema: &Schema, indent: usize) {
     for enum_type in schema.enum_types() {
         write_enum(out, enum_type, indent);
     }
     for table in schema.tables() {
-        write_table(out, table, indent)?;
+        write_table(out, table, indent);
     }
     for view in schema.all_views() {
         write_view(out, view, indent);
     }
-    Ok(())
 }
 
 fn write_enum(out: &mut String, enum_type: &EnumType, indent: usize) {
@@ -85,22 +79,17 @@ fn write_view(out: &mut String, view: &View, indent: usize) {
     out.push_str("</view>\n\n");
 }
 
-fn write_table(
-    out: &mut String,
-    table: &Table,
-    indent: usize,
-) -> Result<(), SchemaReverseEngineerError> {
+fn write_table(out: &mut String, table: &Table, indent: usize) {
     push_indent(out, indent);
     let _ = writeln!(out, "<table name=\"{}\">", xml_escape_attr(table.name()));
 
     write_columns(out, table.columns(), indent + 1);
-    write_keys(out, table, indent + 1)?;
-    write_relations(out, table.relations(), indent + 1);
+    write_keys(out, table, indent + 1);
+    write_relations(out, table.relations(), table.schema_name(), indent + 1);
     write_constraints(out, table.constraints(), indent + 1);
 
     push_indent(out, indent);
     out.push_str("</table>\n\n");
-    Ok(())
 }
 
 fn write_columns(out: &mut String, columns: &[Column], indent: usize) {
@@ -160,24 +149,30 @@ fn write_column(out: &mut String, column: &Column, indent: usize) {
     }
 }
 
-fn write_keys(
-    out: &mut String,
-    table: &Table,
-    indent: usize,
-) -> Result<(), SchemaReverseEngineerError> {
+fn write_keys(out: &mut String, table: &Table, indent: usize) {
     // The XSD requires a <primary> element whenever <keys> is present, so a table with no
-    // primary key can't emit unique/index keys either. Silently dropping them would lose data
-    // from the round trip, so a PK-less table with unique keys or indexes is a hard error
-    // instead (per the project's prefer-error-over-silent-coercion direction).
+    // primary key can't emit unique keys or indexes either. They are skipped with a warning
+    // (like the other things the model/XSD can't represent) rather than failing the run.
     let Some(primary) = table.primary_key() else {
-        if table.keys().iter().any(|k| k.key_type() == KeyType::Unique)
-            || !table.indexes().is_empty()
+        for key in table
+            .keys()
+            .iter()
+            .filter(|k| k.key_type() == KeyType::Unique)
         {
-            return Err(SchemaReverseEngineerError::PkLessTableHasKeys(
-                table.name().to_string(),
-            ));
+            eprintln!(
+                "warning: table {} has no primary key, so its unique key on ({}) can't be written -- skipping it",
+                table.name(),
+                key.columns_as_string()
+            );
         }
-        return Ok(());
+        for index in table.indexes() {
+            eprintln!(
+                "warning: table {} has no primary key, so its index on ({}) can't be written -- skipping it",
+                table.name(),
+                index.columns_as_string()
+            );
+        }
+        return;
     };
 
     push_indent(out, indent);
@@ -195,7 +190,6 @@ fn write_keys(
     }
     push_indent(out, indent);
     out.push_str("</keys>\n");
-    Ok(())
 }
 
 fn write_key_columns(out: &mut String, tag: &str, key: &Key, indent: usize) {
@@ -230,7 +224,19 @@ fn write_index(out: &mut String, index: &Key, indent: usize) {
     out.push_str("</index>\n");
 }
 
-fn write_relations(out: &mut String, relations: &[Relation], indent: usize) {
+/// Relation targets inside a named `<schema>` must be written schema-qualified, since the
+/// parser resolves a bare name against the default schema. A target that is already
+/// qualified (a cross-schema FK) is written as-is.
+fn write_relations(
+    out: &mut String,
+    relations: &[Relation],
+    schema_name: Option<&str>,
+    indent: usize,
+) {
+    let target = |table: &str| match schema_name {
+        Some(schema) if !table.contains('.') => format!("{schema}.{table}"),
+        _ => table.to_string(),
+    };
     if relations.is_empty() {
         return;
     }
@@ -242,7 +248,7 @@ fn write_relations(out: &mut String, relations: &[Relation], indent: usize) {
             let _ = writeln!(
                 out,
                 "<compositeRelation table=\"{}\" type=\"{}\">",
-                xml_escape_attr(relation.to_table_name()),
+                xml_escape_attr(&target(relation.to_table_name())),
                 relation_type_str(relation.relation_type())
             );
             for (from_column, to_column) in relation.column_pairs() {
@@ -262,7 +268,7 @@ fn write_relations(out: &mut String, relations: &[Relation], indent: usize) {
                 out,
                 "<relation src=\"{}\" table=\"{}\" column=\"{}\" type=\"{}\"/>",
                 xml_escape_attr(relation.from_column_name()),
-                xml_escape_attr(relation.to_table_name()),
+                xml_escape_attr(&target(relation.to_table_name())),
                 xml_escape_attr(relation.to_column_name()),
                 relation_type_str(relation.relation_type())
             );
@@ -442,7 +448,7 @@ mod tests {
 
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
 
         assert!(xml.contains("<database xmlns=\"http://stano.com/database\""));
         assert!(xml.contains("<table name=\"parent\">"));
@@ -477,7 +483,7 @@ mod tests {
         let schema = SchemaBuilder::new(None::<&str>).add_view(view).build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
 
         let reparsed = schema_parser::parse_database_xml(&xml)
             .expect("XML containing a ]]> sequence inside a view's SQL must still be well-formed");
@@ -498,7 +504,7 @@ mod tests {
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
 
         let reparsed = schema_parser::parse_database_xml(&xml).expect(
             "XML containing a ]]> sequence inside a constraint's SQL must still be well-formed",
@@ -520,7 +526,7 @@ mod tests {
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
 
         let reparsed = schema_parser::parse_database_xml(&xml).unwrap();
         let column = reparsed.default_schema().get_table("t").column("a");
@@ -535,36 +541,24 @@ mod tests {
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
         assert!(!xml.contains("<keys>"));
     }
 
     #[test]
-    fn pk_less_table_with_a_unique_key_is_a_hard_error() {
+    fn pk_less_table_keys_and_indexes_are_skipped() {
         let table = TableBuilder::new(None::<&str>, "t")
             .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
             .add_key(KeyBuilder::new(KeyType::Unique).add_column("a").build())
-            .build();
-        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
-        let model =
-            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-
-        let err = write_database_xml(&model).unwrap_err();
-        assert!(matches!(err, SchemaReverseEngineerError::PkLessTableHasKeys(name) if name == "t"));
-    }
-
-    #[test]
-    fn pk_less_table_with_an_index_is_a_hard_error() {
-        let table = TableBuilder::new(None::<&str>, "t")
-            .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
             .add_index(KeyBuilder::new(KeyType::Index).add_column("a").build())
             .build();
         let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
-        let err = write_database_xml(&model).unwrap_err();
-        assert!(matches!(err, SchemaReverseEngineerError::PkLessTableHasKeys(name) if name == "t"));
+        let xml = write_database_xml(&model);
+        assert!(!xml.contains("<keys>"), "got: {xml}");
+        assert!(schema_parser::parse_database_xml(&xml).is_ok());
     }
 
     #[test]
@@ -611,7 +605,7 @@ mod tests {
             .build();
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
 
         assert!(xml.contains("<compositeRelation table=\"Assignment\" type=\"cascade\">"));
         assert!(xml.contains("<column src=\"ParentAssignmentID\" name=\"ID\"/>"));
@@ -644,7 +638,7 @@ mod tests {
         let model =
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
-        let xml = write_database_xml(&model).unwrap();
+        let xml = write_database_xml(&model);
         assert!(xml.contains("<schema name=\"sales\">"));
         assert!(xml.contains("<table name=\"orders\">"));
         assert!(xml.contains("</schema>"));
