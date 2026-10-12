@@ -104,6 +104,14 @@ remediation plan) is worth more than any individual fix below.
   (unlike this doc's own suggested fix), which additionally requires deciding whether to
   validate against a single dialect or the union of all three, and reconciling that
   against the fixture's own type-named columns. Not resolved; revisit later.
+
+  **Decision (2026-10-12): won't fix.** Generation succeeds and the database rejects the
+  statement at apply time (loud, not silent; transactional via `schema-installer install`).
+  Developers are expected to avoid reserved words. Known consequence: reverse-engineering a
+  database that uses reserved names (`user`, `order`, ...) round-trips to invalid DDL. If that
+  becomes a real need, the plan was: shared `quote_identifier` in `schema-model` - always quote
+  on SQL Server/SQLite, quote-when-needed on PostgreSQL (list from `pg_get_keywords()`, with a
+  testcontainers drift test).
   `common/column_generator.rs:140-152`, `key_generator.rs:80-95`, `index_generator.rs:113-131`,
   `relation_generator.rs:71-82` — all `format!("{} {}", column.name(), ...)` with raw names.
   BUGS #16 escaped string *literals* only. A minimal schema with a table named `order` and a
