@@ -1069,8 +1069,21 @@ remediation plan) is worth more than any individual fix below.
   **Fixed:** the Postgres and SQLite migration paths now emit `on delete no action` for
   `DoNothing` (matching the create path and SQL Server). Reverse engineering rejects
   `SET DEFAULT` (and any unknown rule) with an error instead of coercing it to `SET NULL`.
-- [ ] **M35. `schema-reverse-engineer` supports PostgreSQL only** while the rest of the workspace
+- [x] **M35. `schema-reverse-engineer` supports PostgreSQL only** while the rest of the workspace
   supports three dialects.
+
+  **SQL Server fixed 2026-10-12; SQLite deliberately not done** (user: only SQL Server matters).
+  New `sqlserver` module (tiberius) reads tables, columns (identity, computed, defaults), PK /
+  unique / filtered / covering indexes, foreign keys (composite, delete rule), check constraints,
+  views, functions and procedures from the `sys.*` catalog; `--database-type sqlserver` on the
+  CLI. The dialect-neutral row types moved to `info.rs` and `reader.rs` was split into
+  fetch + `assemble_schema`, shared with the Postgres reader. Verified against a real server
+  (ARM-native `azure-sql-edge`, since the regular image crashes under QEMU): the new
+  `sqlserver_integration_tests.rs` passes (`#[ignore]`d; set `SQLSERVER_TEST_CONNECTION_STRING`
+  or run on x86_64), and reverse-engineer -> generate -> `schema-installer install` into a fresh
+  database -> reverse-engineer again yields identical XML apart from the generator's own
+  additions. Known losses (warned): identity seed/increment, non-persisted computed columns,
+  key clustering, columnstore/XML/spatial indexes.
 - [x] **M36. `schema-diff` and `schema-migration-generator` ship no binary.** Only four crates
   declare `[[bin]]`, so the diff→migration workflow is reachable only from tests — which is
   precisely why C7, H19 and H20 went unnoticed.

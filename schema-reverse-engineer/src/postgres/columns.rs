@@ -3,19 +3,7 @@ use schema_model::model::column_type::ColumnType;
 use sqlx::PgPool;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone)]
-pub struct ColumnInfo {
-    pub table_name: String,
-    pub column_name: String,
-    pub column_type: ColumnType,
-    pub length: i32,
-    pub scale: i32,
-    pub required: bool,
-    pub default_constraint: Option<String>,
-    pub generated: Option<String>,
-    pub enum_type: Option<String>,
-    pub element_type: Option<String>,
-}
+pub use crate::info::ColumnInfo;
 
 #[derive(Debug, sqlx::FromRow)]
 struct ColumnRow {

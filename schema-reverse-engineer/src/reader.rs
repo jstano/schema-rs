@@ -1,9 +1,15 @@
 use crate::error::SchemaReverseEngineerError;
-use crate::postgres::keys::{KeyInfo, TableKeys};
+use crate::info::{ColumnInfo, KeyInfo, TableKeys};
 use crate::postgres::{columns, constraints, enums, keys, relations, routines, tables, views};
 use schema_model::builder::{ColumnBuilder, KeyBuilder, SchemaBuilder, TableBuilder};
+use schema_model::model::constraint::Constraint;
 use schema_model::model::database_model::DatabaseModel;
+use schema_model::model::enum_type::EnumType;
+use schema_model::model::function::Function;
+use schema_model::model::procedure::Procedure;
+use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode, KeyType};
+use schema_model::model::view::View;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
@@ -22,13 +28,56 @@ pub async fn read_schema(
     let all_columns = columns::list_columns(pool, db_schema, &enum_type_names).await?;
     let exclusion_constraint_names =
         constraints::list_exclusion_constraint_names(pool, db_schema).await?;
-    let mut table_keys = keys::list_keys(pool, db_schema, &exclusion_constraint_names).await?;
-    let mut table_relations = relations::list_foreign_keys(pool, db_schema).await?;
-    let mut table_constraints = constraints::list_constraints(pool, db_schema).await?;
+    let table_keys = keys::list_keys(pool, db_schema, &exclusion_constraint_names).await?;
+    let table_relations = relations::list_foreign_keys(pool, db_schema).await?;
+    let table_constraints = constraints::list_constraints(pool, db_schema).await?;
     let table_views = views::list_views(pool, db_schema).await?;
     let (functions, procedures) = routines::list_routines(pool, db_schema).await?;
 
-    let mut columns_by_table: HashMap<String, Vec<columns::ColumnInfo>> = HashMap::new();
+    Ok(assemble_schema(
+        db_schema,
+        SchemaParts {
+            table_names,
+            enum_types,
+            columns: all_columns,
+            keys: table_keys,
+            relations: table_relations,
+            constraints: table_constraints,
+            views: table_views,
+            functions,
+            procedures,
+        },
+    ))
+}
+
+/// Everything a dialect reader collected for one database schema.
+pub(crate) struct SchemaParts {
+    pub table_names: Vec<String>,
+    pub enum_types: Vec<EnumType>,
+    pub columns: Vec<ColumnInfo>,
+    pub keys: HashMap<String, TableKeys>,
+    pub relations: HashMap<String, Vec<Relation>>,
+    pub constraints: HashMap<String, Vec<Constraint>>,
+    pub views: Vec<View>,
+    pub functions: Vec<Function>,
+    pub procedures: Vec<Procedure>,
+}
+
+/// Builds the dialect-neutral `DatabaseModel` from a reader's collected parts.
+pub(crate) fn assemble_schema(db_schema: &str, parts: SchemaParts) -> DatabaseModel {
+    let SchemaParts {
+        table_names,
+        enum_types,
+        columns: all_columns,
+        keys: mut table_keys,
+        relations: mut table_relations,
+        constraints: mut table_constraints,
+        views: table_views,
+        functions,
+        procedures,
+    } = parts;
+
+    let mut columns_by_table: HashMap<String, Vec<ColumnInfo>> = HashMap::new();
     for column in all_columns {
         columns_by_table
             .entry(column.table_name.clone())
@@ -95,11 +144,7 @@ pub async fn read_schema(
 
     let schema = schema_builder.build();
 
-    Ok(DatabaseModel::new(
-        BooleanMode::Native,
-        ForeignKeyMode::Relations,
-        vec![schema],
-    ))
+    DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema])
 }
 
 /// A table with no primary key but exactly one unique key gets that key promoted to primary

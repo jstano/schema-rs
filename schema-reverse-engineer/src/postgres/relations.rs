@@ -5,14 +5,14 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 
 #[derive(Debug, sqlx::FromRow)]
-struct ForeignKeyRow {
-    constraint_name: String,
-    from_table: String,
-    from_column: String,
-    to_schema: String,
-    to_table: String,
-    to_column: String,
-    delete_rule: String,
+pub(crate) struct ForeignKeyRow {
+    pub(crate) constraint_name: String,
+    pub(crate) from_table: String,
+    pub(crate) from_column: String,
+    pub(crate) to_schema: String,
+    pub(crate) to_table: String,
+    pub(crate) to_column: String,
+    pub(crate) delete_rule: String,
 }
 
 /// One foreign-key constraint's worth of grouped rows, in column-declaration order.
@@ -67,7 +67,7 @@ pub async fn list_foreign_keys(
 /// FK constraint (single-column or composite), keyed by the owning (FK/child) table name.
 /// Consecutive rows sharing a `constraint_name` are folded into one group; this relies on the
 /// caller having ordered rows by `constraint_name, ordinal_position` (the SQL query does this).
-fn group_foreign_key_rows(
+pub(crate) fn group_foreign_key_rows(
     rows: Vec<ForeignKeyRow>,
     db_schema: &str,
 ) -> Result<HashMap<String, Vec<Relation>>, SchemaReverseEngineerError> {

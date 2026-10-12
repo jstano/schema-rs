@@ -1,6 +1,6 @@
 # schema-rs
 
-A small workspace that models database schemas (schema-model), parses/handles inputs (schema-parser), can generate SQL (schema-sql-generator), install a schema (schema-installer), or reverse-engineer a live PostgreSQL database back into a schema definition (schema-reverse-engineer).
+A small workspace that models database schemas (schema-model), parses/handles inputs (schema-parser), can generate SQL (schema-sql-generator), install a schema (schema-installer), or reverse-engineer a live PostgreSQL or SQL Server database back into a schema definition (schema-reverse-engineer).
 
 ## FAQ
 
@@ -234,7 +234,7 @@ schema-installer \
 
 ## Using schema-reverse-engineer
 
-The `schema-reverse-engineer` crate connects to a live PostgreSQL database and generates a
+The `schema-reverse-engineer` crate connects to a live PostgreSQL or SQL Server database and generates a
 schema-rs XML schema definition from it — the inverse of `schema-installer`'s `install` command.
 
 ### Quick Start
@@ -247,19 +247,36 @@ cargo run -p schema-reverse-engineer -- \
 ```
 
 This introspects the `public` schema (tables, columns, primary/unique/index keys, foreign keys,
-check/exclusion constraints, native enum types, and views) and writes the result to `schema.xml`.
+check/exclusion constraints, native enum types, views, functions, and procedures) and writes the
+result to `schema.xml`.
+
+For SQL Server:
+
+```bash
+cargo run -p schema-reverse-engineer -- \
+  --database-type sqlserver \
+  --connection-string "Server=tcp:localhost,1433;Database=mydb;User Id=sa;Password=...;" \
+  --trust-server-certificate \
+  --file schema.xml
+```
+
 The generated file can be fed straight into `schema-sql-generator` or `schema-installer`.
 
 ### Options
 
+- `--database-type`: `postgresql` (default) or `sqlserver`
 - `--connection-string` (required): PostgreSQL connection URL, e.g.
-  `postgres://user:pass@host:5432/dbname`
-- `--db-schema`: Postgres schema to introspect — default: `public`
+  `postgres://user:pass@host:5432/dbname`, or a SQL Server ADO string
+- `--db-schema`: schema to introspect — default: `public` (PostgreSQL) / `dbo` (SQL Server)
+- `--trust-server-certificate`: SQL Server only; skip TLS certificate verification
 - `--file` (required): Path to write the generated XML schema file to
 
 ### Notes
 
-- PostgreSQL only — SQLite and SQL Server are not currently supported.
+- PostgreSQL and SQL Server only — SQLite is not supported.
+- SQL Server: `identity` seed/increment other than (1,1), non-persisted computed columns, clustered-ness of
+  keys, and columnstore/XML/spatial indexes are not carried over (a warning is printed where data would be
+  lost). `varchar(max)`/`nvarchar(max)` become `text`; `money` becomes `decimal(19,4)`. Triggers aren't exported.
 - Foreign keys use `ON DELETE` behavior to determine the relation type (`cascade`, `enforce`,
   `setnull`, `donothing`).
 - If a table has no primary key but exactly one unique key, that unique key is promoted to the
@@ -322,7 +339,7 @@ just docker-publish
 - schema-parser: parsing/processing helpers (WIP).
 - schema-sql-generator: backend(s) to create SQL from the model (WIP).
 - schema-installer: utilities for applying schemas/migrations (WIP).
-- schema-reverse-engineer: reverse-engineers a live PostgreSQL database into a schema-rs XML schema definition.
+- schema-reverse-engineer: reverse-engineers a live PostgreSQL or SQL Server database into a schema-rs XML schema definition.
 
 ## License
 

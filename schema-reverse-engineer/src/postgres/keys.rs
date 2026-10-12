@@ -2,22 +2,7 @@ use crate::error::SchemaReverseEngineerError;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Default)]
-pub struct KeyInfo {
-    pub columns: Vec<String>,
-    /// Non-key `INCLUDE` columns (covering index).
-    pub include: Vec<String>,
-    /// Bare predicate of a partial index (`WHERE ...`).
-    pub filter: Option<String>,
-    pub unique: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TableKeys {
-    pub primary: Option<KeyInfo>,
-    pub unique: Vec<KeyInfo>,
-    pub index: Vec<KeyInfo>,
-}
+pub use crate::info::{KeyInfo, TableKeys};
 
 #[derive(Debug, sqlx::FromRow)]
 struct PrimaryKeyRow {

@@ -1962,7 +1962,9 @@ dependencies = [
  "testcontainers",
  "testcontainers-modules",
  "thiserror 1.0.69",
+ "tiberius",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

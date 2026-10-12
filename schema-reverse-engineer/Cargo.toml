@@ -1,6 +1,6 @@
 [package]
 name = "schema-reverse-engineer"
-description = "Reverse-engineer a live PostgreSQL database into a schema-rs XML schema definition"
+description = "Reverse-engineer a live PostgreSQL or SQL Server database into a schema-rs XML schema definition"
 documentation = "https://docs.rs/schema-reverse-engineer"
 homepage.workspace = true
 repository.workspace = true
@@ -13,13 +13,15 @@ schema-model.workspace = true
 
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tiberius = { version = "0.11", default-features = false, features = ["tds73", "rustls"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "1"
 
 [dev-dependencies]
 schema-parser.workspace = true
 testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres"] }
+testcontainers-modules = { version = "0.11", features = ["postgres", "mssql_server"] }
 
 [[bin]]
 name = "schema-reverse-engineer"
