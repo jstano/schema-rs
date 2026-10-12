@@ -3016,3 +3016,83 @@ fn add_relation_donothing_emits_no_foreign_key_on_any_dialect() {
         );
     }
 }
+
+fn generate_sql(db: DatabaseType, change: SchemaChange) -> String {
+    let mut cs = ChangeSet::new();
+    cs.add_change(change);
+    let mut output = Vec::new();
+    create_generator(db)
+        .generate(&cs, &default_model(), &mut output)
+        .unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+fn generated_total(expression: &str) -> schema_model::model::column::Column {
+    ColumnBuilder::new(None::<&str>, "total", ColumnType::Int)
+        .required(true)
+        .generated(Some(expression.to_string()))
+        .build()
+}
+
+#[test]
+fn add_generated_column_renders_computed_column_without_backfill_guard() {
+    let add = || SchemaChange::AddColumn {
+        table_name: "line".to_string(),
+        column: generated_total("price * qty"),
+    };
+
+    let pg = generate_sql(DatabaseType::Postgresql, add());
+    assert!(
+        pg.contains("add column if not exists total integer generated always as (price * qty) stored not null;"),
+        "{pg}"
+    );
+    assert!(!pg.contains("halted"), "{pg}");
+
+    let ss = generate_sql(DatabaseType::SqlServer, add());
+    assert!(
+        ss.contains("add total as (price * qty) persisted not null;"),
+        "{ss}"
+    );
+    assert!(!ss.contains("throw"), "{ss}");
+
+    let lite = generate_sql(DatabaseType::Sqlite, add());
+    assert!(
+        lite.contains("cannot add stored generated column"),
+        "{lite}"
+    );
+    assert!(!lite.contains("alter table"), "{lite}");
+}
+
+#[test]
+fn modify_generated_expression_halts_instead_of_guessing() {
+    let modify = || SchemaChange::ModifyColumn {
+        table_name: "line".to_string(),
+        old_column: generated_total("price * qty"),
+        new_column: generated_total("price * qty * 2"),
+    };
+
+    let pg = generate_sql(DatabaseType::Postgresql, modify());
+    assert!(
+        pg.contains("raise exception 'Migration halted: generated column line.total changed"),
+        "{pg}"
+    );
+
+    let ss = generate_sql(DatabaseType::SqlServer, modify());
+    assert!(
+        ss.contains("throw 50000, 'Migration halted: generated column line.total changed"),
+        "{ss}"
+    );
+}
+
+#[test]
+fn modify_column_with_unchanged_generated_expression_does_not_halt() {
+    let sql = generate_sql(
+        DatabaseType::Postgresql,
+        SchemaChange::ModifyColumn {
+            table_name: "line".to_string(),
+            old_column: generated_total("price * qty"),
+            new_column: generated_total("price * qty"),
+        },
+    );
+    assert!(!sql.contains("halted"), "{sql}");
+}

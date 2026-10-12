@@ -144,6 +144,16 @@ impl ColumnGenerator for DefaultColumnGenerator {
     }
 
     fn column_sql(&self, table: &Table, column: &Column) -> String {
+        // Generated/computed columns take no DEFAULT in any dialect, so they bypass
+        // `column_options` entirely.
+        if let Some(expression) = column.generated() {
+            let definition = self
+                .column_type_generator
+                .generated_column_sql(table, column, expression);
+            let not_null = if column.required() { " not null" } else { "" };
+            return format!("   {} {}{}", column.name(), definition, not_null);
+        }
+
         let column_options = self.column_options(table, column);
 
         if column_options.is_empty() {
@@ -318,5 +328,33 @@ mod tests {
             boolean_column_default(Some("maybe")),
             Some("false".to_string())
         );
+    }
+
+    #[test]
+    fn generated_column_skips_default_and_appends_not_null() {
+        let column = ColumnBuilder::new(None::<&str>, "total", ColumnType::Int)
+            .required(true)
+            .generated(Some("a + b".to_string()))
+            .build();
+        let table = TableBuilder::new(None::<&str>, "widget")
+            .add_column(column.clone())
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (context, _buffer) = make_context(model, DatabaseType::Postgresql);
+        let generator = DefaultColumnGenerator::new(
+            context.clone(),
+            Box::new(DummyColumnTypeGenerator(context)),
+            DefaultConstraintNaming::Unnamed,
+        );
+        let sql = generator.column_sql(&table, &column);
+        assert!(
+            sql.contains("generated always as (a + b) stored not null"),
+            "{sql}"
+        );
+        assert!(!sql.contains("default"));
     }
 }

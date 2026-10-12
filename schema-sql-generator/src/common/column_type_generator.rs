@@ -128,6 +128,17 @@ pub trait ColumnTypeGenerator {
         self.date_time_sql()
     }
 
+    /// Full definition tail for a generated (computed) column, given its bare expression.
+    /// The default covers PostgreSQL and SQLite, which share this syntax and keep the type;
+    /// SQL Server overrides it (computed columns declare no type there).
+    fn generated_column_sql(&self, table: &Table, column: &Column, expression: &str) -> String {
+        format!(
+            "{} generated always as ({}) stored",
+            self.column_type_sql(table, column),
+            expression
+        )
+    }
+
     fn time_sql(&self) -> String {
         "time".to_string()
     }

@@ -49,6 +49,21 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     writeln!(writer, "drop table if exists {};", table_name)?;
                     writeln!(writer)?;
                 }
+                SchemaChange::AddColumn { table_name, column } if column.generated().is_some() => {
+                    // SQLite's `ADD COLUMN` cannot add a STORED generated column (only
+                    // VIRTUAL), and the create path emits STORED - so this needs a rebuild.
+                    writeln!(
+                        writer,
+                        "-- SQLite cannot add stored generated column '{}' to table '{}' in-place.",
+                        column.name(),
+                        table_name
+                    )?;
+                    writeln!(
+                        writer,
+                        "-- Manually recreate the table with the generated column."
+                    )?;
+                    writeln!(writer)?;
+                }
                 SchemaChange::AddColumn { table_name, column } => {
                     let type_sql =
                         format!(" {}", type_generator.column_type_sql(&dummy_table, column));

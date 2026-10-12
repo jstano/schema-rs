@@ -112,10 +112,8 @@ fn build_column_info(row: ColumnRow, enum_type_names: &HashSet<String>) -> Colum
     };
 
     let generated = if is_generated {
-        Some(format!(
-            "generated always as ({}) stored",
-            row.generation_expression.unwrap_or_default()
-        ))
+        // Bare expression only - each dialect's generator wraps it in its own syntax.
+        Some(row.generation_expression.unwrap_or_default())
     } else {
         None
     };

@@ -564,7 +564,7 @@ remediation plan) is worth more than any individual fix below.
   → `create index ix_t1 on dbo.t (id)`. Worse, `sqlserver_key_generator.rs:12` hard-codes
   `primary key nonclustered`, so `<primary cluster="true">` produces the exact opposite of
   what was asked.
-- [ ] **M2. `generated="…"` is silently dropped by every generator.** `Column::generated` is read
+- [x] **M2. `generated="…"` is silently dropped by every generator.** `Column::generated` is read
   only by `schema-reverse-engineer/src/xml_writer.rs:116`. Reverse-engineer a computed
   column → regenerate → it comes back as a plain column.
 
@@ -609,6 +609,27 @@ remediation plan) is worth more than any individual fix below.
   - Not yet decided: whether SQL Server's generated columns should always be `PERSISTED` (my
     lean, for parity with Postgres/SQLite always being physically stored) or left virtual by
     default - worth confirming before implementing.
+
+  **Fixed 2026-10-12** per the direction above. `generated` is now a bare expression end to
+  end: the Postgres reverse-engineer stores just `generation_expression`;
+  `ColumnTypeGenerator::generated_column_sql` (default `"{type} generated always as ({expr})
+  stored"` for Postgres/SQLite, SQL Server override `"as ({expr}) persisted"`); and
+  `DefaultColumnGenerator::column_sql` branches on it first, skipping `default` entirely and
+  appending `not null` when required. SQL Server is always `PERSISTED` (parity with the other
+  two; the XML has no virtual/persisted switch). Per [[prefer-error-over-silent-coercion]],
+  `Schema::validate()` rejects a `generated` value that starts with `generated` (a legacy full
+  clause from older reverse-engineer output) and a generated column that also has a `default`.
+  Verified by generating all three dialects from a small fixture and executing the SQLite
+  output in real `sqlite3` (insert 3x4 -> `Total` = 12).
+
+  **Migration generator, also fixed 2026-10-12.** `AddColumn` of a generated column renders the
+  computed column (no default, no backfill guard - the value is calculated for existing rows)
+  on Postgres and SQL Server. SQLite's `ADD COLUMN` cannot add a STORED generated column, so it
+  emits a manual-rebuild comment instead. `ModifyColumn` where `generated` changed (expression
+  edit, or plain<->generated) halts with a guard on Postgres/SQL Server: no portable in-place
+  `ALTER`, and drop/re-add would lose a plain column's data - same halt-and-warn pattern as
+  the other guards. SQLite's `ModifyColumn` was already comment-only. Three regression tests
+  in `schema-migration-generator/src/tests.rs`.
 - [x] **M3. Only one check constraint per column can ever be emitted.**
   `column_constraint_generator.rs:46-58` is an if/else-if chain, so a column with both
   `<check>` and `minValue`/`maxValue` silently loses the min/max. The hashed name is per

@@ -91,7 +91,30 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                         format!(" {}", type_generator.column_type_sql(&dummy_table, column));
                     let default_value = default_sql(database_model, column);
 
-                    if column.required() && default_value.is_none() {
+                    if let Some(expression) = column.generated() {
+                        // Computed columns declare no type, take no default, and are always
+                        // calculated for existing rows - nothing to backfill.
+                        let not_null = if column.required() { " not null" } else { "" };
+                        write_guarded(
+                            writer,
+                            &format!(
+                                "not exists (select 1 from sys.columns where object_id = object_id('{}') and name = '{}')",
+                                table_name,
+                                column.name()
+                            ),
+                            &format!(
+                                "alter table {} add {} {}{};",
+                                table_name,
+                                column.name(),
+                                type_generator.generated_column_sql(
+                                    &dummy_table,
+                                    column,
+                                    expression
+                                ),
+                                not_null
+                            ),
+                        )?;
+                    } else if column.required() && default_value.is_none() {
                         write_not_null_column_with_backfill_guard(
                             writer,
                             table_name,
@@ -165,6 +188,13 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     old_column,
                     new_column,
                 } => {
+                    if old_column.generated() != new_column.generated() {
+                        write_generated_change_guard(writer, table_name, new_column.name(), |m| {
+                            format!("throw 50000, '{m}', 1;")
+                        })?;
+                        writeln!(writer, "go")?;
+                        writeln!(writer)?;
+                    }
                     // SQL Server also refuses ALTER COLUMN outright while the column
                     // participates in a PRIMARY KEY/UNIQUE constraint, a plain index, or a
                     // foreign key (either as the FK's own column, or as the column another
@@ -1104,5 +1134,36 @@ fn regenerate_triggers(
         trigger_generator.output_triggers_for_table(table);
         write!(writer, "{}", trigger_buffer.take())?;
     }
+    Ok(())
+}
+
+/// A column's `generated` expression changing (or a column switching between plain and
+/// generated) cannot be migrated in place: there is no portable `ALTER COLUMN` for it, and
+/// dropping/re-adding a plain column would lose data. Always halts, never guesses - same
+/// pattern as the other halt-and-warn guards.
+fn write_generated_change_guard(
+    writer: &mut dyn Write,
+    table_name: &str,
+    column_name: &str,
+    halt: impl Fn(&str) -> String,
+) -> Result<(), MigrationGeneratorError> {
+    writeln!(
+        writer,
+        "-- WARNING: the generated expression of '{}.{}' changed (or it switched between plain and generated).",
+        table_name, column_name
+    )?;
+    writeln!(
+        writer,
+        "--   This cannot be altered in place. Drop and re-add the column manually (back up its data first if it was a plain column), then delete the statement below."
+    )?;
+    writeln!(
+        writer,
+        "{}",
+        halt(&format!(
+            "Migration halted: generated column {}.{} changed - see comment above.",
+            table_name, column_name
+        ))
+    )?;
+    writeln!(writer)?;
     Ok(())
 }

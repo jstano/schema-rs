@@ -3,6 +3,7 @@ use crate::common::generator_context::GeneratorContext;
 use schema_model::model::column::Column;
 use schema_model::model::enum_type::EnumType;
 use schema_model::model::schema::Schema;
+use schema_model::model::table::Table;
 use schema_model::model::types::BooleanMode;
 use std::cmp;
 
@@ -19,6 +20,10 @@ impl SqlServerColumnTypeGenerator {
 impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     fn context(&self) -> &GeneratorContext {
         &self.context
+    }
+
+    fn generated_column_sql(&self, _table: &Table, _column: &Column, expression: &str) -> String {
+        format!("as ({}) persisted", expression)
     }
 
     fn sequence_sql(&self) -> String {
@@ -365,5 +370,17 @@ mod tests {
             .build();
 
         assert_eq!(generator.column_type_sql(&table, &col), "nchar(1)");
+    }
+
+    #[test]
+    fn generated_column_is_persisted_computed_column_with_no_type() {
+        let (ctx, table_builder) = make_context();
+        let generator = SqlServerColumnTypeGenerator::new(ctx);
+        let column = ColumnBuilder::new(None::<&str>, "total", ColumnType::Int).build();
+        let table = table_builder.add_column(column.clone()).build();
+        assert_eq!(
+            generator.generated_column_sql(&table, &column, "a + b"),
+            "as (a + b) persisted"
+        );
     }
 }

@@ -194,6 +194,28 @@ impl Schema {
 
             let mut seen_column_names: HashMap<String, &str> = HashMap::new();
             for column in table.columns() {
+                if let Some(generated) = column.generated() {
+                    if generated
+                        .trim_start()
+                        .to_ascii_lowercase()
+                        .starts_with("generated")
+                    {
+                        errors.push(format!(
+                            "ERROR: {}.{} has generated='{}'; `generated` must be the bare \
+                             expression (e.g. \"price * qty\"), not a full clause",
+                            table.name(),
+                            column.name(),
+                            generated
+                        ));
+                    }
+                    if column.default_constraint().is_some() {
+                        errors.push(format!(
+                            "ERROR: {}.{} is a generated column and cannot also have a default",
+                            table.name(),
+                            column.name()
+                        ));
+                    }
+                }
                 if seen_column_names
                     .insert(column.name().to_lowercase(), column.name())
                     .is_some()
@@ -692,6 +714,29 @@ mod tests {
         assert!(errors[0].contains("widget"));
         assert!(errors[0].contains("id"));
         assert!(errors[0].contains("big_id"));
+    }
+
+    #[test]
+    fn validate_rejects_generated_column_with_full_clause_or_default() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(
+                ColumnBuilder::new(Some("s"), "a", CT::Int)
+                    .generated(Some("generated always as (1) stored".to_string()))
+                    .build(),
+            )
+            .add_column(
+                ColumnBuilder::new(Some("s"), "b", CT::Int)
+                    .generated(Some("1".to_string()))
+                    .default_constraint(Some("2".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+        let errors = schema.validate();
+        assert_eq!(errors.len(), 2, "{errors:?}");
     }
 
     #[test]
