@@ -347,7 +347,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                 }
                 SchemaChange::DropEnumType { enum_type_name } => {
                     let name = to_snake_case(enum_type_name);
-                    writeln!(writer, "drop type if exists {} cascade;", name)?;
+                    writeln!(writer, "drop type if exists {};", name)?;
                     writeln!(writer)?;
                 }
                 SchemaChange::ModifyEnumType {

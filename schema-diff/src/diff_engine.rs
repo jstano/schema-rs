@@ -33,8 +33,6 @@ impl SchemaDiffEngine {
         diff_drop_procedures(old, new, &mut change_set);
         diff_drop_other_sql(old, new, &mut change_set);
         diff_drop_initial_data(old, new, &mut change_set);
-        // Last: Postgres can't DROP TYPE while a column still references it.
-        diff_drop_enum_types(old, new, &mut change_set);
 
         // Add phase (order matters: tables → columns → modify columns → keys → constraints → relations → views)
         // Enum types/functions/procedures/other_sql go first - columns and tables may depend on them.
@@ -53,6 +51,9 @@ impl SchemaDiffEngine {
         diff_add_triggers(old, new, &mut change_set);
         // Last: initial data rows reference columns/keys that must already exist.
         diff_add_initial_data(old, new, &mut change_set);
+        // Enum drops go last of all: Postgres can't DROP TYPE while a column still uses it, and
+        // columns that move off a dropped enum are only retyped by modify_columns above.
+        diff_drop_enum_types(old, new, &mut change_set);
 
         change_set
     }

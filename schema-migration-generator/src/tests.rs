@@ -2534,7 +2534,7 @@ fn postgresql_add_and_drop_enum_type() {
         sql
     );
     assert!(
-        sql.contains("drop type if exists old_status_type cascade;"),
+        sql.contains("drop type if exists old_status_type;"),
         "got: {}",
         sql
     );

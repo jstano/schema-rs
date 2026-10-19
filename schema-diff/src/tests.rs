@@ -680,6 +680,47 @@ fn detects_column_enum_type_change() {
 }
 
 #[test]
+fn drops_enum_type_after_columns_move_off_it() {
+    // A column that leaves a removed enum is retyped by ModifyColumn in the add phase, so the
+    // enum can only be dropped after that - otherwise `drop type ... cascade` takes the column.
+    let old = SchemaBuilder::new(Some("s"))
+        .add_enum_type(EnumType::new(
+            "status_a",
+            vec![EnumValue::new("A", None::<String>)],
+        ))
+        .add_table(
+            TableBuilder::new(Some("s"), "users")
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "status", ColumnType::Enum)
+                        .enum_type(Some("status_a".to_string()))
+                        .build(),
+                )
+                .build(),
+        )
+        .build();
+    let new = SchemaBuilder::new(Some("s"))
+        .add_table(
+            TableBuilder::new(Some("s"), "users")
+                .add_column(ColumnBuilder::new(Some("s"), "status", ColumnType::Varchar).build())
+                .build(),
+        )
+        .build();
+
+    let cs = SchemaDiffEngine::diff(&old, &new);
+    let modify = cs
+        .changes()
+        .iter()
+        .position(|c| matches!(c, SchemaChange::ModifyColumn { .. }))
+        .expect("ModifyColumn");
+    let drop = cs
+        .changes()
+        .iter()
+        .position(|c| matches!(c, SchemaChange::DropEnumType { .. }))
+        .expect("DropEnumType");
+    assert!(modify < drop, "got: {:?}", cs.changes());
+}
+
+#[test]
 fn detects_added_enum_value() {
     // The original repro: adding PAY_PERIOD to an enum's value list must produce a
     // ModifyEnumType, not an empty change set.

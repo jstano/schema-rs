@@ -1112,6 +1112,30 @@ remediation plan) is worth more than any individual fix below.
   `DropColumn` always does. Views carry only raw SQL, so matching is textual and deliberately
   over-inclusive (a needless drop + recreate is harmless; a missed one fails the ALTER).
 
+- [x] **M38. Dropped enum types are dropped before columns move off them, and with `cascade`.**
+  `schema-diff/src/diff_engine.rs:37` emits `diff_drop_enum_types` at the end of the *drop*
+  phase, but a column that moves off the dropped enum is retyped by `ModifyColumn`, which runs
+  later in the *add* phase. The Postgres generator renders the drop as
+  `drop type if exists <name> cascade;` (`schema-migration-generator/src/postgresql/mod.rs:350`),
+  and `cascade` drops every column still using the type. Scenario: an enum is removed (or
+  renamed) and its columns change to `varchar`/another enum. The columns are destroyed with
+  their data, and the later `alter column ... type` fails on a missing column. The comment
+  "Postgres can't DROP TYPE while a column still references it" is only true within the drop
+  phase. Found while reviewing the schema-java port of L15a, where it is fixed.
+  **Suggested fix:** emit the enum drops after the add phase (after `ModifyColumn`) and drop
+  `cascade`, so a leftover reference fails loudly instead of deleting columns. Also add a diff
+  test where an enum is removed and its column is retyped, asserting `ModifyColumn` comes before
+  `DropEnumType`.
+  **Fixed 2026-10-19.** `diff_drop_enum_types` now runs after `diff_add_initial_data` (last of
+  all), and the Postgres `drop type` no longer has `cascade`. Test:
+  `drops_enum_type_after_columns_move_off_it`. The two related bugs below are still open.
+
+  Related timing bugs found in the same review (not yet logged separately): SQL Server
+  `ModifyColumn` re-adds dependent foreign keys per column, which fails when both sides of an FK
+  change type in one migration (re-add after all `ModifyColumn` changes); and Postgres
+  `ALTER TYPE ... ADD VALUE` followed by use of the new value in the same transaction is
+  rejected (55P04).
+
 ---
 
 ## Low / hygiene
