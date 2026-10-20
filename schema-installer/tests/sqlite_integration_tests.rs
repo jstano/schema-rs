@@ -130,6 +130,7 @@ async fn test_sqlite_failed_migration_rolls_back_partial_statements() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![bad_migration],
+        ..Default::default()
     });
 
     let result = Migrator::migrate(&config, source).await;
@@ -302,9 +303,11 @@ async fn test_sqlite_concurrent_migrate_calls_propagate_shared_failure() {
     };
     let source_a = Box::new(EmbeddedMigrationSource {
         migrations: vec![bad_migration()],
+        ..Default::default()
     });
     let source_b = Box::new(EmbeddedMigrationSource {
         migrations: vec![bad_migration()],
+        ..Default::default()
     });
 
     let (result_a, result_b) = tokio::join!(
@@ -345,6 +348,7 @@ async fn test_sqlite_validate_detects_missing_migration_source() {
     // Apply V1 while its "file" still exists.
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -352,7 +356,10 @@ async fn test_sqlite_validate_detects_missing_migration_source() {
 
     // Validate against a source where V1's file is gone, as if it had been deleted or
     // renamed after being applied.
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     let result = Migrator::validate(&config, empty_source).await;
     assert!(
         result.is_err(),
@@ -392,7 +399,10 @@ async fn test_sqlite_validate_exempts_reserved_install_version() {
     .expect("insert reserved install row");
 
     // No migration files at all; the reserved version must not be flagged as missing.
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     Migrator::validate(&config, empty_source)
         .await
         .expect("validate should not flag the reserved install version as missing");
@@ -441,6 +451,7 @@ async fn test_sqlite_validate_detects_failed_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one],
+        ..Default::default()
     });
     let result = Migrator::validate(&config, source).await;
     assert!(
@@ -470,6 +481,7 @@ async fn test_sqlite_validate_detects_out_of_order_unapplied_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_two.clone()],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -489,6 +501,7 @@ async fn test_sqlite_validate_detects_out_of_order_unapplied_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one, migration_two],
+        ..Default::default()
     });
     let result = Migrator::validate(&config, source).await;
     assert!(
@@ -517,6 +530,7 @@ async fn test_sqlite_migrate_detects_missing_migration_source() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -534,6 +548,7 @@ async fn test_sqlite_migrate_detects_missing_migration_source() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_two],
+        ..Default::default()
     });
     let result = Migrator::migrate(&config, source).await;
     assert!(
@@ -577,6 +592,7 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_two.clone()],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -594,6 +610,7 @@ async fn test_sqlite_migrate_rejects_out_of_order_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one, migration_two],
+        ..Default::default()
     });
     let result = Migrator::migrate(&config, source).await;
     assert!(
@@ -640,6 +657,7 @@ async fn test_sqlite_migrate_applies_embedded_migrations_in_version_order_not_so
     // Deliberately supplied out of version order.
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_two, migration_one],
+        ..Default::default()
     });
 
     Migrator::migrate(&config, source)
@@ -710,7 +728,10 @@ async fn test_sqlite_repair_removes_stale_pending_migrations() {
     .await
     .expect("backdate installed_at");
 
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     Migrator::repair(&config, empty_source)
         .await
         .expect("repair should succeed");
@@ -821,7 +842,10 @@ async fn test_sqlite_repair_keeps_recent_pending_migrations() {
     .await
     .expect("insert pending row");
 
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     Migrator::repair(&config, empty_source)
         .await
         .expect("repair should succeed");
@@ -857,7 +881,10 @@ async fn test_sqlite_repair_succeeds_on_an_un_set_up_database() {
         .build()
         .expect("valid config");
 
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     Migrator::repair(&config, empty_source)
         .await
         .expect("repair should succeed even when schema_migration does not exist yet");
@@ -874,7 +901,10 @@ async fn test_sqlite_info_reports_no_migrations_on_a_fresh_database() {
         .build()
         .expect("valid config");
 
-    let empty_source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let empty_source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     Migrator::info(&config, empty_source)
         .await
         .expect("info should succeed against a fresh database with no migrations");
@@ -900,6 +930,7 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one.clone()],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -914,6 +945,7 @@ async fn test_sqlite_info_lists_applied_and_pending_migrations() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one, migration_two],
+        ..Default::default()
     });
     Migrator::info(&config, source)
         .await
@@ -941,6 +973,7 @@ async fn test_sqlite_info_succeeds_with_out_of_order_pending_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_two.clone()],
+        ..Default::default()
     });
     Migrator::migrate(&config, source)
         .await
@@ -966,6 +999,7 @@ async fn test_sqlite_info_succeeds_with_out_of_order_pending_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one, migration_two, migration_three],
+        ..Default::default()
     });
     Migrator::info(&config, source)
         .await
@@ -1000,6 +1034,7 @@ async fn test_sqlite_install_is_not_skipped_by_an_unrelated_migration() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration_one],
+        ..Default::default()
     });
     Migrator::migrate(&migrate_config, source)
         .await
@@ -1192,6 +1227,7 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
     ];
     let source = EmbeddedMigrationSource {
         migrations: migrations.clone(),
+        ..Default::default()
     };
 
     SchemaInstaller::install_with_baseline(
@@ -1224,7 +1260,10 @@ async fn test_sqlite_install_with_baseline_marks_covered_migrations_applied() {
 
     // `widgets` was never actually created (only baselined), but `migrate` must not
     // try to create it - it was already covered by the schema `install` generated.
-    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations,
+        ..Default::default()
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("migrate should only apply V2, the migration past the baseline");
@@ -1267,7 +1306,10 @@ async fn test_sqlite_install_with_baseline_rejects_reserved_version() {
         .build()
         .expect("valid config");
 
-    let source = EmbeddedMigrationSource { migrations: vec![] };
+    let source = EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    };
     let result = SchemaInstaller::install_with_baseline(
         &config,
         Some(Baseline {
@@ -1312,6 +1354,7 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
     ];
     let source = Box::new(EmbeddedMigrationSource {
         migrations: migrations.clone(),
+        ..Default::default()
     });
 
     Migrator::migrate_to_target(&config, source, Some("1"))
@@ -1349,7 +1392,10 @@ async fn test_sqlite_migrate_to_target_stops_at_the_given_version() {
 
     // Running migrate without a target afterward should pick up exactly the migration
     // the target held back, not re-attempt V1.
-    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations,
+        ..Default::default()
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("a later unrestricted migrate should apply the remaining migration");
@@ -1387,6 +1433,7 @@ async fn test_sqlite_migrate_to_target_below_all_pending_is_a_noop() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![migration],
+        ..Default::default()
     });
 
     Migrator::migrate_to_target(&config, source, Some("1"))
@@ -1439,6 +1486,7 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
     ];
     let source = Box::new(EmbeddedMigrationSource {
         migrations: migrations.clone(),
+        ..Default::default()
     });
     let output_path = temp_dir.path().join("dry-run.sql");
 
@@ -1481,7 +1529,10 @@ async fn test_sqlite_dry_run_writes_pending_sql_without_applying_it() {
         "dry_run must not create any table"
     );
 
-    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations,
+        ..Default::default()
+    });
     assert!(
         Migrator::has_pending_migrations(&config, source)
             .await
@@ -1517,7 +1568,10 @@ async fn test_sqlite_dry_run_respects_target() {
             sql: "create table gadgets (id integer primary key);".to_string(),
         },
     ];
-    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations,
+        ..Default::default()
+    });
     let output_path = temp_dir.path().join("dry-run-target.sql");
 
     Migrator::dry_run(&config, source, Some("1"), &output_path)
@@ -1546,7 +1600,10 @@ async fn test_sqlite_dry_run_with_nothing_pending_writes_empty_notice() {
         .build()
         .expect("valid config");
 
-    let source = Box::new(EmbeddedMigrationSource { migrations: vec![] });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations: vec![],
+        ..Default::default()
+    });
     let output_path = temp_dir.path().join("dry-run-empty.sql");
 
     Migrator::dry_run(&config, source, None, &output_path)
@@ -1689,7 +1746,10 @@ async fn test_sqlite_add_table_migration_materializes_new_table() {
             sql: migration_sql,
         },
     ];
-    let source = Box::new(EmbeddedMigrationSource { migrations });
+    let source = Box::new(EmbeddedMigrationSource {
+        migrations,
+        ..Default::default()
+    });
     Migrator::migrate(&config, source)
         .await
         .expect("migration should succeed against a real SQLite database");
@@ -1944,6 +2004,7 @@ fn embedded(sql: &str, transactional: bool) -> Box<EmbeddedMigrationSource> {
             script_path: "V1__m18.sql".to_string(),
             sql: sql.to_string(),
         }],
+        ..Default::default()
     })
 }
 
@@ -2120,4 +2181,252 @@ async fn test_sqlite_non_transactional_failure_is_recorded_failed_and_keeps_earl
     .await
     .unwrap();
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn test_sqlite_ensure_migration_table_creates_repeatable_table_and_is_idempotent() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_repeatable_table.db");
+
+    let pool = AnyPool::connect(&GeneratorType::Sqlite, &connection_string, false)
+        .await
+        .expect("connect");
+
+    for _ in 0..2 {
+        pool.ensure_migration_table(&GeneratorType::Sqlite)
+            .await
+            .expect("ensure migration table");
+    }
+
+    let sqlite = match &pool {
+        AnyPool::Sqlite(p) => p,
+        _ => unreachable!("sqlite pool in a sqlite test"),
+    };
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'schema_repeatable_migration'",
+    )
+    .fetch_one(sqlite)
+    .await
+    .expect("query sqlite_master");
+    assert_eq!(row.get::<i64, _>("count"), 1);
+
+    let insert = "INSERT INTO schema_repeatable_migration \
+        (name, script_path, checksum, execution_time_ms, status, tool_version) \
+        VALUES ('refresh_views', 'R__refresh_views.sql', 'abc', 0, 'success', 'test')";
+    sqlx::query(insert)
+        .execute(sqlite)
+        .await
+        .expect("first insert");
+    assert!(
+        sqlx::query(insert).execute(sqlite).await.is_err(),
+        "name must be unique"
+    );
+}
+
+async fn repeatable_test_pool(temp_dir: &TempDir, name: &str) -> AnyPool {
+    let pool = AnyPool::connect(
+        &GeneratorType::Sqlite,
+        &sqlite_connection_string(temp_dir, name),
+        false,
+    )
+    .await
+    .expect("connect");
+    pool.ensure_migration_table(&GeneratorType::Sqlite)
+        .await
+        .expect("ensure migration table");
+    pool
+}
+
+fn sqlite_of(pool: &AnyPool) -> &sqlx::SqlitePool {
+    match pool {
+        AnyPool::Sqlite(p) => p,
+        _ => unreachable!("sqlite pool in a sqlite test"),
+    }
+}
+
+#[tokio::test]
+async fn test_sqlite_repeatable_insert_read_and_unique_name() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let pool = repeatable_test_pool(&temp_dir, "repeatable_insert.db").await;
+
+    assert!(pool.get_applied_repeatables().await.unwrap().is_empty());
+
+    let id = pool
+        .insert_repeatable(
+            "refresh_views",
+            "R__refresh_views.sql",
+            "abc",
+            0,
+            "pending",
+            "t",
+        )
+        .await
+        .expect("insert");
+
+    let applied = pool.get_applied_repeatables().await.unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].id, id);
+    assert_eq!(applied[0].name, "refresh_views");
+    assert_eq!(applied[0].script_path, "R__refresh_views.sql");
+    assert_eq!(applied[0].checksum, "abc");
+    assert_eq!(applied[0].status, "pending");
+
+    let err = pool
+        .insert_repeatable(
+            "refresh_views",
+            "R__refresh_views.sql",
+            "abc",
+            0,
+            "pending",
+            "t",
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        SchemaInstallerError::ConcurrentMigrationDetected(ref name) if name == "refresh_views"
+    ));
+
+    // The versioned table is untouched.
+    assert!(pool.get_applied_migrations().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_sqlite_repeatable_status_and_checksum_updates() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let pool = repeatable_test_pool(&temp_dir, "repeatable_update.db").await;
+    let id = pool
+        .insert_repeatable("v", "R__v.sql", "old", 0, "pending", "t")
+        .await
+        .unwrap();
+
+    pool.update_repeatable_status(id, "success", 42)
+        .await
+        .unwrap();
+    pool.update_repeatable_checksum(id, "new").await.unwrap();
+    let row = &pool.get_applied_repeatables().await.unwrap()[0];
+    assert_eq!(row.status, "success");
+    assert_eq!(row.execution_time_ms, 42);
+    assert_eq!(row.checksum, "new");
+
+    // A missing row is a loud error, not a silent no-op.
+    assert!(
+        pool.update_repeatable_status(9999, "success", 1)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_repeatable_transactional_execute_is_atomic_with_status() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let pool = repeatable_test_pool(&temp_dir, "repeatable_tx.db").await;
+    let id = pool
+        .insert_repeatable("v", "R__v.sql", "c", 0, "pending", "t")
+        .await
+        .unwrap();
+
+    let create = vec!["create table widgets (id integer primary key)".to_string()];
+    pool.execute_repeatable_transactional(&create, id)
+        .await
+        .expect("execute");
+    assert_eq!(
+        pool.get_applied_repeatables().await.unwrap()[0].status,
+        "success"
+    );
+
+    // No such tracking row: the status update fails, so the DDL must roll back too.
+    let create_other = vec!["create table gadgets (id integer primary key)".to_string()];
+    assert!(
+        pool.execute_repeatable_transactional(&create_other, 9999)
+            .await
+            .is_err()
+    );
+    let row = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = 'gadgets'",
+    )
+    .fetch_one(sqlite_of(&pool))
+    .await
+    .unwrap();
+    assert_eq!(row.get::<i64, _>("count"), 0);
+}
+
+#[tokio::test]
+async fn test_sqlite_repend_repeatable_is_won_by_exactly_one_caller() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let pool = repeatable_test_pool(&temp_dir, "repeatable_repend.db").await;
+    let id = pool
+        .insert_repeatable("v", "R__v.sql", "old", 5, "success", "t1")
+        .await
+        .unwrap();
+
+    assert!(
+        pool.repend_repeatable(id, "old", "new", "R__v.sql", "t2")
+            .await
+            .unwrap(),
+        "first claim wins"
+    );
+    let row = &pool.get_applied_repeatables().await.unwrap()[0];
+    assert_eq!(row.status, "pending");
+    assert_eq!(row.checksum, "new");
+    assert_eq!(row.tool_version, "t2");
+    assert_eq!(row.execution_time_ms, 0);
+
+    assert!(
+        !pool
+            .repend_repeatable(id, "old", "new", "R__v.sql", "t3")
+            .await
+            .unwrap(),
+        "second claim against the same old checksum loses"
+    );
+    assert_eq!(
+        pool.get_applied_repeatables().await.unwrap()[0].tool_version,
+        "t2"
+    );
+
+    // A row that is no longer "success" cannot be claimed even with a matching checksum.
+    assert!(
+        !pool
+            .repend_repeatable(id, "new", "newer", "R__v.sql", "t4")
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn test_sqlite_repeatable_delete_failed_and_stale_pending() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let pool = repeatable_test_pool(&temp_dir, "repeatable_delete.db").await;
+    pool.insert_repeatable("ok", "R__ok.sql", "c", 0, "success", "t")
+        .await
+        .unwrap();
+    pool.insert_repeatable("bad", "R__bad.sql", "c", 0, "failed", "t")
+        .await
+        .unwrap();
+    pool.insert_repeatable("fresh", "R__fresh.sql", "c", 0, "pending", "t")
+        .await
+        .unwrap();
+    pool.insert_repeatable("stale", "R__stale.sql", "c", 0, "pending", "t")
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE schema_repeatable_migration SET installed_at = datetime('now', '-1 hour') WHERE name = 'stale'",
+    )
+    .execute(sqlite_of(&pool))
+    .await
+    .unwrap();
+
+    assert_eq!(pool.delete_failed_repeatables().await.unwrap(), 1);
+    assert_eq!(pool.delete_stale_pending_repeatables(600).await.unwrap(), 1);
+
+    let mut names: Vec<String> = pool
+        .get_applied_repeatables()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["fresh", "ok"]);
 }

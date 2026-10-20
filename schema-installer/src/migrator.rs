@@ -8,8 +8,8 @@ use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
 use crate::migration::{
-    Migration, MigrationSource, MigrationStatus, RESERVED_INSTALL_VERSION, compare_versions,
-    compute_checksum,
+    AppliedRepeatableMigration, Migration, MigrationSource, MigrationStatus,
+    RESERVED_INSTALL_VERSION, RepeatableMigration, compare_versions, compute_checksum,
 };
 
 /// How often to re-check a colliding migration's status while waiting for whichever
@@ -111,6 +111,93 @@ async fn insert_pending(
     .await
 }
 
+/// The version label used in errors for a repeatable, e.g. `R__refresh_views`.
+fn repeatable_label(repeatable: &RepeatableMigration) -> String {
+    format!("R__{}", repeatable.name)
+}
+
+/// Claims the right to run `repeatable`, the repeatable counterpart of `wait_for_slot`.
+/// Mutual exclusion between concurrent instances comes from `UNIQUE (name)` for a first run
+/// and from the checksum-conditional `repend_repeatable` for a re-run of a changed script.
+/// Each pass re-reads the row, so a losing instance simply observes the winner's outcome:
+/// `success` with our checksum means the work is already done, `failed` surfaces the failure,
+/// and `pending` is waited out (after one stale-row cleanup, as in `wait_for_slot`).
+async fn claim_repeatable(
+    pool: &AnyPool,
+    repeatable: &RepeatableMigration,
+    checksum: &str,
+    tool_version: &str,
+) -> Result<Slot, SchemaInstallerError> {
+    let deadline = Instant::now() + LOCK_MAX_WAIT;
+    let mut purged_stale = false;
+
+    loop {
+        let applied = pool.get_applied_repeatables().await?;
+        let Some(existing) = applied.iter().find(|r| r.name == repeatable.name) else {
+            match pool
+                .insert_repeatable(
+                    &repeatable.name,
+                    &repeatable.script_path,
+                    checksum,
+                    0,
+                    MigrationStatus::Pending.as_str(),
+                    tool_version,
+                )
+                .await
+            {
+                Ok(id) => return Ok(Slot::Owned(id)),
+                // Someone inserted first; the next pass reads their row.
+                Err(SchemaInstallerError::ConcurrentMigrationDetected(_)) => continue,
+                Err(e) => return Err(e),
+            }
+        };
+
+        match existing.status.parse::<MigrationStatus>() {
+            Ok(MigrationStatus::Success) if existing.checksum == checksum => {
+                return Ok(Slot::AlreadyApplied);
+            }
+            Ok(MigrationStatus::Success) => {
+                if pool
+                    .repend_repeatable(
+                        existing.id,
+                        &existing.checksum,
+                        checksum,
+                        &repeatable.script_path,
+                        tool_version,
+                    )
+                    .await?
+                {
+                    return Ok(Slot::Owned(existing.id));
+                }
+                // Lost the claim to another instance; re-read what it did.
+            }
+            Ok(MigrationStatus::Failed) => {
+                return Err(SchemaInstallerError::MigrationFailed {
+                    version: repeatable_label(repeatable),
+                    error: "a previous attempt at this repeatable migration failed; run `repair` before retrying".to_string(),
+                });
+            }
+            _ => {
+                if !purged_stale {
+                    purged_stale = true;
+                    let purged = pool
+                        .delete_stale_pending_repeatables(STALE_PENDING_THRESHOLD.as_secs() as i64)
+                        .await?;
+                    if purged > 0 {
+                        continue;
+                    }
+                }
+                if Instant::now() >= deadline {
+                    return Err(SchemaInstallerError::LockTimeout(repeatable_label(
+                        repeatable,
+                    )));
+                }
+                tokio::time::sleep(LOCK_POLL_INTERVAL).await;
+            }
+        }
+    }
+}
+
 /// The description `info` shows for an applied row. Rows written before the `description`
 /// column existed (M14) have it empty, so fall back to deriving it from the recorded filename
 /// the way `migrate` would, and failing that to the filename itself.
@@ -122,6 +209,39 @@ fn applied_description(applied: &crate::migration::AppliedMigration) -> String {
     match crate::migration::parse_migration_filename(filename) {
         Ok(Some((_, description))) if !description.is_empty() => description,
         _ => filename.to_string(),
+    }
+}
+
+/// Whether `repeatable` needs to run: it has never succeeded, or its script changed since the
+/// last successful run. A `failed`/`pending` row counts, so it is surfaced rather than skipped.
+fn repeatable_is_pending(
+    applied: &[AppliedRepeatableMigration],
+    repeatable: &RepeatableMigration,
+) -> bool {
+    match applied.iter().find(|a| a.name == repeatable.name) {
+        Some(a) => {
+            a.status != MigrationStatus::Success.as_str()
+                || a.checksum != compute_checksum(&repeatable.sql)
+        }
+        None => true,
+    }
+}
+
+/// The `Status` column `info` shows for a repeatable. Flyway's `Outdated` marks one that was
+/// applied but whose script has since changed (so the next `migrate` re-runs it).
+fn repeatable_info_status(
+    applied: Option<&AppliedRepeatableMigration>,
+    source: Option<&RepeatableMigration>,
+) -> String {
+    match (applied, source) {
+        (Some(a), Some(r))
+            if a.status == MigrationStatus::Success.as_str()
+                && a.checksum != compute_checksum(&r.sql) =>
+        {
+            "Outdated".to_string()
+        }
+        (Some(a), _) => a.status.clone(),
+        (None, _) => "Pending".to_string(),
     }
 }
 
@@ -153,14 +273,15 @@ impl Migrator {
 
         pool.ensure_migration_table(&config.database_type).await?;
 
-        let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
+        let migrations = Self::resolve_pending_migrations(&pool, source.as_ref(), target).await?;
+        let repeatables = Self::resolve_pending_repeatables(&pool, source.as_ref(), target).await?;
 
-        if migrations.is_empty() {
+        if migrations.is_empty() && repeatables.is_empty() {
             println!("No pending migrations to apply");
             return Ok(());
         }
 
-        validate_migration_scripts(&migrations, &config.database_type)?;
+        validate_migration_scripts(&migrations, &repeatables, &config.database_type)?;
 
         let tool_version = env!("CARGO_PKG_VERSION");
 
@@ -202,6 +323,42 @@ impl Migrator {
             }
         }
 
+        // Repeatables run last, once every versioned migration they may depend on is in.
+        for repeatable in repeatables {
+            let checksum = compute_checksum(&repeatable.sql);
+            let repeatable_id = match claim_repeatable(&pool, &repeatable, &checksum, tool_version)
+                .await?
+            {
+                Slot::Owned(id) => id,
+                Slot::AlreadyApplied => {
+                    println!(
+                        "Repeatable migration {} was already applied by another process; skipping",
+                        repeatable.description()
+                    );
+                    continue;
+                }
+            };
+
+            let start = Instant::now();
+            match execute_repeatable(&pool, &config.database_type, repeatable_id, &repeatable).await
+            {
+                Ok(_) => println!("Applied repeatable migration: {}", repeatable.description()),
+                Err(e) => {
+                    let elapsed_ms = start.elapsed().as_millis() as i64;
+                    pool.update_repeatable_status(
+                        repeatable_id,
+                        MigrationStatus::Failed.as_str(),
+                        elapsed_ms,
+                    )
+                    .await?;
+                    return Err(SchemaInstallerError::MigrationFailed {
+                        version: repeatable_label(&repeatable),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -225,12 +382,13 @@ impl Migrator {
 
         pool.ensure_migration_table(&config.database_type).await?;
 
-        let migrations = Self::resolve_pending_migrations(&pool, source, target).await?;
+        let migrations = Self::resolve_pending_migrations(&pool, source.as_ref(), target).await?;
+        let repeatables = Self::resolve_pending_repeatables(&pool, source.as_ref(), target).await?;
 
-        validate_migration_scripts(&migrations, &config.database_type)?;
+        validate_migration_scripts(&migrations, &repeatables, &config.database_type)?;
 
         let mut output = String::new();
-        if migrations.is_empty() {
+        if migrations.is_empty() && repeatables.is_empty() {
             writeln!(output, "-- No pending migrations.").ok();
         } else {
             for migration in &migrations {
@@ -243,13 +401,24 @@ impl Migrator {
                 output.push_str(migration.sql.trim_end());
                 output.push_str("\n\n");
             }
+            for repeatable in &repeatables {
+                writeln!(
+                    output,
+                    "-- Repeatable migration {} ({})",
+                    repeatable.description(),
+                    repeatable.script_path
+                )
+                .ok();
+                output.push_str(repeatable.sql.trim_end());
+                output.push_str("\n\n");
+            }
         }
 
         std::fs::write(output_path, output).map_err(SchemaInstallerError::Io)?;
 
         println!(
             "Wrote dry-run SQL for {} pending migration(s) to {}",
-            migrations.len(),
+            migrations.len() + repeatables.len(),
             output_path.display()
         );
 
@@ -262,7 +431,7 @@ impl Migrator {
     /// out-of-order check enforced - without executing any of them.
     async fn resolve_pending_migrations(
         pool: &AnyPool,
-        source: Box<dyn MigrationSource>,
+        source: &dyn MigrationSource,
         target: Option<&str>,
     ) -> Result<Vec<Migration>, SchemaInstallerError> {
         let applied = pool.get_applied_migrations().await?;
@@ -348,6 +517,43 @@ impl Migrator {
         Ok(migrations)
     }
 
+    /// The repeatables a real `migrate` would run: new ones, and ones whose script changed
+    /// since their last successful run. A row that is `failed` or `pending` is also returned
+    /// so `claim_repeatable` surfaces it (blocking until `repair`) instead of skipping it
+    /// silently. `target` skips repeatables entirely: a rollout deliberately stopped at a
+    /// version should not run scripts written against a newer schema.
+    async fn resolve_pending_repeatables(
+        pool: &AnyPool,
+        source: &dyn MigrationSource,
+        target: Option<&str>,
+    ) -> Result<Vec<RepeatableMigration>, SchemaInstallerError> {
+        if target.is_some() {
+            return Ok(Vec::new());
+        }
+
+        let source_repeatables = source.repeatable_migrations()?;
+        let applied = pool.get_applied_repeatables().await?;
+
+        for applied_repeatable in &applied {
+            if applied_repeatable.status == MigrationStatus::Success.as_str()
+                && !source_repeatables
+                    .iter()
+                    .any(|r| r.name == applied_repeatable.name)
+            {
+                // Same drift `resolve_pending_migrations` blocks on for versioned ones.
+                return Err(SchemaInstallerError::MissingMigrationSource {
+                    version: format!("R__{}", applied_repeatable.name),
+                    script_path: applied_repeatable.script_path.clone(),
+                });
+            }
+        }
+
+        Ok(source_repeatables
+            .into_iter()
+            .filter(|repeatable| repeatable_is_pending(&applied, repeatable))
+            .collect())
+    }
+
     pub async fn info(
         config: &SchemaInstallerConfig,
         source: Box<dyn MigrationSource>,
@@ -363,8 +569,14 @@ impl Migrator {
 
         let applied = pool.get_applied_migrations().await?;
         let source_migrations = source.migrations()?;
+        let applied_repeatables = pool.get_applied_repeatables().await?;
+        let source_repeatables = source.repeatable_migrations()?;
 
-        if applied.is_empty() && source_migrations.is_empty() {
+        if applied.is_empty()
+            && source_migrations.is_empty()
+            && applied_repeatables.is_empty()
+            && source_repeatables.is_empty()
+        {
             println!("No migrations found");
             return Ok(());
         }
@@ -419,6 +631,29 @@ impl Migrator {
                     version, source_mig.description, status, "-", "-"
                 );
             }
+        }
+
+        // Repeatables follow the versioned rows, in name order, as they run.
+        let mut repeatable_names: Vec<&str> = applied_repeatables
+            .iter()
+            .map(|r| r.name.as_str())
+            .chain(source_repeatables.iter().map(|r| r.name.as_str()))
+            .collect();
+        repeatable_names.sort_unstable();
+        repeatable_names.dedup();
+
+        for name in repeatable_names {
+            let applied_repeatable = applied_repeatables.iter().find(|r| r.name == name);
+            let source_repeatable = source_repeatables.iter().find(|r| r.name == name);
+            let status = repeatable_info_status(applied_repeatable, source_repeatable);
+            println!(
+                "{:<10} {:<30} {:<10} {:<30} {:<15}",
+                "R",
+                name.replace('_', " "),
+                status,
+                applied_repeatable.map_or("-", |r| r.installed_at.as_str()),
+                applied_repeatable.map_or("-".to_string(), |r| r.execution_time_ms.to_string()),
+            );
         }
 
         Ok(())
@@ -516,6 +751,46 @@ impl Migrator {
             }
         }
 
+        let applied_repeatables = pool.get_applied_repeatables().await?;
+        let source_repeatables = source.repeatable_migrations()?;
+
+        for applied_repeatable in &applied_repeatables {
+            let label = format!("R__{}", applied_repeatable.name);
+            if applied_repeatable.status != MigrationStatus::Success.as_str() {
+                issue_count += 1;
+                eprintln!(
+                    "Repeatable migration {} is in a non-successful state ({}); run `repair` before retrying",
+                    label, applied_repeatable.status
+                );
+                continue;
+            }
+            match source_repeatables
+                .iter()
+                .find(|r| r.name == applied_repeatable.name)
+            {
+                // A changed script is not an error: it is simply pending, and the next
+                // `migrate` re-runs it.
+                Some(source_repeatable) => {
+                    if compute_checksum(&source_repeatable.sql) != applied_repeatable.checksum {
+                        println!(
+                            "Repeatable migration {} has changed and will be re-applied",
+                            label
+                        );
+                    }
+                }
+                None => {
+                    issue_count += 1;
+                    eprintln!(
+                        "{}",
+                        SchemaInstallerError::MissingMigrationSource {
+                            version: label,
+                            script_path: applied_repeatable.script_path.clone(),
+                        }
+                    );
+                }
+            }
+        }
+
         if issue_count > 0 {
             return Err(SchemaInstallerError::ValidationFailed(format!(
                 "{} validation issue(s) found; see above for details",
@@ -553,8 +828,15 @@ impl Migrator {
         let pending = source_migrations
             .iter()
             .any(|m| !applied_versions.contains(&m.version));
+        if pending {
+            return Ok(true);
+        }
 
-        Ok(pending)
+        let applied_repeatables = pool.get_applied_repeatables().await?;
+        Ok(source
+            .repeatable_migrations()?
+            .iter()
+            .any(|r| repeatable_is_pending(&applied_repeatables, r)))
     }
 
     pub async fn repair(
@@ -606,8 +888,51 @@ impl Migrator {
             }
         }
 
+        // Repeatables get the same treatment as versioned migrations, matching Flyway: failed
+        // and abandoned-pending rows are cleared, and a changed script's checksum is
+        // realigned - so `repair` accepts the edit instead of re-running the script.
+        let failed = pool.delete_failed_repeatables().await?;
+        println!("Deleted {} failed repeatable migration(s)", failed);
+
+        let stale = pool
+            .delete_stale_pending_repeatables(STALE_PENDING_THRESHOLD.as_secs() as i64)
+            .await?;
+        println!(
+            "Deleted {} pending repeatable migration(s) stuck for over {} seconds (likely abandoned by a crashed process)",
+            stale,
+            STALE_PENDING_THRESHOLD.as_secs()
+        );
+
+        let source_repeatables = source.repeatable_migrations()?;
+        for applied_repeatable in pool.get_applied_repeatables().await? {
+            if applied_repeatable.status != MigrationStatus::Success.as_str() {
+                continue;
+            }
+            if let Some(source_repeatable) = source_repeatables
+                .iter()
+                .find(|r| r.name == applied_repeatable.name)
+            {
+                let checksum = compute_checksum(&source_repeatable.sql);
+                if checksum != applied_repeatable.checksum {
+                    pool.update_repeatable_checksum(applied_repeatable.id, &checksum)
+                        .await?;
+                    println!(
+                        "Updated checksum for repeatable migration: R__{}",
+                        applied_repeatable.name
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
+}
+
+/// Which tracking table a script's status is recorded in.
+#[derive(Clone, Copy)]
+enum Tracking {
+    Versioned,
+    Repeatable,
 }
 
 async fn execute_migration(
@@ -616,22 +941,69 @@ async fn execute_migration(
     migration_id: i64,
     migration: &Migration,
 ) -> Result<i64, SchemaInstallerError> {
-    let statements = crate::sql_split::split_sql_statements(&migration.sql, database_type)?;
-    if !migration.transactional {
+    execute_script(
+        pool,
+        database_type,
+        Tracking::Versioned,
+        migration_id,
+        &migration.sql,
+        migration.transactional,
+    )
+    .await
+}
+
+async fn execute_repeatable(
+    pool: &AnyPool,
+    database_type: &GeneratorType,
+    repeatable_id: i64,
+    repeatable: &RepeatableMigration,
+) -> Result<i64, SchemaInstallerError> {
+    execute_script(
+        pool,
+        database_type,
+        Tracking::Repeatable,
+        repeatable_id,
+        &repeatable.sql,
+        repeatable.transactional,
+    )
+    .await
+}
+
+async fn execute_script(
+    pool: &AnyPool,
+    database_type: &GeneratorType,
+    tracking: Tracking,
+    id: i64,
+    sql: &str,
+    transactional: bool,
+) -> Result<i64, SchemaInstallerError> {
+    let statements = crate::sql_split::split_sql_statements(sql, database_type)?;
+    if !transactional {
         // Autocommit: the statements can't be atomic with the tracking row (M18), so the
         // success update is a separate step after they have all run.
         let elapsed_ms = pool
             .execute_migration_non_transactional(&statements)
             .await?;
-        pool.update_migration_status(migration_id, MigrationStatus::Success.as_str(), elapsed_ms)
-            .await?;
+        let success = MigrationStatus::Success.as_str();
+        match tracking {
+            Tracking::Versioned => {
+                pool.update_migration_status(id, success, elapsed_ms)
+                    .await?
+            }
+            Tracking::Repeatable => {
+                pool.update_repeatable_status(id, success, elapsed_ms)
+                    .await?
+            }
+        }
         return Ok(elapsed_ms);
     }
-    // All statements in a migration file, plus the tracking row's "success" update,
-    // commit or roll back together as one transaction - see `execute_migration_transactional`
-    // for why (BUGS_AND_GAPS H9).
-    pool.execute_migration_transactional(&statements, migration_id)
-        .await
+    // All statements in a script, plus the tracking row's "success" update, commit or roll
+    // back together as one transaction - see `execute_migration_transactional` for why
+    // (BUGS_AND_GAPS H9).
+    match tracking {
+        Tracking::Versioned => pool.execute_migration_transactional(&statements, id).await,
+        Tracking::Repeatable => pool.execute_repeatable_transactional(&statements, id).await,
+    }
 }
 
 /// Rejects, before anything is executed, any transactional migration whose script contains
@@ -640,18 +1012,107 @@ async fn execute_migration(
 /// with `executeInTransaction=false` in a `<script>.conf`.
 fn validate_migration_scripts(
     migrations: &[Migration],
+    repeatables: &[RepeatableMigration],
     database_type: &GeneratorType,
 ) -> Result<(), SchemaInstallerError> {
-    for migration in migrations.iter().filter(|m| m.transactional) {
-        let statements = crate::sql_split::split_sql_statements(&migration.sql, database_type)?;
+    let scripts = migrations
+        .iter()
+        .map(|m| {
+            (
+                format!("Migration {}", m.version),
+                &m.script_path,
+                &m.sql,
+                m.transactional,
+            )
+        })
+        .chain(repeatables.iter().map(|r| {
+            (
+                format!("Repeatable migration {}", r.name),
+                &r.script_path,
+                &r.sql,
+                r.transactional,
+            )
+        }));
+
+    for (label, script_path, sql, _) in scripts.filter(|script| script.3) {
+        let statements = crate::sql_split::split_sql_statements(sql, database_type)?;
         if let Some(statement) =
             crate::sql_split::find_transaction_control(&statements, database_type)
         {
             return Err(SchemaInstallerError::InvalidConfiguration(format!(
-                "Migration {} ({}) contains its own transaction control (`{}`), but migrations run inside a transaction managed by the installer; remove it, or set `executeInTransaction=false` in {}.conf to run the script without a wrapping transaction",
-                migration.version, migration.script_path, statement, migration.script_path
+                "{} ({}) contains its own transaction control (`{}`), but migrations run inside a transaction managed by the installer; remove it, or set `executeInTransaction=false` in {}.conf to run the script without a wrapping transaction",
+                label, script_path, statement, script_path
             )));
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn applied(status: &str, sql: &str) -> AppliedRepeatableMigration {
+        AppliedRepeatableMigration {
+            id: 1,
+            name: "v".to_string(),
+            script_path: "R__v.sql".to_string(),
+            checksum: compute_checksum(sql),
+            execution_time_ms: 0,
+            installed_at: String::new(),
+            status: status.to_string(),
+            tool_version: String::new(),
+        }
+    }
+
+    fn source(sql: &str) -> RepeatableMigration {
+        RepeatableMigration {
+            name: "v".to_string(),
+            script_path: "R__v.sql".to_string(),
+            sql: sql.to_string(),
+            transactional: true,
+        }
+    }
+
+    #[test]
+    fn repeatable_info_status_distinguishes_pending_applied_and_outdated() {
+        let s = source("select 1;");
+        assert_eq!(repeatable_info_status(None, Some(&s)), "Pending");
+        assert_eq!(
+            repeatable_info_status(Some(&applied("success", "select 1;")), Some(&s)),
+            "success"
+        );
+        assert_eq!(
+            repeatable_info_status(Some(&applied("success", "select 0;")), Some(&s)),
+            "Outdated"
+        );
+        assert_eq!(
+            repeatable_info_status(Some(&applied("failed", "select 0;")), Some(&s)),
+            "failed"
+        );
+        // Applied but the file is gone: shown as recorded.
+        assert_eq!(
+            repeatable_info_status(Some(&applied("success", "select 1;")), None),
+            "success"
+        );
+    }
+
+    #[test]
+    fn repeatable_is_pending_when_new_changed_or_not_successful() {
+        let s = source("select 1;");
+        assert!(repeatable_is_pending(&[], &s));
+        assert!(!repeatable_is_pending(
+            &[applied("success", "select 1;")],
+            &s
+        ));
+        assert!(repeatable_is_pending(
+            &[applied("success", "select 0;")],
+            &s
+        ));
+        assert!(repeatable_is_pending(&[applied("failed", "select 1;")], &s));
+        assert!(repeatable_is_pending(
+            &[applied("pending", "select 1;")],
+            &s
+        ));
+    }
 }

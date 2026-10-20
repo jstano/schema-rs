@@ -58,6 +58,56 @@ END"#
         }
     }
 
+    /// DDL for `schema_repeatable_migration`, the history table for repeatable (`R__`)
+    /// migrations. Kept apart from `schema_migration` so none of the version-ordering logic
+    /// that reads that table ever sees a row without a version. One row per repeatable,
+    /// keyed by `name` and updated in place when its script changes and re-runs.
+    pub fn repeatable_migration_ddl(database_type: &GeneratorType) -> String {
+        match database_type {
+            GeneratorType::Postgresql => r#"CREATE TABLE IF NOT EXISTS schema_repeatable_migration (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    script_path TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    execution_time_ms INT NOT NULL,
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL,
+    tool_version TEXT NOT NULL,
+    CONSTRAINT schema_repeatable_migration_name_key UNIQUE (name)
+);"#
+            .to_string(),
+            // Bounded types for the same reason as `schema_migration_ddl`: `name` is a key
+            // column, and SQL Server forbids LOB types (NVARCHAR(MAX)) there.
+            GeneratorType::SqlServer => r#"IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='schema_repeatable_migration')
+BEGIN
+  CREATE TABLE dbo.schema_repeatable_migration (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    name NVARCHAR(200) NOT NULL,
+    script_path NVARCHAR(1000) NOT NULL,
+    checksum NVARCHAR(64) NOT NULL,
+    execution_time_ms INT NOT NULL,
+    installed_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    status NVARCHAR(20) NOT NULL,
+    tool_version NVARCHAR(50) NOT NULL,
+    CONSTRAINT UQ_schema_repeatable_migration_name UNIQUE (name)
+  );
+END"#
+                .to_string(),
+            GeneratorType::Sqlite => r#"CREATE TABLE IF NOT EXISTS schema_repeatable_migration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    script_path TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    execution_time_ms INTEGER NOT NULL,
+    installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL,
+    tool_version TEXT NOT NULL,
+    UNIQUE (name)
+);"#
+            .to_string(),
+        }
+    }
+
     /// Idempotent upgrade for `schema_migration` tables created before the `description`
     /// column existed (M14): `CREATE TABLE IF NOT EXISTS` never touches an existing table.
     /// Existing rows get an empty description, which `info` falls back from to the filename.
@@ -250,5 +300,57 @@ mod tests {
         assert!(ddl.contains("ALTER COLUMN checksum NVARCHAR(64) NOT NULL"));
         assert!(ddl.contains("ALTER COLUMN status NVARCHAR(20) NOT NULL"));
         assert!(ddl.contains("ALTER COLUMN tool_version NVARCHAR(50) NOT NULL"));
+    }
+
+    #[test]
+    fn test_repeatable_migration_ddl_is_idempotent_and_unique_per_dialect() {
+        let pg = SchemaMigrationDdl::repeatable_migration_ddl(&GeneratorType::Postgresql);
+        assert!(pg.contains("CREATE TABLE IF NOT EXISTS schema_repeatable_migration"));
+        assert!(pg.contains("BIGSERIAL PRIMARY KEY"));
+        assert!(pg.contains("UNIQUE (name)"));
+
+        let ss = SchemaMigrationDdl::repeatable_migration_ddl(&GeneratorType::SqlServer);
+        assert!(ss.contains("IF NOT EXISTS"));
+        assert!(ss.contains("dbo.schema_repeatable_migration"));
+        assert!(ss.contains("UNIQUE (name)"));
+
+        let lite = SchemaMigrationDdl::repeatable_migration_ddl(&GeneratorType::Sqlite);
+        assert!(lite.contains("CREATE TABLE IF NOT EXISTS schema_repeatable_migration"));
+        assert!(lite.contains("INTEGER PRIMARY KEY AUTOINCREMENT"));
+        assert!(lite.contains("UNIQUE (name)"));
+    }
+
+    #[test]
+    fn test_repeatable_migration_ddl_has_no_version_column() {
+        for db in [
+            GeneratorType::Postgresql,
+            GeneratorType::SqlServer,
+            GeneratorType::Sqlite,
+        ] {
+            let ddl = SchemaMigrationDdl::repeatable_migration_ddl(&db);
+            assert!(
+                !ddl.contains("\n    version "),
+                "{db:?} DDL should have no version column"
+            );
+            for column in [
+                "name",
+                "script_path",
+                "checksum",
+                "execution_time_ms",
+                "installed_at",
+                "status",
+                "tool_version",
+            ] {
+                assert!(ddl.contains(column), "{db:?} DDL missing {column}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_sqlserver_repeatable_migration_ddl_has_no_lob_columns_and_uses_utc_default() {
+        let ddl = SchemaMigrationDdl::repeatable_migration_ddl(&GeneratorType::SqlServer);
+        assert!(!ddl.contains("NVARCHAR(MAX)"));
+        assert!(ddl.contains("name NVARCHAR(200)"));
+        assert!(ddl.contains("DEFAULT SYSUTCDATETIME()"));
     }
 }

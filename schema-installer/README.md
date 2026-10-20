@@ -149,6 +149,26 @@ Files follow `V{version}__{description}.sql` format; the `__{description}` part 
 - Example: `V1__create_users.sql` → "1 - create users"
 - A description-less file (e.g. `V20240115143022.sql`) is treated as having an empty description — useful with timestamp-based versions where the filename doesn't need a human-readable suffix
 
+#### Repeatable migrations (`R__`)
+
+A file named `R__{description}.sql` is a *repeatable* migration. It has no version; it is identified by its name and re-applied whenever its contents change. Use these for objects you want to redefine in place rather than version, such as views, functions and grants (`CREATE OR REPLACE ...`).
+
+```
+migrations/
+├── V1__create_users.sql
+├── V2__create_posts.sql
+├── R__01_views.sql
+└── R__02_grants.sql
+```
+
+- **When they run:** a repeatable runs if it has never been applied, or if its checksum differs from its last successful run. A changed repeatable is not a checksum error; it is simply pending again.
+- **Order:** within one `migrate`, all pending versioned migrations run first, then pending repeatables in alphabetical order by name. There is no ordering config, so control order with the filename (`R__01_...`, `R__02_...`).
+- **`--target`:** repeatables are skipped when `migrate --target <version>` is given, so a rollout stopped at a version does not run scripts written against a newer schema.
+- **Tracking:** repeatables are recorded in their own `schema_repeatable_migration` table (one row per name, updated in place), separate from `schema_migration`.
+- **`repair`:** as for versioned migrations, deletes failed rows and accepts an edited script by updating its checksum instead of re-running it.
+- **Naming:** `R__.sql`, `R_foo.sql` and `R.sql` are errors, as are duplicate names (compared case-insensitively) and names over 200 characters. `executeInTransaction=false` in a `.conf` file works the same as for versioned migrations. `U__` (undo) files are still skipped with a warning.
+- **`info`** lists repeatables after the versioned rows with `R` as the version. A repeatable whose script changed since it last ran shows as `Outdated`. **`validate`** reports a failed one or one whose script was removed, but not a changed one. **`pending-check`** exits 1 for a new or changed repeatable.
+
 ### Migration Tracking
 
 All applied migrations are recorded in the `schema_migration` table:
@@ -163,6 +183,21 @@ CREATE TABLE schema_migration (
     installed_at TIMESTAMPTZ DEFAULT now(),
     status TEXT NOT NULL,                -- success, failed, pending
     tool_version TEXT NOT NULL           -- schema-installer version
+);
+```
+
+Repeatable (`R__`) migrations are recorded separately, in `schema_repeatable_migration` (one row per name, updated in place when the script changes and re-runs):
+
+```sql
+CREATE TABLE schema_repeatable_migration (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,           -- the part of the filename after R__
+    script_path TEXT NOT NULL,
+    checksum TEXT NOT NULL,              -- SHA-256 of the last run
+    execution_time_ms INT NOT NULL,
+    installed_at TIMESTAMPTZ DEFAULT now(),
+    status TEXT NOT NULL,                -- success, failed, pending
+    tool_version TEXT NOT NULL
 );
 ```
 

@@ -1333,11 +1333,21 @@ remediation plan) is worth more than any individual fix below.
     is hard-coded in `tracking.rs` and every query in `connection.rs`); `--lock-timeout` and a
     `--force`/stale-after override for the 60 s / 600 s window (`LOCK_MAX_WAIT`,
     `STALE_PENDING_THRESHOLD` in `migrator.rs`); `clean`; `undo`; repeatable (`R__`) migrations
-    (currently skipped with a warning, see H11).
+    (skipped with a warning, see H11; since implemented, see the update below).
   - **Suggested order when picked up:** lock window + `--lock-timeout` (small, self-contained),
     standalone `baseline`, `--out-of-order`, history-table name. `clean` (destructive) and `undo`
     (a paid Flyway feature) are probably better declined and documented as out of scope;
     repeatable migrations need re-run-on-checksum-change semantics and a design decision.
+
+  **Update 2026-10-20: repeatable (`R__`) migrations implemented** (the rest of L20 stays open).
+  Design in `REPEATABLE_MIGRATIONS_PLAN.md`. They have their own `schema_repeatable_migration`
+  table (`tracking.rs`) rather than rows in `schema_migration`, so none of the version-ordering
+  logic sees them. `migrate` runs pending repeatables after the versioned ones (alphabetical;
+  skipped under `--target`); `info`, `validate`, `pending-check`, `repair` and `--dry-run` handle
+  them. Tests: `schema-installer/tests/sqlite_repeatable_tests.rs`. Also run against live
+  Postgres 17 and SQL Server (Azure SQL Edge) via the shared `tests/common/mod.rs` scenario.
+  `EmbeddedMigrationSource` has a `repeatables` field (construct it
+  with `..Default::default()`).
 - [x] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
   while closing L13). `--migrations-dir` takes one flat directory and applies every `.sql` file
   in it to whatever database is connected. Flyway handles this with `locations=db/migration/{vendor}`;

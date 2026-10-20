@@ -1,5 +1,5 @@
 use crate::error::SchemaInstallerError;
-use crate::migration::{AppliedMigration, MigrationStatus};
+use crate::migration::{AppliedMigration, AppliedRepeatableMigration, MigrationStatus};
 use crate::tracking::SchemaMigrationDdl;
 use schema_sql_generator::common::generator_type::GeneratorType;
 use sqlx::{
@@ -19,6 +19,25 @@ fn ado_specifies_encrypt(connection_string: &str) -> bool {
         pair.split_once('=')
             .is_some_and(|(key, _)| key.trim().eq_ignore_ascii_case("encrypt"))
     })
+}
+
+/// Which tracking table a shared bookkeeping operation targets. Only the operations whose SQL
+/// differs by table name alone go through this; reads and inserts, whose columns differ, have
+/// dedicated `*_repeatable*` methods instead.
+#[derive(Clone, Copy)]
+enum HistoryTable {
+    Migration,
+    RepeatableMigration,
+}
+
+impl HistoryTable {
+    /// A fixed string from this enum - never user input - so it is safe to splice into SQL.
+    fn name(self) -> &'static str {
+        match self {
+            HistoryTable::Migration => "schema_migration",
+            HistoryTable::RepeatableMigration => "schema_repeatable_migration",
+        }
+    }
 }
 
 pub enum AnyPool {
@@ -51,6 +70,19 @@ type SqliteMigrationRow = (
     String,
     String,
 );
+
+/// Row shapes of `schema_repeatable_migration`, as for the types above.
+type PostgresRepeatableRow = (
+    i64,
+    String,
+    String,
+    String,
+    i32,
+    chrono::DateTime<chrono::Utc>,
+    String,
+    String,
+);
+type SqliteRepeatableRow = (i64, String, String, String, i64, String, String, String);
 
 impl AnyPool {
     pub async fn connect(
@@ -189,6 +221,11 @@ impl AnyPool {
             }
         }
 
+        // Repeatable migrations are tracked in their own table (see
+        // `SchemaMigrationDdl::repeatable_migration_ddl`).
+        self.execute_sql(&SchemaMigrationDdl::repeatable_migration_ddl(database_type))
+            .await?;
+
         Ok(())
     }
 
@@ -213,8 +250,9 @@ impl AnyPool {
     /// at all - the caller then records `"failed"` as a separate, deliberately
     /// non-atomic `update_migration_status` call, since a failed attempt has no DDL
     /// side effect it needs to stay atomic with.
-    pub async fn execute_migration_transactional(
+    async fn execute_transactional_in(
         &self,
+        table: HistoryTable,
         statements: &[String],
         migration_id: i64,
     ) -> Result<i64, SchemaInstallerError> {
@@ -232,13 +270,16 @@ impl AnyPool {
                         .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 }
                 let elapsed_ms = start.elapsed().as_millis() as i64;
-                let rows_affected = sqlx::query("UPDATE schema_migration SET status = 'success', execution_time_ms = $1 WHERE id = $2")
-                    .bind(elapsed_ms)
-                    .bind(migration_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
-                    .rows_affected();
+                let rows_affected = sqlx::query(&format!(
+                    "UPDATE {} SET status = 'success', execution_time_ms = $1 WHERE id = $2",
+                    table.name()
+                ))
+                .bind(elapsed_ms)
+                .bind(migration_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                .rows_affected();
                 if rows_affected == 0 {
                     // `tx` drops here without a `commit()`, rolling back the DDL along
                     // with it - see the "no tracking row found" comment on
@@ -266,13 +307,16 @@ impl AnyPool {
                         .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?;
                 }
                 let elapsed_ms = start.elapsed().as_millis() as i64;
-                let rows_affected = sqlx::query("UPDATE schema_migration SET status = 'success', execution_time_ms = ? WHERE id = ?")
-                    .bind(elapsed_ms)
-                    .bind(migration_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
-                    .rows_affected();
+                let rows_affected = sqlx::query(&format!(
+                    "UPDATE {} SET status = 'success', execution_time_ms = ? WHERE id = ?",
+                    table.name()
+                ))
+                .bind(elapsed_ms)
+                .bind(migration_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| SchemaInstallerError::Execution(e.to_string()))?
+                .rows_affected();
                 if rows_affected == 0 {
                     return Err(SchemaInstallerError::Database(format!(
                         "failed to record migration status as 'success': no tracking row found for id {} (it may have been removed by a concurrent `repair` run)",
@@ -316,7 +360,7 @@ impl AnyPool {
                 let elapsed_ms = start.elapsed().as_millis() as i64;
                 let rows_affected: u64 = match client
                     .execute(
-                        "UPDATE schema_migration SET status = 'success', execution_time_ms = @P1 WHERE id = @P2",
+                        format!("UPDATE {} SET status = 'success', execution_time_ms = @P1 WHERE id = @P2", table.name()),
                         &[&(elapsed_ms as i32), &migration_id],
                     )
                     .await
@@ -645,8 +689,9 @@ impl AnyPool {
         }
     }
 
-    pub async fn update_migration_status(
+    async fn update_status_in(
         &self,
+        table: HistoryTable,
         id: i64,
         status: &str,
         execution_time_ms: i64,
@@ -658,9 +703,10 @@ impl AnyPool {
         // really did apply go unrecorded, so `migrate()` would treat it as still
         // pending and try to re-apply it next time. Surface that as a loud error instead.
         let rows_affected = match self {
-            AnyPool::Postgresql(pool) => sqlx::query(
-                "UPDATE schema_migration SET status = $1, execution_time_ms = $2 WHERE id = $3",
-            )
+            AnyPool::Postgresql(pool) => sqlx::query(&format!(
+                "UPDATE {} SET status = $1, execution_time_ms = $2 WHERE id = $3",
+                table.name()
+            ))
             .bind(status)
             .bind(execution_time_ms)
             .bind(id)
@@ -668,9 +714,10 @@ impl AnyPool {
             .await
             .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
             .rows_affected(),
-            AnyPool::Sqlite(pool) => sqlx::query(
-                "UPDATE schema_migration SET status = ?, execution_time_ms = ? WHERE id = ?",
-            )
+            AnyPool::Sqlite(pool) => sqlx::query(&format!(
+                "UPDATE {} SET status = ?, execution_time_ms = ? WHERE id = ?",
+                table.name()
+            ))
             .bind(status)
             .bind(execution_time_ms)
             .bind(id)
@@ -682,7 +729,10 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 client
                     .execute(
-                        "UPDATE schema_migration SET status = @P1, execution_time_ms = @P2 WHERE id = @P3",
+                        format!(
+                            "UPDATE {} SET status = @P1, execution_time_ms = @P2 WHERE id = @P3",
+                            table.name()
+                        ),
                         &[&status, &(execution_time_ms as i32), &id],
                     )
                     .await
@@ -703,31 +753,33 @@ impl AnyPool {
         Ok(())
     }
 
-    pub async fn delete_failed_migrations(&self) -> Result<u64, SchemaInstallerError> {
+    async fn delete_failed_in(&self, table: HistoryTable) -> Result<u64, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                let rows_affected = sqlx::query("DELETE FROM schema_migration WHERE status = $1")
-                    .bind(MigrationStatus::Failed.as_str())
-                    .execute(pool)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
-                    .rows_affected();
+                let rows_affected =
+                    sqlx::query(&format!("DELETE FROM {} WHERE status = $1", table.name()))
+                        .bind(MigrationStatus::Failed.as_str())
+                        .execute(pool)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                        .rows_affected();
                 Ok(rows_affected)
             }
             AnyPool::Sqlite(pool) => {
-                let rows_affected = sqlx::query("DELETE FROM schema_migration WHERE status = ?")
-                    .bind(MigrationStatus::Failed.as_str())
-                    .execute(pool)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
-                    .rows_affected();
+                let rows_affected =
+                    sqlx::query(&format!("DELETE FROM {} WHERE status = ?", table.name()))
+                        .bind(MigrationStatus::Failed.as_str())
+                        .execute(pool)
+                        .await
+                        .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                        .rows_affected();
                 Ok(rows_affected)
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
                 let result = client
                     .execute(
-                        "DELETE FROM schema_migration WHERE status = @P1",
+                        format!("DELETE FROM {} WHERE status = @P1", table.name()),
                         &[&MigrationStatus::Failed.as_str()],
                     )
                     .await
@@ -743,15 +795,17 @@ impl AnyPool {
     /// that window means the owning process crashed or was killed mid-migration and
     /// never got to mark it "success"/"failed", which would otherwise wedge every future
     /// `migrate()` call behind the lock-wait timeout forever with no way to recover.
-    pub async fn delete_stale_pending_migrations(
+    async fn delete_stale_pending_in(
         &self,
+        table: HistoryTable,
         older_than_seconds: i64,
     ) -> Result<u64, SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                let rows_affected = sqlx::query(
-                    "DELETE FROM schema_migration WHERE status = $1 AND installed_at < now() - ($2 || ' seconds')::interval",
-                )
+                let rows_affected = sqlx::query(&format!(
+                    "DELETE FROM {} WHERE status = $1 AND installed_at < now() - ($2 || ' seconds')::interval",
+                    table.name()
+                ))
                 .bind(MigrationStatus::Pending.as_str())
                 .bind(older_than_seconds.to_string())
                 .execute(pool)
@@ -761,9 +815,10 @@ impl AnyPool {
                 Ok(rows_affected)
             }
             AnyPool::Sqlite(pool) => {
-                let rows_affected = sqlx::query(
-                    "DELETE FROM schema_migration WHERE status = ? AND installed_at < datetime('now', '-' || ? || ' seconds')",
-                )
+                let rows_affected = sqlx::query(&format!(
+                    "DELETE FROM {} WHERE status = ? AND installed_at < datetime('now', '-' || ? || ' seconds')",
+                    table.name()
+                ))
                 .bind(MigrationStatus::Pending.as_str())
                 .bind(older_than_seconds)
                 .execute(pool)
@@ -776,7 +831,7 @@ impl AnyPool {
                 let mut client = client_mutex.lock().await;
                 let result = client
                     .execute(
-                        "DELETE FROM schema_migration WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, SYSUTCDATETIME())",
+                        format!("DELETE FROM {} WHERE status = @P1 AND installed_at < DATEADD(second, -@P2, SYSUTCDATETIME())", table.name()),
                         &[&MigrationStatus::Pending.as_str(), &(older_than_seconds as i32)],
                     )
                     .await
@@ -831,35 +886,42 @@ impl AnyPool {
         }
     }
 
-    pub async fn update_migration_checksum(
+    async fn update_checksum_in(
         &self,
+        table: HistoryTable,
         id: i64,
         checksum: &str,
     ) -> Result<(), SchemaInstallerError> {
         match self {
             AnyPool::Postgresql(pool) => {
-                sqlx::query("UPDATE schema_migration SET checksum = $1 WHERE id = $2")
-                    .bind(checksum)
-                    .bind(id)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                sqlx::query(&format!(
+                    "UPDATE {} SET checksum = $1 WHERE id = $2",
+                    table.name()
+                ))
+                .bind(checksum)
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
             }
             AnyPool::Sqlite(pool) => {
-                sqlx::query("UPDATE schema_migration SET checksum = ? WHERE id = ?")
-                    .bind(checksum)
-                    .bind(id)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                sqlx::query(&format!(
+                    "UPDATE {} SET checksum = ? WHERE id = ?",
+                    table.name()
+                ))
+                .bind(checksum)
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
                 Ok(())
             }
             AnyPool::SqlServer(client_mutex) => {
                 let mut client = client_mutex.lock().await;
                 client
                     .execute(
-                        "UPDATE schema_migration SET checksum = @P1 WHERE id = @P2",
+                        format!("UPDATE {} SET checksum = @P1 WHERE id = @P2", table.name()),
                         &[&checksum, &id],
                     )
                     .await
@@ -867,6 +929,340 @@ impl AnyPool {
                 Ok(())
             }
         }
+    }
+}
+
+/// Versioned (`schema_migration`) entry points over the shared `*_in` helpers, followed by the
+/// repeatable (`schema_repeatable_migration`) equivalents.
+impl AnyPool {
+    pub async fn execute_migration_transactional(
+        &self,
+        statements: &[String],
+        migration_id: i64,
+    ) -> Result<i64, SchemaInstallerError> {
+        self.execute_transactional_in(HistoryTable::Migration, statements, migration_id)
+            .await
+    }
+
+    pub async fn update_migration_status(
+        &self,
+        id: i64,
+        status: &str,
+        execution_time_ms: i64,
+    ) -> Result<(), SchemaInstallerError> {
+        self.update_status_in(HistoryTable::Migration, id, status, execution_time_ms)
+            .await
+    }
+
+    pub async fn delete_failed_migrations(&self) -> Result<u64, SchemaInstallerError> {
+        self.delete_failed_in(HistoryTable::Migration).await
+    }
+
+    pub async fn delete_stale_pending_migrations(
+        &self,
+        older_than_seconds: i64,
+    ) -> Result<u64, SchemaInstallerError> {
+        self.delete_stale_pending_in(HistoryTable::Migration, older_than_seconds)
+            .await
+    }
+
+    pub async fn update_migration_checksum(
+        &self,
+        id: i64,
+        checksum: &str,
+    ) -> Result<(), SchemaInstallerError> {
+        self.update_checksum_in(HistoryTable::Migration, id, checksum)
+            .await
+    }
+
+    /// `execute_migration_transactional` for a repeatable: the statements and the
+    /// `schema_repeatable_migration` row's `"success"` update commit or roll back together.
+    pub async fn execute_repeatable_transactional(
+        &self,
+        statements: &[String],
+        repeatable_id: i64,
+    ) -> Result<i64, SchemaInstallerError> {
+        self.execute_transactional_in(HistoryTable::RepeatableMigration, statements, repeatable_id)
+            .await
+    }
+
+    pub async fn update_repeatable_status(
+        &self,
+        id: i64,
+        status: &str,
+        execution_time_ms: i64,
+    ) -> Result<(), SchemaInstallerError> {
+        self.update_status_in(
+            HistoryTable::RepeatableMigration,
+            id,
+            status,
+            execution_time_ms,
+        )
+        .await
+    }
+
+    pub async fn delete_failed_repeatables(&self) -> Result<u64, SchemaInstallerError> {
+        self.delete_failed_in(HistoryTable::RepeatableMigration)
+            .await
+    }
+
+    pub async fn delete_stale_pending_repeatables(
+        &self,
+        older_than_seconds: i64,
+    ) -> Result<u64, SchemaInstallerError> {
+        self.delete_stale_pending_in(HistoryTable::RepeatableMigration, older_than_seconds)
+            .await
+    }
+
+    pub async fn update_repeatable_checksum(
+        &self,
+        id: i64,
+        checksum: &str,
+    ) -> Result<(), SchemaInstallerError> {
+        self.update_checksum_in(HistoryTable::RepeatableMigration, id, checksum)
+            .await
+    }
+
+    pub async fn get_applied_repeatables(
+        &self,
+    ) -> Result<Vec<AppliedRepeatableMigration>, SchemaInstallerError> {
+        const COLUMNS: &str = "SELECT id, name, script_path, checksum, execution_time_ms, installed_at, status, tool_version FROM schema_repeatable_migration ORDER BY id";
+        match self {
+            AnyPool::Postgresql(pool) => {
+                let rows: Vec<PostgresRepeatableRow> = sqlx::query_as(COLUMNS)
+                    .fetch_all(pool)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(rows
+                    .into_iter()
+                    .map(
+                        |(
+                            id,
+                            name,
+                            script_path,
+                            checksum,
+                            execution_time_ms,
+                            installed_at,
+                            status,
+                            tool_version,
+                        )| AppliedRepeatableMigration {
+                            id,
+                            name,
+                            script_path,
+                            checksum,
+                            execution_time_ms: execution_time_ms as i64,
+                            installed_at: installed_at.to_rfc3339(),
+                            status,
+                            tool_version,
+                        },
+                    )
+                    .collect())
+            }
+            AnyPool::Sqlite(pool) => {
+                let rows: Vec<SqliteRepeatableRow> = sqlx::query_as(COLUMNS)
+                    .fetch_all(pool)
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+                Ok(rows
+                    .into_iter()
+                    .map(
+                        |(
+                            id,
+                            name,
+                            script_path,
+                            checksum,
+                            execution_time_ms,
+                            installed_at,
+                            status,
+                            tool_version,
+                        )| AppliedRepeatableMigration {
+                            id,
+                            name,
+                            script_path,
+                            checksum,
+                            execution_time_ms,
+                            installed_at,
+                            status,
+                            tool_version,
+                        },
+                    )
+                    .collect())
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                let results = client
+                    .query(COLUMNS, &[])
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+
+                let missing =
+                    |column: &str| SchemaInstallerError::Database(format!("Missing {}", column));
+                let mut repeatables = Vec::new();
+                for row in results
+                    .into_first_result()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                {
+                    let id: i64 = row.get(0).ok_or_else(|| missing("id"))?;
+                    let name: &str = row.get(1).ok_or_else(|| missing("name"))?;
+                    let script_path: &str = row.get(2).ok_or_else(|| missing("script_path"))?;
+                    let checksum: &str = row.get(3).ok_or_else(|| missing("checksum"))?;
+                    let execution_time_ms: i32 =
+                        row.get(4).ok_or_else(|| missing("execution_time_ms"))?;
+                    // Naive `DATETIME2`, already UTC - see `get_applied_migrations`.
+                    let installed_at: chrono::NaiveDateTime =
+                        row.get(5).ok_or_else(|| missing("installed_at"))?;
+                    let status: &str = row.get(6).ok_or_else(|| missing("status"))?;
+                    let tool_version: &str = row.get(7).ok_or_else(|| missing("tool_version"))?;
+
+                    repeatables.push(AppliedRepeatableMigration {
+                        id,
+                        name: name.to_string(),
+                        script_path: script_path.to_string(),
+                        checksum: checksum.to_string(),
+                        execution_time_ms: execution_time_ms as i64,
+                        installed_at: installed_at.and_utc().to_rfc3339(),
+                        status: status.to_string(),
+                        tool_version: tool_version.to_string(),
+                    });
+                }
+                Ok(repeatables)
+            }
+        }
+    }
+
+    /// Inserts a repeatable's tracking row (normally `"pending"`), returning its id. The
+    /// `UNIQUE (name)` constraint is the mutual exclusion between concurrent instances, so a
+    /// collision is reported as `ConcurrentMigrationDetected`, like `insert_migration`.
+    pub async fn insert_repeatable(
+        &self,
+        name: &str,
+        script_path: &str,
+        checksum: &str,
+        execution_time_ms: i64,
+        status: &str,
+        tool_version: &str,
+    ) -> Result<i64, SchemaInstallerError> {
+        match self {
+            AnyPool::Postgresql(pool) => {
+                let row: (i64,) = sqlx::query_as(
+                    "INSERT INTO schema_repeatable_migration (name, script_path, checksum, execution_time_ms, status, tool_version) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+                )
+                .bind(name)
+                .bind(script_path)
+                .bind(checksum)
+                .bind(execution_time_ms)
+                .bind(status)
+                .bind(tool_version)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| map_insert_error(e, name))?;
+                Ok(row.0)
+            }
+            AnyPool::Sqlite(pool) => {
+                let result = sqlx::query(
+                    "INSERT INTO schema_repeatable_migration (name, script_path, checksum, execution_time_ms, status, tool_version) VALUES (?, ?, ?, ?, ?, ?)",
+                )
+                .bind(name)
+                .bind(script_path)
+                .bind(checksum)
+                .bind(execution_time_ms)
+                .bind(status)
+                .bind(tool_version)
+                .execute(pool)
+                .await
+                .map_err(|e| map_insert_error(e, name))?;
+                Ok(result.last_insert_rowid())
+            }
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "INSERT INTO schema_repeatable_migration (name, script_path, checksum, execution_time_ms, status, tool_version) VALUES (@P1, @P2, @P3, @P4, @P5, @P6)",
+                        &[&name, &script_path, &checksum, &(execution_time_ms as i32), &status, &tool_version],
+                    )
+                    .await
+                    .map_err(|e| map_tiberius_insert_error(e, name))?;
+
+                let rows = client
+                    .query(
+                        "SELECT id FROM schema_repeatable_migration WHERE name = @P1",
+                        &[&name],
+                    )
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .into_first_result()
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?;
+
+                rows.into_iter()
+                    .next()
+                    .and_then(|row| row.get::<i64, _>(0))
+                    .ok_or_else(|| {
+                        SchemaInstallerError::Database("No inserted row found".to_string())
+                    })
+            }
+        }
+    }
+
+    /// Atomically claims a changed repeatable for re-execution: flips its `"success"` row back
+    /// to `"pending"` with the new checksum, but only if the row still carries
+    /// `old_checksum` and is still `"success"`. Returns `true` if this caller won the claim.
+    /// `false` means another process got there first (or already finished the same change), so
+    /// the caller must re-read the row rather than run the script. `installed_at` is reset so
+    /// the stale-pending cleanup measures from the claim, not from the previous run.
+    pub async fn repend_repeatable(
+        &self,
+        id: i64,
+        old_checksum: &str,
+        new_checksum: &str,
+        script_path: &str,
+        tool_version: &str,
+    ) -> Result<bool, SchemaInstallerError> {
+        let pending = MigrationStatus::Pending.as_str();
+        let success = MigrationStatus::Success.as_str();
+        let rows_affected: u64 = match self {
+            AnyPool::Postgresql(pool) => sqlx::query(
+                "UPDATE schema_repeatable_migration SET status = $1, checksum = $2, script_path = $3, tool_version = $4, execution_time_ms = 0, installed_at = now() WHERE id = $5 AND checksum = $6 AND status = $7",
+            )
+            .bind(pending)
+            .bind(new_checksum)
+            .bind(script_path)
+            .bind(tool_version)
+            .bind(id)
+            .bind(old_checksum)
+            .bind(success)
+            .execute(pool)
+            .await
+            .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+            .rows_affected(),
+            AnyPool::Sqlite(pool) => sqlx::query(
+                "UPDATE schema_repeatable_migration SET status = ?, checksum = ?, script_path = ?, tool_version = ?, execution_time_ms = 0, installed_at = CURRENT_TIMESTAMP WHERE id = ? AND checksum = ? AND status = ?",
+            )
+            .bind(pending)
+            .bind(new_checksum)
+            .bind(script_path)
+            .bind(tool_version)
+            .bind(id)
+            .bind(old_checksum)
+            .bind(success)
+            .execute(pool)
+            .await
+            .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+            .rows_affected(),
+            AnyPool::SqlServer(client_mutex) => {
+                let mut client = client_mutex.lock().await;
+                client
+                    .execute(
+                        "UPDATE schema_repeatable_migration SET status = @P1, checksum = @P2, script_path = @P3, tool_version = @P4, execution_time_ms = 0, installed_at = SYSUTCDATETIME() WHERE id = @P5 AND checksum = @P6 AND status = @P7",
+                        &[&pending, &new_checksum, &script_path, &tool_version, &id, &old_checksum, &success],
+                    )
+                    .await
+                    .map_err(|e| SchemaInstallerError::Database(e.to_string()))?
+                    .total()
+            }
+        };
+        Ok(rows_affected == 1)
     }
 }
 

@@ -136,6 +136,7 @@ async fn test_postgres_failed_migration_rolls_back_partial_statements() {
     };
     let source = Box::new(EmbeddedMigrationSource {
         migrations: vec![bad_migration],
+        ..Default::default()
     });
 
     let result = Migrator::migrate(&config, source).await;
@@ -159,4 +160,32 @@ async fn test_postgres_failed_migration_rolls_back_partial_statements() {
         count, 0,
         "widgets table should have been rolled back after the migration failed"
     );
+}
+
+mod common;
+
+#[tokio::test]
+async fn test_postgres_repeatable_migrations() {
+    if !docker_tests_enabled() {
+        eprintln!("skipping test_postgres_repeatable_migrations: set RUN_DOCKER_TESTS=1 to run");
+        return;
+    }
+
+    let postgres = Postgres::default()
+        .start()
+        .await
+        .expect("postgres container should start");
+    let port = postgres
+        .get_host_port_ipv4(5432)
+        .await
+        .expect("get mapped port");
+    let connection_string = format!("postgresql://postgres:postgres@localhost:{}/postgres", port);
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Postgresql)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    common::run_repeatable_scenario(&config, common::LogReader::Postgres(connection_string)).await;
 }

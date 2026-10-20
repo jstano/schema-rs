@@ -192,20 +192,22 @@ The `schema-installer` crate provides a Flyway-style migration system.
 
 **Core Concepts:**
 - Migrations tracked in `schema_migration` table with SHA-256 checksums
+- Repeatable `R__{description}.sql` migrations are tracked in a separate `schema_repeatable_migration` table (one row per name, `UNIQUE (name)`, updated in place). They run after all versioned migrations, alphabetically, whenever new or their checksum changed; `--target` skips them; `repair` realigns their checksums (Flyway behavior)
 - Versions use semantic numbering (1, 1.1, 2.0 sorted numerically)
 - Four commands: `migrate`, `info`, `validate`, `repair`
 - Supports SQL Server `GO` delimiter, PostgreSQL `;`, SQLite `;`
 
 **Migration Files:**
 - Format: `V{version}__{description}.sql` (e.g., `V1__create_users.sql`)
+- Repeatable: `R__{description}.sql` (e.g., `R__refresh_views.sql`); malformed `R` names and duplicates are errors, `U__` files are skipped with a warning
 - Loaded from directory, sorted by version, applied in order
 - Checksums prevent tampering or accidental modifications
 
 **Key Files:**
-- `migration.rs` - Migration types, MigrationSource trait, checksum computation
+- `migration.rs` - Migration and RepeatableMigration types, MigrationSource trait (`migrations()` + `repeatable_migrations()`), checksum computation
 - `migrator.rs` - migrate/info/validate/repair operations
-- `connection.rs` - `schema_migration` table methods
-- `tracking.rs` - DDL for single schema_migration table (replaces old tracking tables)
+- `connection.rs` - `schema_migration` and `schema_repeatable_migration` table methods (shared bookkeeping goes through a private `HistoryTable` enum)
+- `tracking.rs` - DDL for the `schema_migration` table (replaces old tracking tables) and the separate `schema_repeatable_migration` table
 
 ### Database-Specific Behaviors
 

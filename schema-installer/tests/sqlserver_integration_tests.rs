@@ -89,3 +89,31 @@ async fn test_sqlserver_validate_detects_checksum_mismatch() {
         .await
         .expect("validate should succeed");
 }
+
+mod common;
+
+#[tokio::test]
+#[ignore]
+async fn test_sqlserver_repeatable_migrations() {
+    let mssql = MssqlServer::default()
+        .start()
+        .await
+        .expect("mssql container should start");
+    let port = mssql
+        .get_host_port_ipv4(1433)
+        .await
+        .expect("get mapped port");
+
+    let connection_string = format!(
+        "Server=localhost,{};Database=master;User Id=sa;Password=yourStrong(!)Password;TrustServerCertificate=true;",
+        port
+    );
+
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::SqlServer)
+        .connection_string(connection_string.clone())
+        .build()
+        .expect("valid config");
+
+    common::run_repeatable_scenario(&config, common::LogReader::SqlServer(connection_string)).await;
+}

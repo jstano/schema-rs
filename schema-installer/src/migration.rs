@@ -23,12 +23,48 @@ pub struct Migration {
     pub transactional: bool,
 }
 
+/// A Flyway-style repeatable migration (`R__{description}.sql`). It has no version: it is
+/// identified by `name` and re-applied whenever its checksum changes, after all versioned
+/// migrations. Tracked in its own table, separately from [`Migration`] (see
+/// REPEATABLE_MIGRATIONS_PLAN.md).
+#[derive(Debug, Clone)]
+pub struct RepeatableMigration {
+    /// The part of the filename between `R__` and `.sql`, exactly as written. This is the
+    /// unique key the migration is tracked under.
+    pub name: String,
+    pub script_path: String,
+    pub sql: String,
+    /// Same meaning as [`Migration::transactional`].
+    pub transactional: bool,
+}
+
+impl RepeatableMigration {
+    /// Human-readable form of `name` (underscores shown as spaces), mirroring how
+    /// versioned migration descriptions are derived.
+    pub fn description(&self) -> String {
+        self.name.replace('_', " ")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppliedMigration {
     pub id: i64,
     pub version: String,
     pub script_path: String,
     pub description: String,
+    pub checksum: String,
+    pub execution_time_ms: i64,
+    pub installed_at: String,
+    pub status: String,
+    pub tool_version: String,
+}
+
+/// A row of `schema_repeatable_migration`: the last recorded run of a repeatable migration.
+#[derive(Debug, Clone)]
+pub struct AppliedRepeatableMigration {
+    pub id: i64,
+    pub name: String,
+    pub script_path: String,
     pub checksum: String,
     pub execution_time_ms: i64,
     pub installed_at: String,
@@ -68,16 +104,25 @@ impl std::str::FromStr for MigrationStatus {
 
 pub trait MigrationSource: Send + Sync {
     fn migrations(&self) -> Result<Vec<Migration>, SchemaInstallerError>;
+
+    /// Repeatable (`R__`) migrations, sorted by name. Sources that don't support them
+    /// return none.
+    fn repeatable_migrations(&self) -> Result<Vec<RepeatableMigration>, SchemaInstallerError> {
+        Ok(Vec::new())
+    }
 }
 
 pub struct DirectoryMigrationSource {
     pub path: PathBuf,
 }
 
-impl MigrationSource for DirectoryMigrationSource {
-    fn migrations(&self) -> Result<Vec<Migration>, SchemaInstallerError> {
-        let mut migrations = Vec::new();
+/// `.sql` files as `(filename, path)`, and subdirectories, found by a directory scan.
+type DirectoryScan = (Vec<(String, PathBuf)>, Vec<PathBuf>);
 
+impl DirectoryMigrationSource {
+    /// Validates the directory and returns its regular `.sql` files as `(filename, path)`,
+    /// plus any subdirectories (which are never scanned).
+    fn scan(&self) -> Result<DirectoryScan, SchemaInstallerError> {
         if !self.path.exists() {
             return Err(SchemaInstallerError::InvalidConfiguration(format!(
                 "Migrations directory does not exist: {:?}",
@@ -92,19 +137,14 @@ impl MigrationSource for DirectoryMigrationSource {
             )));
         }
 
-        let entries = std::fs::read_dir(&self.path).map_err(SchemaInstallerError::Io)?;
+        let mut files = Vec::new();
+        let mut subdirs = Vec::new();
 
-        for entry in entries {
-            let entry = entry.map_err(SchemaInstallerError::Io)?;
-            let path = entry.path();
+        for entry in std::fs::read_dir(&self.path).map_err(SchemaInstallerError::Io)? {
+            let path = entry.map_err(SchemaInstallerError::Io)?.path();
 
             if path.is_dir() {
-                // Deliberately flat (L13): one directory sorted by version shows the whole
-                // history at a glance. Warn rather than silently ignore nested migrations.
-                eprintln!(
-                    "Warning: skipping subdirectory {} (migration subdirectories are not scanned)",
-                    path.display()
-                );
+                subdirs.push(path);
                 continue;
             }
 
@@ -120,7 +160,34 @@ impl MigrationSource for DirectoryMigrationSource {
                 continue;
             }
 
-            let (version, description) = match parse_migration_filename(filename)? {
+            files.push((filename.to_string(), path));
+        }
+
+        Ok((files, subdirs))
+    }
+}
+
+impl MigrationSource for DirectoryMigrationSource {
+    fn migrations(&self) -> Result<Vec<Migration>, SchemaInstallerError> {
+        let mut migrations = Vec::new();
+        let (files, subdirs) = self.scan()?;
+
+        for subdir in subdirs {
+            // Deliberately flat (L13): one directory sorted by version shows the whole
+            // history at a glance. Warn rather than silently ignore nested migrations.
+            eprintln!(
+                "Warning: skipping subdirectory {} (migration subdirectories are not scanned)",
+                subdir.display()
+            );
+        }
+
+        for (filename, path) in files {
+            // Repeatable migrations are returned by `repeatable_migrations`.
+            if is_repeatable_filename(&filename) {
+                continue;
+            }
+
+            let (version, description) = match parse_migration_filename(&filename)? {
                 Some(parsed) => parsed,
                 None => continue,
             };
@@ -130,12 +197,10 @@ impl MigrationSource for DirectoryMigrationSource {
             // Just the filename, not the absolute path: the path differs between dev, CI and
             // prod for identical migrations, so recording it made `schema_migration` rows
             // environment-specific (M13).
-            let script_path = filename.to_string();
-
             migrations.push(Migration {
                 version,
                 description,
-                script_path,
+                script_path: filename,
                 sql,
                 transactional,
             });
@@ -146,6 +211,32 @@ impl MigrationSource for DirectoryMigrationSource {
         check_no_duplicate_versions(&migrations)?;
 
         Ok(migrations)
+    }
+
+    fn repeatable_migrations(&self) -> Result<Vec<RepeatableMigration>, SchemaInstallerError> {
+        let mut repeatables = Vec::new();
+        let (files, _) = self.scan()?;
+
+        for (filename, path) in files {
+            let Some(name) = parse_repeatable_filename(&filename)? else {
+                continue;
+            };
+            let sql = std::fs::read_to_string(&path).map_err(SchemaInstallerError::Io)?;
+            let transactional = read_migration_config(&path)?;
+
+            repeatables.push(RepeatableMigration {
+                name,
+                script_path: filename,
+                sql,
+                transactional,
+            });
+        }
+
+        repeatables.sort_by(|a, b| a.name.cmp(&b.name));
+
+        check_no_duplicate_repeatables(&repeatables)?;
+
+        Ok(repeatables)
     }
 }
 
@@ -205,8 +296,12 @@ fn parse_migration_config(text: &str) -> Result<bool, String> {
     Ok(transactional)
 }
 
+/// A source of migrations held in memory, e.g. compiled in with `include_str!`. Construct it
+/// with `..Default::default()` so new fields don't break the literal.
+#[derive(Default)]
 pub struct EmbeddedMigrationSource {
     pub migrations: Vec<Migration>,
+    pub repeatables: Vec<RepeatableMigration>,
 }
 
 impl MigrationSource for EmbeddedMigrationSource {
@@ -214,6 +309,16 @@ impl MigrationSource for EmbeddedMigrationSource {
         check_no_duplicate_versions(&self.migrations)?;
 
         Ok(self.migrations.clone())
+    }
+
+    fn repeatable_migrations(&self) -> Result<Vec<RepeatableMigration>, SchemaInstallerError> {
+        check_no_duplicate_repeatables(&self.repeatables)?;
+
+        // Sorted here rather than trusting the caller's order, like the directory source:
+        // repeatables run in name order.
+        let mut repeatables = self.repeatables.clone();
+        repeatables.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(repeatables)
     }
 }
 
@@ -317,8 +422,9 @@ fn check_no_duplicate_versions(migrations: &[Migration]) -> Result<(), SchemaIns
 /// is optional, so `V{version}.sql` is also valid and parses with an empty description.
 /// Returns `Ok(None)` for a file that isn't a versioned migration at all (its name doesn't
 /// start with `V`/`v`) -
-/// e.g. a Flyway-style repeatable (`R__...`) or undo (`U__...`) migration, or any other
-/// file someone dropped into the directory - so the caller can skip it with a warning
+/// e.g. an undo (`U__...`) migration, or any other file someone dropped into the directory
+/// (repeatable `R__...` files are routed to [`parse_repeatable_filename`] by the directory
+/// source before this is called) - so the caller can skip it with a warning
 /// instead of aborting the entire directory scan over a file this tool was never going
 /// to manage (H11). A file that *does* start with `V` but is otherwise malformed still
 /// hard-errors, since that shape is far more likely to be a typo in a real migration
@@ -401,6 +507,89 @@ pub(crate) fn parse_migration_filename(
     }
 
     Ok(Some((version, description)))
+}
+
+/// Longest repeatable name that fits `schema_repeatable_migration.name` (`NVARCHAR(200)` on
+/// SQL Server, where it is a unique-key column).
+const MAX_REPEATABLE_NAME_LEN: usize = 200;
+
+/// Whether `filename` is *meant* to be a repeatable migration: `R__...` (any case), or the
+/// near-misses `R.sql` / `R_...` that [`parse_repeatable_filename`] rejects with a clear
+/// error instead of silently skipping. Deliberately narrow so an unrelated file like
+/// `readme.sql` is not claimed.
+fn is_repeatable_filename(filename: &str) -> bool {
+    let lower = filename.to_lowercase();
+    lower == "r.sql" || lower.starts_with("r_")
+}
+
+/// Parses an `R__{name}.sql` filename into its name. Returns `Ok(None)` when the file isn't
+/// repeatable-shaped at all (see [`is_repeatable_filename`]); a repeatable-shaped file that is
+/// malformed (`R.sql`, `R_foo.sql`, `R__.sql`) is a hard error rather than a silent skip,
+/// since it is almost certainly a typo in a real migration.
+pub(crate) fn parse_repeatable_filename(
+    filename: &str,
+) -> Result<Option<String>, SchemaInstallerError> {
+    if !is_repeatable_filename(filename) {
+        return Ok(None);
+    }
+
+    let stem = filename.strip_suffix(".sql").ok_or_else(|| {
+        SchemaInstallerError::InvalidConfiguration(format!(
+            "File does not end with .sql: {}",
+            filename
+        ))
+    })?;
+
+    let name = stem
+        .get(..3)
+        .filter(|prefix| *prefix == "R__" || *prefix == "r__");
+    let name = match name {
+        Some(_) => &stem[3..],
+        None => {
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Repeatable migration filenames must look like R__{{description}}.sql: {}",
+                filename
+            )));
+        }
+    };
+
+    if name.trim().is_empty() {
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Repeatable migration description cannot be empty: {}",
+            filename
+        )));
+    }
+
+    if name.chars().count() > MAX_REPEATABLE_NAME_LEN {
+        return Err(SchemaInstallerError::InvalidConfiguration(format!(
+            "Repeatable migration description is longer than {} characters: {}",
+            MAX_REPEATABLE_NAME_LEN, filename
+        )));
+    }
+
+    Ok(Some(name.to_string()))
+}
+
+/// Hard-errors on repeatable migrations whose names collide, ignoring case (e.g.
+/// `R__views.sql` and `r__Views.sql`), mirroring [`check_no_duplicate_versions`].
+fn check_no_duplicate_repeatables(
+    repeatables: &[RepeatableMigration],
+) -> Result<(), SchemaInstallerError> {
+    let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+
+    for repeatable in repeatables {
+        if let Some(first_path) = seen.insert(
+            repeatable.name.to_lowercase(),
+            repeatable.script_path.as_str(),
+        ) {
+            return Err(SchemaInstallerError::InvalidConfiguration(format!(
+                "Duplicate repeatable migration '{}': {} and {}",
+                repeatable.name, first_path, repeatable.script_path
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 /// Compares two version strings segment by segment as arbitrary-length unsigned integers.
@@ -747,5 +936,178 @@ mod tests {
 
         assert_eq!(checksum_unix, checksum_windows);
         assert_eq!(checksum_unix, checksum_old_mac);
+    }
+
+    #[test]
+    fn test_parse_repeatable_filename() {
+        assert_eq!(
+            parse_repeatable_filename("R__refresh_views.sql").unwrap(),
+            Some("refresh_views".to_string())
+        );
+        // Lowercase prefix accepted, like `v`; the name is kept as written.
+        assert_eq!(
+            parse_repeatable_filename("r__Grants.sql").unwrap(),
+            Some("Grants".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_repeatable_filename_ignores_unrelated_files() {
+        assert_eq!(parse_repeatable_filename("readme.sql").unwrap(), None);
+        assert_eq!(parse_repeatable_filename("V1__x.sql").unwrap(), None);
+        assert_eq!(parse_repeatable_filename("U__undo.sql").unwrap(), None);
+    }
+
+    #[test]
+    fn test_parse_repeatable_filename_rejects_overlong_names() {
+        let ok = format!("R__{}.sql", "a".repeat(MAX_REPEATABLE_NAME_LEN));
+        assert!(parse_repeatable_filename(&ok).unwrap().is_some());
+        let too_long = format!("R__{}.sql", "a".repeat(MAX_REPEATABLE_NAME_LEN + 1));
+        assert!(parse_repeatable_filename(&too_long).is_err());
+    }
+
+    #[test]
+    fn test_parse_repeatable_filename_rejects_malformed_names() {
+        for bad in ["R.sql", "R_foo.sql", "R__.sql", "R__  .sql"] {
+            assert!(
+                parse_repeatable_filename(bad).is_err(),
+                "{bad} should error"
+            );
+        }
+    }
+
+    #[test]
+    fn test_repeatable_description_replaces_underscores() {
+        let migration = RepeatableMigration {
+            name: "refresh_views".to_string(),
+            script_path: "R__refresh_views.sql".to_string(),
+            sql: String::new(),
+            transactional: true,
+        };
+        assert_eq!(migration.description(), "refresh views");
+    }
+
+    #[test]
+    fn test_check_no_duplicate_repeatables_ignores_case() {
+        let make = |name: &str, path: &str| RepeatableMigration {
+            name: name.to_string(),
+            script_path: path.to_string(),
+            sql: String::new(),
+            transactional: true,
+        };
+        assert!(
+            check_no_duplicate_repeatables(&[make("a", "R__a.sql"), make("b", "R__b.sql")]).is_ok()
+        );
+        let err = check_no_duplicate_repeatables(&[
+            make("Views", "R__Views.sql"),
+            make("views", "r__views.sql"),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("Duplicate repeatable migration"));
+    }
+
+    fn write(dir: &Path, name: &str, contents: &str) {
+        std::fs::write(dir.join(name), contents).unwrap();
+    }
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("schema-installer-{}-{}", label, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_directory_source_splits_versioned_and_repeatable() {
+        let dir = temp_dir("split");
+        write(&dir, "V1__create.sql", "create table t (id int);");
+        write(&dir, "R__b_views.sql", "create view b as select 1;");
+        write(&dir, "R__a_grants.sql", "select 1;");
+        write(&dir, "readme.sql", "-- ignored");
+        let source = DirectoryMigrationSource { path: dir.clone() };
+
+        let versioned = source.migrations().unwrap();
+        assert_eq!(versioned.len(), 1);
+        assert_eq!(versioned[0].version, "1");
+
+        let repeatables = source.repeatable_migrations().unwrap();
+        let names: Vec<&str> = repeatables.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["a_grants", "b_views"]);
+        assert_eq!(repeatables[0].script_path, "R__a_grants.sql");
+        assert!(repeatables[0].transactional);
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_directory_source_repeatable_honours_conf_sidecar() {
+        let dir = temp_dir("conf");
+        write(&dir, "R__vacuum.sql", "vacuum;");
+        write(&dir, "R__vacuum.sql.conf", "executeInTransaction=false\n");
+        let source = DirectoryMigrationSource { path: dir.clone() };
+
+        let repeatables = source.repeatable_migrations().unwrap();
+        assert!(!repeatables[0].transactional);
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_directory_source_rejects_malformed_and_duplicate_repeatables() {
+        let dir = temp_dir("bad");
+        write(&dir, "R_oops.sql", "select 1;");
+        let source = DirectoryMigrationSource { path: dir.clone() };
+        assert!(source.repeatable_migrations().is_err());
+        // The versioned scan must leave repeatable-shaped files to the other method.
+        assert!(source.migrations().unwrap().is_empty());
+        std::fs::remove_file(dir.join("R_oops.sql")).unwrap();
+
+        write(&dir, "R__views.sql", "select 1;");
+        write(&dir, "r__Views.sql", "select 2;");
+        let result = source.repeatable_migrations();
+        // On a case-insensitive filesystem the second write overwrites the first, so only
+        // assert the error where both files can coexist.
+        if std::fs::read_dir(&dir).unwrap().count() == 2 {
+            assert!(result.is_err());
+        }
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_embedded_source_returns_repeatables_sorted_and_rejects_duplicates() {
+        let make = |name: &str| RepeatableMigration {
+            name: name.to_string(),
+            script_path: format!("R__{name}.sql"),
+            sql: String::new(),
+            transactional: true,
+        };
+        let source = EmbeddedMigrationSource {
+            repeatables: vec![make("b"), make("a")],
+            ..Default::default()
+        };
+        let names: Vec<String> = source
+            .repeatable_migrations()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert_eq!(names, ["a", "b"]);
+
+        let duplicate = EmbeddedMigrationSource {
+            repeatables: vec![make("Views"), make("views")],
+            ..Default::default()
+        };
+        assert!(duplicate.repeatable_migrations().is_err());
+    }
+
+    #[test]
+    fn test_default_source_has_no_repeatables() {
+        let source = EmbeddedMigrationSource {
+            migrations: vec![],
+            ..Default::default()
+        };
+        assert!(source.repeatable_migrations().unwrap().is_empty());
     }
 }
