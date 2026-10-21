@@ -1640,6 +1640,70 @@ fn sqlserver_modify_column_cycles_owned_foreign_key_around_alter_column() {
 }
 
 #[test]
+fn sqlserver_foreign_key_is_re_added_only_after_both_of_its_columns_are_altered() {
+    let relation = Relation::new(
+        "customers",
+        "id",
+        "orders",
+        "customer_id",
+        RelationType::Cascade,
+        false,
+    );
+    let int_col = |name: &str| {
+        ColumnBuilder::new(None::<&str>, name, ColumnType::Int)
+            .required(true)
+            .build()
+    };
+    let long_col = |name: &str| {
+        ColumnBuilder::new(None::<&str>, name, ColumnType::Long)
+            .required(true)
+            .build()
+    };
+
+    let orders_table = TableBuilder::new(None::<&str>, "orders")
+        .add_column(long_col("customer_id"))
+        .add_relation(relation)
+        .build();
+    let customers_table = TableBuilder::new(None::<&str>, "customers")
+        .add_column(long_col("id"))
+        .build();
+    let schema = SchemaBuilder::new(None::<&str>)
+        .add_table(orders_table)
+        .add_table(customers_table)
+        .build();
+    let model = DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+    let mut cs = ChangeSet::new();
+    cs.add_change(SchemaChange::ModifyColumn {
+        table_name: "customers".to_string(),
+        old_column: int_col("id"),
+        new_column: long_col("id"),
+    });
+    cs.add_change(SchemaChange::ModifyColumn {
+        table_name: "orders".to_string(),
+        old_column: int_col("customer_id"),
+        new_column: long_col("customer_id"),
+    });
+
+    let generator = create_generator(DatabaseType::SqlServer);
+    let mut output = Vec::new();
+    generator.generate(&cs, &model, &mut output).unwrap();
+    let sql = String::from_utf8(output).unwrap();
+
+    let last_alter = sql.rfind("alter column").unwrap();
+    let re_adds: Vec<_> = sql.match_indices("add constraint").collect();
+    assert_eq!(
+        re_adds.len(),
+        1,
+        "FK should be re-added exactly once:\n{sql}"
+    );
+    assert!(
+        last_alter < re_adds[0].0,
+        "FK must be re-added after both ALTER COLUMNs:\n{sql}"
+    );
+}
+
+#[test]
 fn sqlserver_modify_column_cycles_referencing_foreign_key_around_alter_column() {
     // The FK lives on `orders` (referencing `customers.id`), but the column being altered is
     // `customers.id` itself - SQL Server blocks ALTER COLUMN on the *referenced* side of a FK

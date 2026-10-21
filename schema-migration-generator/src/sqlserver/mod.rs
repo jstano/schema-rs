@@ -72,7 +72,16 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
         let dummy_table = TableBuilder::new(None::<&str>, "_").build();
         let mut triggers_regenerated: HashSet<String> = HashSet::new();
 
+        // Keys and foreign keys taken off columns by a run of consecutive `ModifyColumn`s go
+        // back on only once the run ends, so an FK spanning two modified columns is never
+        // re-added while one side still has its old type.
+        let mut pending_keys: Vec<(&Key, usize, &str)> = Vec::new();
+        let mut pending_relations: Vec<(usize, &Relation)> = Vec::new();
+
         for change in change_set.changes() {
+            if !matches!(change, SchemaChange::ModifyColumn { .. }) {
+                write_pending_constraints(writer, &mut pending_keys, &mut pending_relations)?;
+            }
             match change {
                 SchemaChange::AddTable { table } => {
                     write_add_table(&table_generator, &table_buffer, table, writer)?;
@@ -277,10 +286,17 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     write_add_check_constraint(writer, &context, table_name, new_column)?;
 
                     for (key, ordinal) in &blocking_keys {
-                        write_add_key(writer, table_name, key, *ordinal)?;
+                        if !pending_keys.iter().any(|(k, _, _)| std::ptr::eq(*k, *key)) {
+                            pending_keys.push((key, *ordinal, table_name.as_str()));
+                        }
                     }
                     for (ordinal, relation) in &blocking_relations {
-                        write_add_relation(writer, relation, *ordinal)?;
+                        if !pending_relations
+                            .iter()
+                            .any(|(_, r)| std::ptr::eq(*r, *relation))
+                        {
+                            pending_relations.push((*ordinal, relation));
+                        }
                     }
                 }
                 SchemaChange::AddKey {
@@ -486,8 +502,25 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                 SchemaChange::DropInitialData { .. } => {}
             }
         }
+        write_pending_constraints(writer, &mut pending_keys, &mut pending_relations)?;
         Ok(())
     }
+}
+
+/// Re-adds, keys first (a foreign key can depend on a unique/PK index), everything a run of
+/// `ModifyColumn`s took off its columns, then empties the pending lists.
+fn write_pending_constraints(
+    writer: &mut dyn Write,
+    keys: &mut Vec<(&Key, usize, &str)>,
+    relations: &mut Vec<(usize, &Relation)>,
+) -> Result<(), MigrationGeneratorError> {
+    for (key, ordinal, table_name) in keys.drain(..) {
+        write_add_key(writer, table_name, key, ordinal)?;
+    }
+    for (ordinal, relation) in relations.drain(..) {
+        write_add_relation(writer, relation, ordinal)?;
+    }
+    Ok(())
 }
 
 /// `column_name`'s own PRIMARY KEY/UNIQUE keys and indexes on `table`, paired with the
