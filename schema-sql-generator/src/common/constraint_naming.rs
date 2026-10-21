@@ -5,6 +5,9 @@ pub fn java_string_hash(s: &str) -> u32 {
         .fold(0i32, |h, c| h.wrapping_mul(31).wrapping_add(c as i32)) as u32
 }
 
+/// Postgres's maximum identifier length, in bytes.
+const MAX_IDENTIFIER_BYTES: usize = 63;
+
 /// Lower-cases `s` and truncates it to at most `max_len` characters.
 pub fn truncate_lower(s: &str, max_len: usize) -> String {
     s.to_lowercase().chars().take(max_len).collect()
@@ -19,10 +22,25 @@ pub fn hashed_constraint_name(prefix: &str, table_name: &str, column_name: &str)
     let table_lower = table_name.to_lowercase();
     let column_lower = column_name.to_lowercase();
     let hash = java_string_hash(&format!("{}_{}", table_lower, column_lower));
-    let table_part = truncate_lower(&table_lower, 9);
-    let column_part = truncate_lower(&column_lower, 9);
+    let mut table_part = truncate_lower(&table_lower, 9);
+    let mut column_part = truncate_lower(&column_lower, 9);
+    let hash_part = format!("{:X}", hash);
 
-    format!("{}{}_{}_{:X}", prefix, table_part, column_part, hash)
+    // Postgres limits identifiers to 63 bytes, and a multi-byte name can exceed that within the
+    // 9-character cut; trim whole characters until it fits. ASCII names are never trimmed.
+    let fixed = prefix.len() + 2 + hash_part.len();
+    while fixed + table_part.len() + column_part.len() > MAX_IDENTIFIER_BYTES {
+        let longer = if table_part.len() >= column_part.len() {
+            &mut table_part
+        } else {
+            &mut column_part
+        };
+        if longer.pop().is_none() {
+            break;
+        }
+    }
+
+    format!("{}{}_{}_{}", prefix, table_part, column_part, hash_part)
 }
 
 #[cfg(test)]
@@ -65,5 +83,12 @@ mod tests {
             hashed_constraint_name("ck_", "tip_sub_pool_template", "hours_mode"),
             "ck_tip_sub_p_hours_mod_DCD6758"
         );
+    }
+
+    #[test]
+    fn hashed_constraint_name_stays_within_postgres_byte_limit() {
+        let name = hashed_constraint_name("ck_", &"表".repeat(20), &"列".repeat(20));
+
+        assert!(name.len() <= 63, "{name} is {} bytes", name.len());
     }
 }
