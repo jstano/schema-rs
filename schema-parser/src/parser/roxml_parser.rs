@@ -194,9 +194,19 @@ fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
     let mut indexes: Vec<IndexXml> = Vec::new();
 
     for c in node.children().filter(|n| n.is_element()) {
+        // The XSD declares <keys> as a sequence: primary, then unique*, then index*.
         if c.has_tag_name((NS, "primary")) {
+            if primary.is_some() {
+                return Err("<keys> may contain only one <primary>".to_string());
+            }
+            if !uniques.is_empty() || !indexes.is_empty() {
+                return Err("<primary> must come before <unique> and <index> in <keys>".to_string());
+            }
             primary = Some(parse_key_columns_node(c)?);
         } else if c.has_tag_name((NS, "unique")) {
+            if !indexes.is_empty() {
+                return Err("<unique> must come before <index> in <keys>".to_string());
+            }
             uniques.push(parse_key_columns_node(c)?);
         } else if c.has_tag_name((NS, "index")) {
             indexes.push(parse_index_node(c)?);

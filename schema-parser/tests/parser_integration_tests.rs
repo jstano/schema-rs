@@ -47,3 +47,43 @@ fn test_parser() {
         ]
     );
 }
+
+fn schema_with_keys(keys: &str) -> String {
+    format!(
+        r#"<database xmlns="http://stano.com/database">
+  <schema>
+    <tables>
+      <table name="t">
+        <columns>
+          <column name="id" type="int" required="true"/>
+          <column name="a" type="int"/>
+        </columns>
+        <keys>{keys}</keys>
+      </table>
+    </tables>
+  </schema>
+</database>"#
+    )
+}
+
+const PRIMARY: &str = r#"<primary><column name="id"/></primary>"#;
+const UNIQUE: &str = r#"<unique><column name="a"/></unique>"#;
+const INDEX: &str = r#"<index><column name="a"/></index>"#;
+
+#[test]
+fn keys_in_xsd_order_parse() {
+    let xml = schema_with_keys(&format!("{PRIMARY}{UNIQUE}{UNIQUE}{INDEX}{INDEX}"));
+    parse_database_xml(&xml).expect("ordered keys parse");
+}
+
+#[test]
+fn keys_out_of_order_are_rejected() {
+    for keys in [
+        format!("{PRIMARY}{INDEX}{UNIQUE}"),
+        format!("{UNIQUE}{PRIMARY}"),
+        format!("{INDEX}{PRIMARY}"),
+        format!("{PRIMARY}{PRIMARY}"),
+    ] {
+        assert!(parse_database_xml(&schema_with_keys(&keys)).is_err(), "{keys}");
+    }
+}
