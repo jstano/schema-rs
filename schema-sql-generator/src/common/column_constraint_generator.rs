@@ -97,8 +97,10 @@ impl DefaultColumnConstraintGenerator {
             .filter(|_| trimmed.to_ascii_lowercase().starts_with("check"))
         {
             let rest = rest.trim();
-            if let Some(inner) = rest.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
-                return inner.to_string();
+            // Only a wrapper if the opening paren's partner is the very last character:
+            // `check (a > 1) or (b < 2)` starts with `(` and ends with `)` but is not wrapped.
+            if rest.starts_with('(') && closing_paren_index(rest) == Some(rest.len() - 1) {
+                return rest[1..rest.len() - 1].to_string();
             }
         }
 
@@ -168,6 +170,33 @@ impl ColumnConstraintGenerator for DefaultColumnConstraintGenerator {
     }
 }
 
+/// Index of the `)` closing the `(` at index 0 of `text`, skipping quoted text.
+fn closing_paren_index(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    for (index, ch) in text.char_indices() {
+        match quote {
+            Some(q) => {
+                if ch == q {
+                    quote = None;
+                }
+            }
+            None => match ch {
+                '\'' | '"' => quote = Some(ch),
+                '(' => depth += 1,
+                ')' => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +227,32 @@ mod tests {
 
         assert_eq!(constraints.len(), 1);
         assert!(constraints[0].contains("check(varcharWithCheck = 'ABC123')"));
+    }
+
+    #[test]
+    fn user_check_with_unrelated_leading_parens_is_not_unwrapped() {
+        let table = TableBuilder::new(None::<&str>, "test")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "code", ColumnType::Varchar)
+                    .length(10)
+                    .check_constraint(Some("check (a > 1) or (b < 2)".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Postgresql);
+
+        let constraints =
+            DefaultColumnConstraintGenerator::new(ctx).column_check_constraints(&table);
+
+        assert!(
+            constraints[0].contains("check(check (a > 1) or (b < 2))"),
+            "{constraints:?}"
+        );
     }
 
     #[test]
