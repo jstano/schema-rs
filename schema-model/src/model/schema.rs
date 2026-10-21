@@ -195,11 +195,7 @@ impl Schema {
             let mut seen_column_names: HashMap<String, &str> = HashMap::new();
             for column in table.columns() {
                 if let Some(generated) = column.generated() {
-                    if generated
-                        .trim_start()
-                        .to_ascii_lowercase()
-                        .starts_with("generated")
-                    {
+                    if is_full_generated_clause(generated) {
                         errors.push(format!(
                             "ERROR: {}.{} has generated='{}'; `generated` must be the bare \
                              expression (e.g. \"price * qty\"), not a full clause",
@@ -376,6 +372,20 @@ impl Schema {
 
     pub(crate) fn add_other_sql(&mut self, other_sql: OtherSql) {
         self.other_sql.push(other_sql);
+    }
+}
+
+/// True when `generated` starts a full `GENERATED ALWAYS|BY DEFAULT|AS ...` clause rather than
+/// a bare expression: the keyword must be followed by whitespace and one of those words, so an
+/// expression such as `generated_total * 2` is not mistaken for one.
+fn is_full_generated_clause(generated: &str) -> bool {
+    let lower = generated.trim_start().to_ascii_lowercase();
+    match lower.strip_prefix("generated") {
+        Some(rest) if rest.starts_with(char::is_whitespace) => rest
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| word == "always" || word == "by" || word.starts_with("as")),
+        _ => false,
     }
 }
 
@@ -737,6 +747,23 @@ mod tests {
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
         let errors = schema.validate();
         assert_eq!(errors.len(), 2, "{errors:?}");
+    }
+
+    #[test]
+    fn validate_accepts_generated_expression_that_merely_starts_with_generated() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let table = TableBuilder::new(Some("s"), "widget")
+            .add_column(
+                ColumnBuilder::new(Some("s"), "a", CT::Int)
+                    .generated(Some("generated_total * 2".to_string()))
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
+
+        assert!(schema.validate().is_empty());
     }
 
     #[test]
