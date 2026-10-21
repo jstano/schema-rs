@@ -3160,3 +3160,129 @@ fn modify_column_with_unchanged_generated_expression_does_not_halt() {
     );
     assert!(!sql.contains("halted"), "{sql}");
 }
+
+fn view_model(views: &[(&str, &str)]) -> DatabaseModel {
+    let mut builder = SchemaBuilder::new(None::<&str>);
+    for (name, sql) in views {
+        builder = builder.add_view(schema_model::model::view::View::new(
+            None::<&str>,
+            name,
+            sql,
+            None,
+        ));
+    }
+    DatabaseModel::new(
+        BooleanMode::Native,
+        ForeignKeyMode::Relations,
+        vec![builder.build()],
+    )
+}
+
+fn migration_sql_for_views(old: &DatabaseModel, new: &DatabaseModel) -> String {
+    let change_set = SchemaDiffEngine::diff(&old.schemas()[0], &new.schemas()[0]);
+    let generator = create_generator(DatabaseType::Postgresql);
+    let mut output = Vec::new();
+    generator.generate(&change_set, new, &mut output).unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+fn position_of(sql: &str, needle: &str) -> usize {
+    sql.find(needle)
+        .unwrap_or_else(|| panic!("expected '{}' in: {}", needle, sql))
+}
+
+#[test]
+fn postgresql_modified_base_view_drops_and_recreates_its_unchanged_dependent_view() {
+    let old = view_model(&[
+        ("v_base", "select id from orders"),
+        ("v_dep", "select id from v_base"),
+    ]);
+    let new = view_model(&[
+        ("v_base", "select id, total from orders"),
+        ("v_dep", "select id from v_base"),
+    ]);
+
+    let sql = migration_sql_for_views(&old, &new);
+
+    // Postgres refuses `drop view v_base` while v_dep still reads it, so v_dep must be dropped
+    // first and recreated after v_base.
+    let drop_dep = position_of(&sql, "drop view if exists v_dep;");
+    let drop_base = position_of(&sql, "drop view if exists v_base;");
+    let create_base = position_of(&sql, "create or replace view v_base as");
+    let create_dep = position_of(&sql, "create or replace view v_dep as");
+    assert!(
+        drop_dep < drop_base,
+        "dependent must drop first, got: {}",
+        sql
+    );
+    assert!(
+        create_base < create_dep,
+        "base must create first, got: {}",
+        sql
+    );
+}
+
+#[test]
+fn postgresql_modified_nested_views_drop_dependents_first_and_create_bases_first() {
+    // Declared base-first, so declaration-order drops would hit v_base while v_dep still exists.
+    let old = view_model(&[
+        ("v_base", "select id from orders"),
+        ("v_dep", "select id from v_base"),
+    ]);
+    let new = view_model(&[
+        ("v_base", "select id, total from orders"),
+        ("v_dep", "select id, total from v_base"),
+    ]);
+
+    let sql = migration_sql_for_views(&old, &new);
+
+    let drop_dep = position_of(&sql, "drop view if exists v_dep;");
+    let drop_base = position_of(&sql, "drop view if exists v_base;");
+    let create_base = position_of(&sql, "create or replace view v_base as");
+    let create_dep = position_of(&sql, "create or replace view v_dep as");
+    assert!(
+        drop_dep < drop_base,
+        "dependent must drop first, got: {}",
+        sql
+    );
+    assert!(
+        create_base < create_dep,
+        "base must create first, got: {}",
+        sql
+    );
+}
+
+#[test]
+fn postgresql_three_level_view_chain_is_dropped_top_down_and_created_bottom_up() {
+    // Declared out of dependency order (v_a, v_c, v_b) so neither declaration order nor its
+    // reverse yields the right sequence. Only the bottom view changes; both dependents unchanged.
+    let old = view_model(&[
+        ("v_a", "select id from orders"),
+        ("v_c", "select id from v_b"),
+        ("v_b", "select id from v_a"),
+    ]);
+    let new = view_model(&[
+        ("v_a", "select id, total from orders"),
+        ("v_c", "select id from v_b"),
+        ("v_b", "select id from v_a"),
+    ]);
+
+    let sql = migration_sql_for_views(&old, &new);
+
+    let drop_c = position_of(&sql, "drop view if exists v_c;");
+    let drop_b = position_of(&sql, "drop view if exists v_b;");
+    let drop_a = position_of(&sql, "drop view if exists v_a;");
+    let create_a = position_of(&sql, "create or replace view v_a as");
+    let create_b = position_of(&sql, "create or replace view v_b as");
+    let create_c = position_of(&sql, "create or replace view v_c as");
+    assert!(
+        drop_c < drop_b && drop_b < drop_a,
+        "drops must go top-down, got: {}",
+        sql
+    );
+    assert!(
+        create_a < create_b && create_b < create_c,
+        "creates must go bottom-up, got: {}",
+        sql
+    );
+}

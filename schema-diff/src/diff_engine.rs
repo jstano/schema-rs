@@ -361,25 +361,131 @@ fn column_pairs_equal(a: &[(String, String)], b: &[(String, String)]) -> bool {
             .all(|((af, at), (bf, bt))| af.eq_ignore_ascii_case(bf) && at.eq_ignore_ascii_case(bt))
 }
 
+/// Views to drop: removed or modified views, plus every kept view that reads one of them
+/// (directly or transitively) - Postgres and SQL Server refuse to drop a view another view still
+/// reads. Ordered dependents-first so each drop happens before the views it depends on.
 fn diff_drop_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
-    for old_view in old.all_views() {
-        if !view_exists_in(old_view, new.all_views()) {
-            cs.add_change(SchemaChange::DropView {
-                view_name: old_view.name().to_string(),
-                database_type: old_view.database_type(),
-            });
-        }
+    let affected = views_to_rebuild(old, new);
+    let mut drops: Vec<&View> = old
+        .all_views()
+        .iter()
+        .filter(|v| !view_exists_in(v, new.all_views()) || affected.iter().any(|a| same_view(a, v)))
+        .collect();
+    let depths: Vec<usize> = drops
+        .iter()
+        .map(|v| view_depth(v, old.all_views()))
+        .collect();
+    let mut order: Vec<usize> = (0..drops.len()).collect();
+    order.sort_by(|a, b| depths[*b].cmp(&depths[*a]));
+    drops = order.into_iter().map(|i| drops[i]).collect();
+    for old_view in drops {
+        cs.add_change(SchemaChange::DropView {
+            view_name: old_view.name().to_string(),
+            database_type: old_view.database_type(),
+        });
     }
 }
 
+/// Views to add: new or modified views, plus the dependents dropped alongside a changed view.
+/// Ordered bases-first so each view is created after the views it reads.
 fn diff_add_views(old: &Schema, new: &Schema, cs: &mut ChangeSet) {
-    for new_view in new.all_views() {
-        if !view_exists_in(new_view, old.all_views()) {
-            cs.add_change(SchemaChange::AddView {
-                view: new_view.clone(),
-            });
-        }
+    let affected = views_to_rebuild(old, new);
+    let mut adds: Vec<&View> = new
+        .all_views()
+        .iter()
+        .filter(|v| !view_exists_in(v, old.all_views()) || affected.iter().any(|a| same_view(a, v)))
+        .collect();
+    let depths: Vec<usize> = adds
+        .iter()
+        .map(|v| view_depth(v, new.all_views()))
+        .collect();
+    let mut order: Vec<usize> = (0..adds.len()).collect();
+    order.sort_by(|a, b| depths[*a].cmp(&depths[*b]));
+    adds = order.into_iter().map(|i| adds[i]).collect();
+    for new_view in adds {
+        cs.add_change(SchemaChange::AddView {
+            view: new_view.clone(),
+        });
     }
+}
+
+/// Unchanged views (present identically in `old` and `new`) that must be dropped and recreated
+/// because they read - directly or through other views - a view that is removed or modified.
+fn views_to_rebuild(old: &Schema, new: &Schema) -> Vec<View> {
+    let mut changed: Vec<&View> = old
+        .all_views()
+        .iter()
+        .filter(|v| !view_exists_in(v, new.all_views()))
+        .chain(
+            new.all_views()
+                .iter()
+                .filter(|v| !view_exists_in(v, old.all_views())),
+        )
+        .collect();
+    let mut rebuild: Vec<View> = Vec::new();
+    loop {
+        let before = rebuild.len();
+        for view in new.all_views() {
+            let unchanged = view_exists_in(view, old.all_views());
+            if unchanged
+                && !rebuild.iter().any(|r| same_view(r, view))
+                && changed.iter().any(|c| view_reads(view, c))
+            {
+                rebuild.push(view.clone());
+            }
+        }
+        if rebuild.len() == before {
+            break;
+        }
+        changed.extend(rebuild.iter().skip(before).map(|v| {
+            new.all_views()
+                .iter()
+                .find(|n| same_view(n, v))
+                .expect("rebuilt view comes from new schema")
+        }));
+    }
+    rebuild
+}
+
+fn same_view(a: &View, b: &View) -> bool {
+    a.name().eq_ignore_ascii_case(b.name()) && a.database_type() == b.database_type()
+}
+
+/// True when `view`'s SQL mentions `target`'s name as a whole identifier. A match in a comment
+/// or string literal only causes a harmless extra drop/recreate.
+fn view_reads(view: &View, target: &View) -> bool {
+    if view.name().eq_ignore_ascii_case(target.name()) {
+        return false;
+    }
+    let sql = view.sql().to_lowercase();
+    let name = target.name().to_lowercase();
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    sql.match_indices(&name).any(|(i, m)| {
+        let before = sql[..i].chars().next_back();
+        let after = sql[i + m.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+    })
+}
+
+/// Length of the longest chain of views (in `views`) that `view` reads; 0 reads no other view.
+/// Cycles are cut so a malformed schema cannot loop forever.
+fn view_depth(view: &View, views: &[View]) -> usize {
+    fn depth(view: &View, views: &[View], seen: &mut Vec<String>) -> usize {
+        let key = view.name().to_lowercase();
+        if seen.contains(&key) {
+            return 0;
+        }
+        seen.push(key);
+        let result = views
+            .iter()
+            .filter(|other| view_reads(view, other))
+            .map(|other| 1 + depth(other, views, seen))
+            .max()
+            .unwrap_or(0);
+        seen.pop();
+        result
+    }
+    depth(view, views, &mut Vec::new())
 }
 
 fn view_exists_in(view: &View, views: &[View]) -> bool {
