@@ -130,6 +130,22 @@ schema-installer \
 
 After this, `migrate` will only apply migrations with a version greater than `3`.
 
+#### `install-or-migrate` — Install if new, then migrate
+
+```bash
+schema-installer \
+  --database-type postgres \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  install-or-migrate --schema-file schema.xml --migrations-dir ./migrations
+```
+
+Single startup command (like msp-schema-starter's auto-install + auto-migrate). If the
+database has no successfully applied migrations, it runs `install` from `schema.xml`
+and baselines every migration in `--migrations-dir` (the XML already reflects them).
+It then runs `migrate`, applying anything newer than the baseline plus repeatable
+(`R__`) migrations. A database that already has migration history, from `install` or
+from `migrate` alone, skips the install. `--target` limits the migrate step.
+
 ### Global Options
 
 Available for all commands:

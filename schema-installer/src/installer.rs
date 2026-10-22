@@ -2,6 +2,7 @@ use crate::config::SchemaInstallerConfig;
 use crate::connection::AnyPool;
 use crate::error::SchemaInstallerError;
 use crate::migration::{MigrationSource, MigrationStatus, compare_versions, compute_checksum};
+use crate::migrator::Migrator;
 use schema_parser::parse_database_xml;
 use schema_sql_generator::common::generate_options::GenerateOptions;
 use schema_sql_generator::common::generator_type::GeneratorType;
@@ -179,6 +180,52 @@ impl SchemaInstaller {
                 Err(e)
             }
         }
+    }
+
+    /// Install-if-needed, then migrate: the combined startup flow for an application that
+    /// owns its schema. A database with no migration history is installed from
+    /// `config.schema_file` and baselined at the newest migration in `source` (the XML is
+    /// the source of truth for a fresh database, so replaying history over it would fail);
+    /// then `Migrator::migrate_to_target` runs, which applies only what is newer than the
+    /// baseline plus any repeatable (`R__`) migrations. An already-installed database, or
+    /// one built up by `migrate` alone, skips straight to the migrate step.
+    pub async fn install_or_migrate(
+        config: &SchemaInstallerConfig,
+        source: Box<dyn MigrationSource>,
+        target: Option<&str>,
+    ) -> Result<(), SchemaInstallerError> {
+        if !Self::has_migration_history(config).await? {
+            let latest = source
+                .migrations()?
+                .into_iter()
+                .map(|m| m.version)
+                .max_by(|a, b| compare_versions(a, b));
+            let baseline = latest.as_deref().map(|version| Baseline {
+                version,
+                source: source.as_ref(),
+            });
+            Self::install_with_baseline(config, baseline).await?;
+        }
+        Migrator::migrate_to_target(config, source, target).await
+    }
+
+    /// True when the database has any successfully applied migration, including the
+    /// `install` row. A failed or pending-only history counts as none, so a half-finished
+    /// install is retried rather than skipped.
+    async fn has_migration_history(
+        config: &SchemaInstallerConfig,
+    ) -> Result<bool, SchemaInstallerError> {
+        let pool = AnyPool::connect(
+            &config.database_type,
+            &config.connection_string,
+            config.trust_server_certificate,
+        )
+        .await?;
+        Self::ensure_tracking_tables(&pool, &config.database_type).await?;
+        let migrations = pool.get_applied_migrations().await?;
+        Ok(migrations
+            .iter()
+            .any(|m| m.status == MigrationStatus::Success.as_str()))
     }
 
     /// Marks every migration in `baseline.source` whose version is <= `baseline.version`

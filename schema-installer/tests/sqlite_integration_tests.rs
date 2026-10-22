@@ -2430,3 +2430,102 @@ async fn test_sqlite_repeatable_delete_failed_and_stale_pending() {
     names.sort();
     assert_eq!(names, ["fresh", "ok"]);
 }
+
+fn embedded_widget_migrations(versions: &[&str]) -> Box<EmbeddedMigrationSource> {
+    Box::new(EmbeddedMigrationSource {
+        migrations: versions
+            .iter()
+            .map(|v| Migration {
+                transactional: true,
+                version: v.to_string(),
+                description: format!("create t{v}"),
+                script_path: format!("V{v}__create_t{v}.sql"),
+                sql: format!("create table t{v} (id integer primary key);"),
+            })
+            .collect(),
+        ..Default::default()
+    })
+}
+
+async fn sqlite_table_exists(pool: &sqlx::SqlitePool, name: &str) -> bool {
+    let count: i64 = sqlx::query(
+        "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .expect("query sqlite_master")
+    .get("count");
+    count == 1
+}
+
+#[tokio::test]
+async fn test_sqlite_install_or_migrate_installs_fresh_database_then_migrates_new_versions() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string = sqlite_connection_string(&temp_dir, "test_install_or_migrate.db");
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    SchemaInstaller::install_or_migrate(&config, embedded_widget_migrations(&["1", "2"]), None)
+        .await
+        .expect("fresh install_or_migrate should succeed");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify");
+    assert!(sqlite_table_exists(&check_pool, "users").await);
+    assert!(
+        !sqlite_table_exists(&check_pool, "t1").await
+            && !sqlite_table_exists(&check_pool, "t2").await,
+        "migrations covered by the install are baselined, not replayed"
+    );
+
+    // Second run with the same migrations is a no-op; a newer one is applied.
+    SchemaInstaller::install_or_migrate(&config, embedded_widget_migrations(&["1", "2"]), None)
+        .await
+        .expect("rerun should be a no-op");
+    SchemaInstaller::install_or_migrate(
+        &config,
+        embedded_widget_migrations(&["1", "2", "3"]),
+        None,
+    )
+    .await
+    .expect("new migration should be applied");
+    assert!(sqlite_table_exists(&check_pool, "t3").await);
+    assert!(!sqlite_table_exists(&check_pool, "t2").await);
+}
+
+#[tokio::test]
+async fn test_sqlite_install_or_migrate_skips_install_when_migrations_already_applied() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let connection_string =
+        sqlite_connection_string(&temp_dir, "test_install_or_migrate_existing.db");
+    let config = SchemaInstallerConfigBuilder::new()
+        .database_type(GeneratorType::Sqlite)
+        .connection_string(connection_string.clone())
+        .schema_file(simple_schema_file())
+        .build()
+        .expect("valid config");
+
+    Migrator::migrate(&config, embedded_widget_migrations(&["1"]))
+        .await
+        .expect("migrate-only bootstrap");
+    SchemaInstaller::install_or_migrate(&config, embedded_widget_migrations(&["1", "2"]), None)
+        .await
+        .expect("install_or_migrate should only migrate");
+
+    let check_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&connection_string)
+        .await
+        .expect("connect to verify");
+    assert!(sqlite_table_exists(&check_pool, "t2").await);
+    assert!(
+        !sqlite_table_exists(&check_pool, "users").await,
+        "XML install must not run on a database that already has migration history"
+    );
+}

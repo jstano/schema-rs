@@ -92,6 +92,15 @@ enum Commands {
         )]
         migrations_dir: Option<PathBuf>,
     },
+    /// Install from XML if the database has no migration history, then migrate
+    InstallOrMigrate {
+        #[arg(long, help = "Path to XML schema file")]
+        schema_file: PathBuf,
+        #[arg(long, help = "Path to migrations directory")]
+        migrations_dir: PathBuf,
+        #[arg(long, help = "Only apply migrations up to and including this version")]
+        target: Option<String>,
+    },
     /// Check if there are pending migrations (exits 0 = none, 1 = pending)
     PendingCheck {
         #[arg(long, help = "Path to migrations directory")]
@@ -210,6 +219,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("No pending migrations");
             }
+        }
+        Commands::InstallOrMigrate {
+            schema_file,
+            migrations_dir,
+            target,
+        } => {
+            let config = SchemaInstallerConfigBuilder::new()
+                .database_type(database_type)
+                .connection_string(connection_string.clone())
+                .schema_file(schema_file)
+                .boolean_mode(boolean_mode)
+                .foreign_key_mode(foreign_key_mode)
+                .trust_server_certificate(args.trust_server_certificate)
+                .build()?;
+
+            let source = Box::new(DirectoryMigrationSource {
+                path: resolve_migrations_dir(&migrations_dir, &database_type)?,
+            });
+            SchemaInstaller::install_or_migrate(&config, source, target.as_deref()).await?;
         }
         Commands::Install {
             schema_file,
