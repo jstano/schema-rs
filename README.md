@@ -1,6 +1,22 @@
 # schema-rs
 
-A small workspace that models database schemas (schema-model), parses/handles inputs (schema-parser), can generate SQL (schema-sql-generator), install a schema (schema-installer), or reverse-engineer a live PostgreSQL or SQL Server database back into a schema definition (schema-reverse-engineer).
+A Rust workspace for managing relational database schemas (PostgreSQL, SQL Server, SQLite). A schema is described once in an XML file and the tools turn it into whatever you need:
+
+- **schema-model**: vendor-agnostic schema model.
+- **schema-parser**: parses the XML schema into the model.
+- **schema-sql-generator**: generates vendor-specific DDL from a schema.
+- **schema-diagram-generator**: generates Mermaid or PlantUML ER diagrams from a schema.
+- **schema-diff** / **schema-migration-generator**: diff two versions of a schema and generate the SQL migration between them.
+- **schema-installer**: installs a schema and applies Flyway-style versioned and repeatable migrations.
+- **schema-reverse-engineer**: reverse-engineers a live PostgreSQL or SQL Server database back into an XML schema.
+
+```
+XML schema -> [schema-parser] -> model -> [schema-sql-generator]       -> SQL
+                                       -> [schema-diagram-generator]   -> Mermaid / PlantUML
+                                       -> [schema-diff] -> [schema-migration-generator] -> V{timestamp}__x.sql
+                                       -> [schema-installer]           -> database
+live database -> [schema-reverse-engineer] -> XML schema
+```
 
 ## FAQ
 
@@ -15,6 +31,44 @@ A small workspace that models database schemas (schema-model), parses/handles in
   - sqlparser-rs: Robust SQL parser for many dialects; useful if you want to parse/inspect SQL, but it doesn’t generate or apply schemas by itself.
   
   If your goal is close to “feed a domain model and get vendor-specific SQL plus an installer,” you’ll likely combine a couple of tools (e.g., a model + SeaQuery/SeaORM/diesel for generation/migrations) or use this project’s components.
+
+## Generating SQL with schema-sql-generator
+
+`schema-sql-generator` turns an XML schema into DDL for PostgreSQL, SQL Server, or SQLite.
+
+```bash
+# Create an empty schema.xml to start from
+schema-sql-generator --new-schema --schema-file schema.xml
+
+# Generate SQL (written to schema-postgresql.sql next to the input by default)
+schema-sql-generator \
+  --database-type postgresql \
+  --schema-file schema.xml \
+  --foreign-key-mode relations \
+  --output-file migration/V1__initial_schema.sql
+```
+
+Options:
+
+- `--database-type` (required): `postgresql`, `sqlite`, or `sqlserver`
+- `--schema-file` (required): path to the XML schema
+- `--output-file`: exact output path (parent directories are created); default `{schema-stem}-{database-type}.sql` next to the schema
+- `--foreign-key-mode`: `none`, `relations`, or `triggers`
+- `--boolean-mode`: `native`, `yesno`, or `yn` (default: the schema file's `booleanMode` attribute)
+- `--output-mode`: `all`, `indexes-only`, or `triggers-only`
+- `--postgresql-version`: target PostgreSQL major version (e.g. `17`, `18`); affects the UUID default function and whether `pgcrypto` is emitted
+- `--sqlserver-version`: target SQL Server product year (e.g. `2022`, `2025`); affects the `json` column type
+- `--no-postgres-extensions`: skip the PostgreSQL `create extension` block (`citext`, `btree_gist`)
+- `--extension-check-user`: Postgres role checked for superuser privilege in that block (default `CURRENT_USER`)
+
+## Generating Diagrams with schema-diagram-generator
+
+```bash
+schema-diagram-generator --format mermaid --schema-file schema.xml
+schema-diagram-generator --format plantuml --schema-file schema.xml --output-file docs/schema.puml
+```
+
+`--format` is `mermaid` or `plantuml`. Output defaults to `{schema-stem}.mmd` / `{schema-stem}.puml` next to the schema; `--output-file` sets an exact path.
 
 ## Generating Migrations with schema-migration-generator
 
@@ -35,6 +89,19 @@ schema-migration-generator \
   --old HEAD~1:schema.xml --new schema.xml
 ```
 
+Options:
+
+- `--database-type` (required): `postgresql`, `sqlite`, or `sqlserver`
+- `--file`: shortcut that diffs a file on disk against its latest committed version (`HEAD`)
+- `--old` / `--new`: explicit sources, each a file path or `<rev>:<path>`
+- `--output-file`: write the migration to this path (default: stdout)
+- `--auto-generate-name`: name the output `V{timestamp}[__{description}].sql`, next to `--file` (or in the current directory with `--old`/`--new`); conflicts with `--output-file`
+- `--description`: description used in the auto-generated name
+- `--output-dir`: override the directory for the auto-generated name (created if missing)
+- `--postgresql-version`, `--sqlserver-version`: same as for `schema-sql-generator`
+
+The diff covers tables, columns, keys and indexes, relations, constraints, enum types, views (dependent views are dropped and recreated in dependency order when one changes), functions, procedures, triggers, initial data, and other SQL.
+
 ## Using schema-installer for Migrations
 
 The `schema-installer` crate provides a Flyway-style migration system for applying versioned SQL scripts to your database.
@@ -50,6 +117,8 @@ migrations/
 ```
 
 File naming format: `V{version}__{description}.sql` — the `__{description}` part is optional (`V{version}.sql` is also valid)
+
+`--migrations-dir` can be a flat directory (as above) or contain per-database subfolders (`postgresql/`, `sqlite/`, `sqlserver/`); the folder matching `--database-type` is used. Mixing loose `.sql` files with vendor subfolders is an error.
 
 Each migration runs inside a transaction. Scripts must not contain their own `BEGIN`/`COMMIT`/`ROLLBACK` (they are rejected before anything runs). For statements that can't run in a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `ALTER TYPE ... ADD VALUE`), put a Flyway-style config file next to the script, e.g. `V3__add_index.sql.conf`:
 
@@ -101,6 +170,9 @@ cargo run -p schema-installer -- \
 
 #### `migrate` — Apply pending migrations
 Applies all migrations not yet recorded in the database. Includes checksum verification to detect if previously-applied migrations have been modified.
+
+- `--target <version>`: stop after this version even if later migrations exist (repeatables are skipped)
+- `--dry-run <path>`: write the SQL of every pending migration to a file instead of applying or recording anything
 
 ```bash
 schema-installer \
@@ -156,8 +228,18 @@ schema-installer \
   repair --migrations-dir ./migrations
 ```
 
-#### `install` — Legacy XML schema installation
-Applies a schema from an XML definition file (for backward compatibility). Records as a single migration.
+#### `pending-check` — Check for pending migrations
+Prints whether migrations are pending and exits `0` if there are none, `1` if there are (useful in CI).
+
+```bash
+schema-installer \
+  --database-type postgresql \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  pending-check --migrations-dir ./migrations
+```
+
+#### `install` — Install from an XML schema
+Applies a schema from an XML definition file. Records as a single migration.
 
 ```bash
 schema-installer \
@@ -166,18 +248,31 @@ schema-installer \
   install --schema-file schema.xml
 ```
 
+`install` does not mark any migration as applied, so a later `migrate` would try to re-apply migrations the XML already reflects. Add `--baseline-version <version> --migrations-dir <dir>` to record every migration up to and including that version as applied without running it (Flyway's `baseline`).
+
+#### `install-or-migrate` — Install if new, then migrate
+A single startup command: if the database has no successfully applied migrations, it runs `install` from the XML schema and baselines every migration in `--migrations-dir`; it then runs `migrate`, applying anything newer plus repeatable migrations. A database that already has migration history skips the install. `--target` limits the migrate step.
+
+```bash
+schema-installer \
+  --database-type postgresql \
+  --connection-string "postgres://user:pass@localhost/mydb" \
+  install-or-migrate --schema-file schema.xml --migrations-dir ./migrations
+```
+
 ### Global Options
 
 Available for all commands:
 
-- `--database-type` (required): `postgresql`, `sqlite`, or `sqlserver`
+- `--database-type` (required): `postgresql`, `sqlite`, or `sqlserver` (`mssql` is accepted as an alias)
 - `--connection-string` (required): Database connection URL
 - `--boolean-mode`: How to represent booleans (`native`, `yesno`, `yn`) — default: `native`
 - `--foreign-key-mode`: How to handle relations (`none`, `relations`, `triggers`) — default: `relations`
+- `--trust-server-certificate`: SQL Server only; skip TLS certificate verification (self-signed certs)
 
 ### Migration Tracking
 
-All migrations are recorded in the `schema_migration` table:
+Versioned migrations are recorded in the `schema_migration` table (repeatable migrations have their own `schema_repeatable_migration` table, described above):
 
 ```sql
 CREATE TABLE schema_migration (
@@ -187,7 +282,7 @@ CREATE TABLE schema_migration (
     checksum TEXT NOT NULL,              -- SHA-256 hash
     execution_time_ms INT NOT NULL,      -- Duration in milliseconds
     installed_at TIMESTAMPTZ DEFAULT now(),
-    status TEXT NOT NULL,                -- success, failed, pending
+    status TEXT NOT NULL,                -- success, failed
     tool_version TEXT NOT NULL           -- schema-installer version
 );
 ```
@@ -294,9 +389,14 @@ The generated file can be fed straight into `schema-sql-generator` or `schema-in
 ### Notes
 
 - PostgreSQL and SQL Server only — SQLite is not supported.
-- SQL Server: `identity` seed/increment other than (1,1), non-persisted computed columns, clustered-ness of
-  keys, and columnstore/XML/spatial indexes are not carried over (a warning is printed where data would be
-  lost). `varchar(max)`/`nvarchar(max)` become `text`; `money` becomes `decimal(19,4)`. Triggers aren't exported.
+- Partial and covering indexes and cross-schema foreign keys are kept. Items the schema model can't represent are skipped with a warning.
+- SQL Server: `identity` seed/increment other than (1,1), non-persisted computed columns, and
+  columnstore/XML/spatial indexes are not carried over (a warning is printed for each). Clustered-ness of
+  keys is also not carried over, silently. Triggers aren't exported.
+- SQL Server type mappings: `varchar(max)`/`nvarchar(max)`, `text` and `ntext` become `text`; `money` becomes
+  `decimal(19,4)` and `smallmoney` `decimal(10,4)` (with a warning); `rowversion`, `timestamp` and `image` become
+  `binary`; `datetime` and `smalldatetime` both become `datetime`. Types with no mapping (`xml`, `geography`,
+  `sql_variant`, ...) fall back to `text` with a warning.
 - Foreign keys use `ON DELETE` behavior to determine the relation type (`cascade`, `enforce`,
   `setnull`, `donothing`).
 - If a table has no primary key but exactly one unique key, that unique key is promoted to the
@@ -312,15 +412,16 @@ cannot be verified"). After unzipping the release archive, clear the quarantine
 attribute before running:
 
 ```bash
-xattr -dr com.apple.quarantine ./schema-installer ./schema-diagram-generator ./schema-sql-generator
+xattr -dr com.apple.quarantine ./schema-installer ./schema-diagram-generator ./schema-sql-generator ./schema-reverse-engineer ./schema-migration-generator
 ```
 
 (or run it on the whole extracted folder: `xattr -dr com.apple.quarantine ./schema-<version>/`)
 
 ## Docker
 
-A Docker image bundling all 4 binaries (`schema-installer`, `schema-diagram-generator`,
-`schema-sql-generator`, `schema-reverse-engineer`) is published to Docker Hub as
+A Docker image bundling all 5 binaries (`schema-installer`, `schema-diagram-generator`,
+`schema-sql-generator`, `schema-reverse-engineer`, `schema-migration-generator`; `git` is included
+so `schema-migration-generator` can resolve `<rev>:<path>` sources) is published to Docker Hub as
 [`jstano/schema-rs`](https://hub.docker.com/r/jstano/schema-rs), tagged with both the
 release version (e.g. `0.4.0`) and `latest`, for `linux/amd64` and `linux/arm64`.
 
@@ -355,10 +456,13 @@ just docker-publish
 
 ## Workspace crates
 
-- schema-model: core data structures (tables, columns, relations, views, functions, procedures, triggers, other SQL, versions, etc.).
-- schema-parser: parsing/processing helpers (WIP).
-- schema-sql-generator: backend(s) to create SQL from the model (WIP).
-- schema-installer: utilities for applying schemas/migrations (WIP).
+- schema-model: core data structures (tables, columns, relations, views, functions, procedures, triggers, enum types, other SQL, etc.).
+- schema-parser: parses and validates the XML schema into the model; the XSD is published separately as [`schema-xsd`](https://crates.io/crates/schema-xsd) and re-exported as `schema_parser::SCHEMA_XSD`.
+- schema-sql-generator: generates PostgreSQL, SQL Server, and SQLite DDL from the model.
+- schema-diagram-generator: generates Mermaid and PlantUML ER diagrams from the model.
+- schema-diff: computes the set of changes between two schema models.
+- schema-migration-generator: turns a schema diff into a vendor-specific SQL migration script.
+- schema-installer: installs schemas and applies Flyway-style versioned and repeatable migrations.
 - schema-reverse-engineer: reverse-engineers a live PostgreSQL or SQL Server database into a schema-rs XML schema definition.
 
 ## License

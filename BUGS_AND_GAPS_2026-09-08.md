@@ -1379,6 +1379,29 @@ remediation plan) is worth more than any individual fix below.
   always require it? Support a shared `common/` folder as Flyway's multiple locations allow? If
   so, versions become global across both and the duplicate-version check (H13) must cover them.
 
+- [ ] **L22.** `schema-reverse-engineer` gaps found while verifying the README's SQL Server notes
+  against `sqlserver/{columns,keys}.rs` (2026-10-22). Nothing here is a regression; each is a
+  feature the reader does not have, so a reverse-engineered schema is not a full round trip.
+  - **Triggers are not read from either database** (M35/L15b record this for Postgres only).
+    SQL Server has no `sys.triggers` query at all; the README now says "Triggers aren't exported".
+  - **Clustered-ness of keys is dropped silently** (`sqlserver/keys.rs:73`). Every other
+    SQL Server loss (identity seed/increment, non-persisted computed columns, columnstore/XML/spatial
+    indexes) prints a warning; this one does not, so the README's "a warning is printed where data
+    would be lost" is not quite true. Fix is a one-line `eprintln!` for a clustered non-primary
+    index, or for any clustered/nonclustered mismatch against the default.
+  - **Type mappings lose information without all being warned:** `smallmoney` becomes
+    `decimal(10,4)` (only `money` is documented), `ntext`/`text` become `text`, `rowversion`/
+    `timestamp`/`image` become `binary`, and `datetime`/`smalldatetime` both become `datetime`
+    (`sqlserver/columns.rs:map_column_type`). Types with no mapping (`xml`, `geography`,
+    `sql_variant`, ...) fall back to `text` with a warning rather than failing the run.
+  - **Not introspected, by earlier decision (L15b):** `<initialData>`, `<aggregations>`,
+    `noExport`, `lockEscalation`.
+
+  **Open:** read triggers (needs a decision on how a typed `Trigger` snippet maps from raw
+  trigger DDL, and on recognising the generator's own FK-mode triggers so they are not
+  double-emitted); add the missing clustered-index warning; correct the README wording and list the
+  lossy type mappings.
+
 ---
 
 ## Status of the previous audit's claimed fixes
