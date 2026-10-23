@@ -92,8 +92,17 @@ pub(crate) fn build_column_info(row: ColumnRow) -> ColumnInfo {
             ColumnType::Text
         }
     };
-    if matches!(type_name.as_str(), "money" | "smallmoney") {
-        eprintln!("warning: {location} is {type_name} -- exported as decimal");
+    match type_name.as_str() {
+        "money" | "smallmoney" => {
+            eprintln!("warning: {location} is {type_name} -- exported as decimal");
+        }
+        "rowversion" | "timestamp" | "image" => {
+            eprintln!("warning: {location} is {type_name} -- exported as binary");
+        }
+        "smalldatetime" => {
+            eprintln!("warning: {location} is smalldatetime -- exported as datetime");
+        }
+        _ => {}
     }
 
     if row.is_identity {

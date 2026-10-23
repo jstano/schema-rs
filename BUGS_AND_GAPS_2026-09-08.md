@@ -1379,7 +1379,7 @@ remediation plan) is worth more than any individual fix below.
   always require it? Support a shared `common/` folder as Flyway's multiple locations allow? If
   so, versions become global across both and the duplicate-version check (H13) must cover them.
 
-- [ ] **L22.** `schema-reverse-engineer` gaps found while verifying the README's SQL Server notes
+- [x] **L22.** `schema-reverse-engineer` gaps found while verifying the README's SQL Server notes
   against `sqlserver/{columns,keys}.rs` (2026-10-22). Nothing here is a regression; each is a
   feature the reader does not have, so a reverse-engineered schema is not a full round trip.
   - **Triggers are not read from either database** (M35/L15b record this for Postgres only).
@@ -1397,10 +1397,20 @@ remediation plan) is worth more than any individual fix below.
   - **Not introspected, by earlier decision (L15b):** `<initialData>`, `<aggregations>`,
     `noExport`, `lockEscalation`.
 
-  **Open:** read triggers (needs a decision on how a typed `Trigger` snippet maps from raw
-  trigger DDL, and on recognising the generator's own FK-mode triggers so they are not
-  double-emitted); add the missing clustered-index warning; correct the README wording and list the
-  lossy type mappings.
+  **Partly fixed 2026-10-22:** `sqlserver/keys.rs` now warns on a nonclustered primary key or a
+  clustered non-primary index (a departure from the generator's defaults); `sqlserver/columns.rs`
+  now also warns for `rowversion`/`timestamp`/`image` -> binary and `smalldatetime` -> datetime
+  (`money`/`smallmoney` already warned; `text`/`ntext` -> text is not lossy so stays silent). README
+  wording corrected. No new tests: the warnings are `eprintln!` only.
+
+  **Triggers, decided 2026-10-22:** SQL Server table triggers are exported verbatim as
+  bottom-ordered `otherSql` (`sqlserver/triggers.rs`), not as typed `Trigger`s, because the
+  model's `Trigger` is a body snippet the generator wraps in its own header and can't hold a
+  hand-written trigger (several events, its own name). Recognising the generator's own FK-mode
+  triggers so they aren't double-emitted: **won't do** (they come back as `otherSql` like any
+  other). Postgres triggers remain unexported (M35/L15b). The new `otherSql` writer path has a
+  parser round-trip unit test; the trigger query itself is covered only by the ignored SQL Server
+  integration test (not run here, no server available).
 
 ---
 

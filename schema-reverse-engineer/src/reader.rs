@@ -6,6 +6,7 @@ use schema_model::model::constraint::Constraint;
 use schema_model::model::database_model::DatabaseModel;
 use schema_model::model::enum_type::EnumType;
 use schema_model::model::function::Function;
+use schema_model::model::other_sql::OtherSql;
 use schema_model::model::procedure::Procedure;
 use schema_model::model::relation::Relation;
 use schema_model::model::types::{BooleanMode, ForeignKeyMode, KeyType};
@@ -46,6 +47,7 @@ pub async fn read_schema(
             views: table_views,
             functions,
             procedures,
+            other_sql: Vec::new(),
         },
     ))
 }
@@ -61,6 +63,7 @@ pub(crate) struct SchemaParts {
     pub views: Vec<View>,
     pub functions: Vec<Function>,
     pub procedures: Vec<Procedure>,
+    pub other_sql: Vec<OtherSql>,
 }
 
 /// Builds the dialect-neutral `DatabaseModel` from a reader's collected parts.
@@ -75,6 +78,7 @@ pub(crate) fn assemble_schema(db_schema: &str, parts: SchemaParts) -> DatabaseMo
         views: table_views,
         functions,
         procedures,
+        other_sql,
     } = parts;
 
     let mut columns_by_table: HashMap<String, Vec<ColumnInfo>> = HashMap::new();
@@ -95,6 +99,9 @@ pub(crate) fn assemble_schema(db_schema: &str, parts: SchemaParts) -> DatabaseMo
     schema_builder = schema_builder
         .add_functions(functions)
         .add_procedures(procedures);
+    for other in other_sql {
+        schema_builder = schema_builder.add_other_sql(other);
+    }
 
     for table_name in &table_names {
         let mut table_builder = TableBuilder::new(Some(db_schema), table_name.as_str());

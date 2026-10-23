@@ -391,11 +391,14 @@ The generated file can be fed straight into `schema-sql-generator` or `schema-in
 - PostgreSQL and SQL Server only — SQLite is not supported.
 - Partial and covering indexes and cross-schema foreign keys are kept. Items the schema model can't represent are skipped with a warning.
 - SQL Server: `identity` seed/increment other than (1,1), non-persisted computed columns, and
-  columnstore/XML/spatial indexes are not carried over (a warning is printed for each). Clustered-ness of
-  keys is also not carried over, silently. Triggers aren't exported.
+  columnstore/XML/spatial indexes are not carried over, and neither is clustered-ness of keys (the
+  generator's defaults apply: clustered primary key, nonclustered everything else). A warning is printed for
+  each loss, including a nonclustered primary key or a clustered non-primary index. Table triggers are exported
+  verbatim as bottom-ordered `otherSql` (the typed `<triggers>` model can't hold a hand-written trigger).
+  PostgreSQL triggers aren't exported.
 - SQL Server type mappings: `varchar(max)`/`nvarchar(max)`, `text` and `ntext` become `text`; `money` becomes
-  `decimal(19,4)` and `smallmoney` `decimal(10,4)` (with a warning); `rowversion`, `timestamp` and `image` become
-  `binary`; `datetime` and `smalldatetime` both become `datetime`. Types with no mapping (`xml`, `geography`,
+  `decimal(19,4)` and `smallmoney` `decimal(10,4)`; `rowversion`, `timestamp` and `image` become
+  `binary`; `datetime` and `smalldatetime` both become `datetime` (each of these with a warning). Types with no mapping (`xml`, `geography`,
   `sql_variant`, ...) fall back to `text` with a warning.
 - Foreign keys use `ON DELETE` behavior to determine the relation type (`cascade`, `enforce`,
   `setnull`, `donothing`).

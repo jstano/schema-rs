@@ -84,6 +84,9 @@ fn keys_out_of_order_are_rejected() {
         format!("{INDEX}{PRIMARY}"),
         format!("{PRIMARY}{PRIMARY}"),
     ] {
-        assert!(parse_database_xml(&schema_with_keys(&keys)).is_err(), "{keys}");
+        assert!(
+            parse_database_xml(&schema_with_keys(&keys)).is_err(),
+            "{keys}"
+        );
     }
 }

@@ -71,7 +71,8 @@ pub async fn list_keys(
 /// A primary key becomes `primary`; a unique index with no `INCLUDE` or filter becomes a
 /// `unique` key (this also covers `UNIQUE` constraints); anything else is an `index`. Columnstore,
 /// XML and spatial indexes can't be modeled and are skipped with a warning. Clustered-ness is
-/// not carried over.
+/// not carried over; a departure from the defaults (clustered primary key, nonclustered
+/// everything else) is warned about.
 pub(crate) fn apply_index_rows(rows: Vec<IndexRow>) -> HashMap<String, TableKeys> {
     struct Group {
         table_name: String,
@@ -120,6 +121,26 @@ pub(crate) fn apply_index_rows(rows: Vec<IndexRow>) -> HashMap<String, TableKeys
                 group.type_desc.to_lowercase().replace('_', " ")
             );
             continue;
+        }
+        // The generator emits SQL Server's defaults (clustered primary key, nonclustered
+        // everything else), so only a departure from those is information lost.
+        let clustered = group.index_type == CLUSTERED;
+        if clustered != group.is_primary {
+            eprintln!(
+                "warning: {}.{} is {} -- exported with the default ({})",
+                group.table_name,
+                group.index_name,
+                if clustered {
+                    "a clustered non-primary index"
+                } else {
+                    "a nonclustered primary key"
+                },
+                if clustered {
+                    "nonclustered"
+                } else {
+                    "clustered"
+                },
+            );
         }
         let table_keys = result.entry(group.table_name).or_default();
         if group.is_primary {

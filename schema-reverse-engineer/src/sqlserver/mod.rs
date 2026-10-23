@@ -10,6 +10,7 @@ mod keys;
 mod relations;
 mod routines;
 mod tables;
+mod triggers;
 mod views;
 
 use crate::error::SchemaReverseEngineerError;
@@ -58,7 +59,7 @@ fn specifies_encrypt(connection_string: &str) -> bool {
 
 /// Introspects the given SQL Server schema (`db_schema`, e.g. `"dbo"`) of the connected
 /// database and builds a `DatabaseModel` describing its tables, columns, keys, foreign keys,
-/// check constraints, views, functions, and procedures.
+/// check constraints, views, functions, procedures, and triggers (as raw `other_sql`).
 pub async fn read_sqlserver_schema(
     client: &mut SqlServerClient,
     db_schema: &str,
@@ -70,6 +71,7 @@ pub async fn read_sqlserver_schema(
     let table_constraints = constraints::list_constraints(client, db_schema).await?;
     let table_views = views::list_views(client, db_schema).await?;
     let (functions, procedures) = routines::list_routines(client, db_schema).await?;
+    let other_sql = triggers::list_triggers(client, db_schema).await?;
 
     Ok(assemble_schema(
         db_schema,
@@ -83,6 +85,7 @@ pub async fn read_sqlserver_schema(
             views: table_views,
             functions,
             procedures,
+            other_sql,
         },
     ))
 }

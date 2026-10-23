@@ -6,7 +6,9 @@ use schema_model::model::key::Key;
 use schema_model::model::relation::Relation;
 use schema_model::model::schema::Schema;
 use schema_model::model::table::Table;
-use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode, KeyType};
+use schema_model::model::types::{
+    BooleanMode, DatabaseType, ForeignKeyMode, KeyType, OtherSqlOrder,
+};
 use schema_model::model::view::View;
 use std::fmt::Write as _;
 
@@ -71,6 +73,20 @@ fn write_schema_body(out: &mut String, schema: &Schema, indent: usize) {
             procedure.sql(),
             indent,
         );
+    }
+    for other in schema.other_sql() {
+        push_indent(out, indent);
+        let _ = write!(
+            out,
+            "<otherSql databaseType=\"{}\" order=\"{}\">",
+            database_type_str(other.database_type()),
+            match other.order() {
+                OtherSqlOrder::Top => "top",
+                OtherSqlOrder::Bottom => "bottom",
+            }
+        );
+        write_cdata(out, other.sql());
+        out.push_str("</otherSql>\n\n");
     }
 }
 
@@ -531,6 +547,27 @@ mod tests {
             .expect("XML containing a ]]> sequence inside a view's SQL must still be well-formed");
         let reparsed_view = &reparsed.default_schema().all_views()[0];
         assert_eq!(reparsed_view.sql(), "select * from t where arr[1:2]]>x");
+    }
+
+    #[test]
+    fn other_sql_round_trips_through_the_real_parser() {
+        use schema_model::model::other_sql::OtherSql;
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_other_sql(OtherSql::new(
+                DatabaseType::SqlServer,
+                OtherSqlOrder::Bottom,
+                "create trigger trg on t after insert as select 1 where 'a]]>b' = 'x'",
+            ))
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model);
+
+        let reparsed = schema_parser::parse_database_xml(&xml).expect("otherSql must be valid XML");
+        let other = &reparsed.default_schema().other_sql()[0];
+        assert_eq!(other.database_type(), DatabaseType::SqlServer);
+        assert_eq!(other.order(), OtherSqlOrder::Bottom);
+        assert!(other.sql().contains("a]]>b"));
     }
 
     #[test]

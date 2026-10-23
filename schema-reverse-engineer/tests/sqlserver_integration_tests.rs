@@ -1,5 +1,5 @@
 use schema_model::model::column_type::ColumnType;
-use schema_model::model::types::{DatabaseType, KeyType, RelationType};
+use schema_model::model::types::{DatabaseType, KeyType, OtherSqlOrder, RelationType};
 use schema_reverse_engineer::sqlserver::{self, SqlServerClient};
 use schema_reverse_engineer::{read_sqlserver_schema, write_database_xml};
 use testcontainers::runners::AsyncRunner;
@@ -54,6 +54,8 @@ const SCHEMA_SQL: &[&str] = &[
     "CREATE VIEW order_totals AS SELECT customer_id, SUM(amount) AS total FROM dbo.orders GROUP BY customer_id",
     "CREATE FUNCTION dbo.double_it(@x int) RETURNS int AS BEGIN RETURN @x * 2 END",
     "CREATE PROCEDURE dbo.noop_proc AS BEGIN SELECT 1 END",
+    // Dropped along with its table above.
+    "CREATE TRIGGER dbo.trg_order_notes_audit ON dbo.order_notes AFTER INSERT, UPDATE AS BEGIN SELECT 1 END",
 ];
 
 async fn connect() -> (
@@ -175,6 +177,11 @@ async fn test_reverse_engineer_sqlserver_schema() {
     );
     assert!(schema.functions().iter().any(|f| f.name() == "double_it"));
     assert!(schema.procedures().iter().any(|p| p.name() == "noop_proc"));
+    assert!(
+        schema.other_sql().iter().any(
+            |o| o.order() == OtherSqlOrder::Bottom && o.sql().contains("trg_order_notes_audit")
+        )
+    );
 
     // The written XML must be accepted by the real parser.
     let xml = write_database_xml(&model);
