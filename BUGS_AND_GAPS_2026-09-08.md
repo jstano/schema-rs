@@ -1315,7 +1315,7 @@ remediation plan) is worth more than any individual fix below.
   `SqlGenerator::new`, `module_inception` in schema-parser.
 
   **Fixed 2026-10-03.** `AnyPool::SqlServer` boxed; two row-tuple `type` aliases in `connection.rs`; `MigrationStatus` now implements `FromStr` (caller uses `.parse()`); `DefaultSqlGenerator::new` gets a justified `#[allow(clippy::too_many_arguments)]` (one strategy per struct field); `schema-parser/src/parser/parser.rs` renamed `xml_parser.rs` (still re-exported as `parser::parse_database_xml`). Remaining clippy warnings (`Column::new_all`, `insert_migration`, `parse_boolean_default`, etc.) weren't in this item and are untouched.
-- [ ] **L20.** Flyway gaps in the installer CLI: no `baseline` (so this can never be adopted on
+- [x] **L20.** Flyway gaps in the installer CLI: no `baseline` (so this can never be adopted on
   an existing database without hand-inserting rows), no `--out-of-order`, `--target`,
   `--dry-run`, `clean`, `undo`, repeatable migrations, or configurable history-table name.
   `migrator.rs:16,24` also leave a 9-minute unrecoverable window between the 60 s lock
@@ -1348,6 +1348,12 @@ remediation plan) is worth more than any individual fix below.
   Postgres 17 and SQL Server (Azure SQL Edge) via the shared `tests/common/mod.rs` scenario.
   `EmbeddedMigrationSource` has a `repeatables` field (construct it
   with `..Default::default()`).
+
+  **Decision (2026-10-22): won't fix the rest.** Repeatable migrations were the only part
+  worth building. Not doing: standalone `baseline` command (`install --baseline-version`
+  covers adoption), `--out-of-order`, configurable history-table name, `--lock-timeout` /
+  stale-after override for the 60 s / 600 s window, `clean` (destructive) and `undo` (a paid
+  Flyway feature).
 - [x] **L21.** No per-database migration selection in `schema-installer` (raised 2026-10-03
   while closing L13). `--migrations-dir` takes one flat directory and applies every `.sql` file
   in it to whatever database is connected. Flyway handles this with `locations=db/migration/{vendor}`;
@@ -1487,11 +1493,6 @@ more progress than the findings section it's derived from.
 - [x] C4: emit schema DDL in the header — `create schema if not exists` (PostgreSQL), the
   `if not exists (select … from sys.schemas) exec('create schema …')` form (SQL Server);
   for SQLite either flatten `schema.table` → `schema_table` or reject multi-schema models.
-- [ ] C5: add a per-dialect `quote_identifier` (`"x"` / `[x]` / `"x"`) and route every
-  table/column/constraint/index name through it. A mechanical sweep of
-  `column_generator.rs`, `key_generator.rs`, `index_generator.rs`, `relation_generator.rs`.
-  — Skipped at user's request (see C5); direction changed to "error on a bad identifier"
-  rather than auto-quote, still unresolved.
 - [x] H2: parse boolean defaults properly (`1`/`yes`/`on`/`true`, trimmed) and error on
   anything else; let a boolean column have no default.
 - [x] H3/H6: reject zero-length `char`/`varchar` in `validate()`, and filter empty strings
