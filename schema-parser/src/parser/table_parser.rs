@@ -79,8 +79,8 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<
                 )
                 .default_constraint(column_xml.default_value.clone())
                 .generated(column_xml.generated.clone())
-                .min_value(column_xml.min_value)
-                .max_value(column_xml.max_value)
+                .min_value(column_xml.min_value.clone())
+                .max_value(column_xml.max_value.clone())
                 .enum_type(column_xml.enum_type.clone())
                 .element_type(column_xml.element_type.clone())
                 .build();

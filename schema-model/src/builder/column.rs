@@ -13,8 +13,8 @@ pub struct ColumnBuilder {
     check_constraint: Option<String>,
     default_constraint: Option<String>,
     generated: Option<String>,
-    min_value: Option<f64>,
-    max_value: Option<f64>,
+    min_value: Option<String>,
+    max_value: Option<String>,
     enum_type: Option<String>,
     element_type: Option<String>,
 }
@@ -67,12 +67,12 @@ impl ColumnBuilder {
         self
     }
 
-    pub fn min_value(mut self, min_value: Option<f64>) -> Self {
+    pub fn min_value(mut self, min_value: Option<String>) -> Self {
         self.min_value = min_value;
         self
     }
 
-    pub fn max_value(mut self, max_value: Option<f64>) -> Self {
+    pub fn max_value(mut self, max_value: Option<String>) -> Self {
         self.max_value = max_value;
         self
     }

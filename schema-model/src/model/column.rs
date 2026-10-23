@@ -37,8 +37,8 @@ pub struct Column {
     check_constraint: Option<String>,
     default_constraint: Option<String>,
     generated: Option<String>,
-    min_value: Option<f64>,
-    max_value: Option<f64>,
+    min_value: Option<String>,
+    max_value: Option<String>,
     enum_type: Option<String>,
     element_type: Option<String>,
 }
@@ -80,8 +80,8 @@ impl Column {
         check_constraint: Option<String>,
         default_constraint: Option<String>,
         generated: Option<String>,
-        min_value: Option<f64>,
-        max_value: Option<f64>,
+        min_value: Option<String>,
+        max_value: Option<String>,
         enum_type: Option<String>,
         element_type: Option<String>,
     ) -> Self {
@@ -143,12 +143,12 @@ impl Column {
         self.generated.as_deref()
     }
 
-    pub fn min_value(&self) -> Option<f64> {
-        self.min_value
+    pub fn min_value(&self) -> Option<&str> {
+        self.min_value.as_deref()
     }
 
-    pub fn max_value(&self) -> Option<f64> {
-        self.max_value
+    pub fn max_value(&self) -> Option<&str> {
+        self.max_value.as_deref()
     }
 
     pub fn enum_type(&self) -> Option<&str> {

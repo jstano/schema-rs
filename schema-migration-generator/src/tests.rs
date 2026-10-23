@@ -613,8 +613,8 @@ fn sqlserver_add_column_min_max_emits_check_constraint() {
     cs.add_change(SchemaChange::AddColumn {
         table_name: "product".to_string(),
         column: ColumnBuilder::new(None::<&str>, "price", ColumnType::Int)
-            .min_value(Some(0.0))
-            .max_value(Some(100.0))
+            .min_value(Some("0".to_string()))
+            .max_value(Some("100".to_string()))
             .build(),
     });
 
@@ -1383,7 +1383,7 @@ fn sqlserver_modify_column_drops_old_default_and_check_constraints_before_alteri
         old_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int)
             .required(true)
             .default_constraint(Some("0".to_string()))
-            .min_value(Some(0.0))
+            .min_value(Some("0".to_string()))
             .build(),
         new_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int)
             .required(true)
@@ -1438,7 +1438,7 @@ fn sqlserver_modify_column_re_adds_new_default_and_check_constraints_after_alter
         new_column: ColumnBuilder::new(None::<&str>, "quantity", ColumnType::Int)
             .required(true)
             .default_constraint(Some("0".to_string()))
-            .min_value(Some(0.0))
+            .min_value(Some("0".to_string()))
             .build(),
     });
 

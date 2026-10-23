@@ -142,7 +142,7 @@ impl DefaultColumnConstraintGenerator {
         if let Some(min_value) = min_value {
             sql.push_str(column.name());
             sql.push_str(" >= ");
-            sql.push_str(min_value.to_string().as_str());
+            sql.push_str(min_value);
         }
 
         if min_value.is_some() && max_value.is_some() {
@@ -152,7 +152,7 @@ impl DefaultColumnConstraintGenerator {
         if let Some(max_value) = max_value {
             sql.push_str(column.name());
             sql.push_str(" <= ");
-            sql.push_str(max_value.to_string().as_str());
+            sql.push_str(max_value);
         }
 
         sql
@@ -289,8 +289,8 @@ mod tests {
             .add_column(
                 ColumnBuilder::new(None::<&str>, "amount", ColumnType::Int)
                     .check_constraint(Some("amount <> 13".to_string()))
-                    .min_value(Some(0.0))
-                    .max_value(Some(100.0))
+                    .min_value(Some("0".to_string()))
+                    .max_value(Some("100".to_string()))
                     .build(),
             )
             .build();
@@ -320,7 +320,7 @@ mod tests {
             .add_column(
                 ColumnBuilder::new(None::<&str>, "amount", ColumnType::Int)
                     .check_constraint(Some("check(amount <> 13)".to_string()))
-                    .min_value(Some(0.0))
+                    .min_value(Some("0".to_string()))
                     .build(),
             )
             .build();
@@ -352,8 +352,8 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "test")
             .add_column(
                 ColumnBuilder::new(None::<&str>, "flag", ColumnType::Boolean)
-                    .min_value(Some(0.0))
-                    .max_value(Some(1.0))
+                    .min_value(Some("0".to_string()))
+                    .max_value(Some("1".to_string()))
                     .build(),
             )
             .build();
@@ -394,7 +394,7 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "test")
             .add_column(
                 ColumnBuilder::new(None::<&str>, "flag", ColumnType::Boolean)
-                    .min_value(Some(0.0))
+                    .min_value(Some("0".to_string()))
                     .build(),
             )
             .build();

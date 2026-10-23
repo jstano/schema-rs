@@ -131,9 +131,9 @@ pub struct ColumnXml {
     #[serde(rename = "@elementType")]
     pub element_type: Option<String>,
     #[serde(rename = "@minValue")]
-    pub min_value: Option<f64>,
+    pub min_value: Option<String>,
     #[serde(rename = "@maxValue")]
-    pub max_value: Option<f64>,
+    pub max_value: Option<String>,
     #[serde(rename = "check")]
     pub check: Option<CheckXml>,
 }

@@ -172,8 +172,8 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
         generated: attr_string(node, "generated"),
         enum_type: attr_string(node, "enumType"),
         element_type: attr_string(node, "elementType"),
-        min_value: attr_f64(node, "minValue")?,
-        max_value: attr_f64(node, "maxValue")?,
+        min_value: attr_decimal(node, "minValue")?,
+        max_value: attr_decimal(node, "maxValue")?,
         check: node
             .children()
             .find(|n| n.has_tag_name((NS, "check")))
@@ -511,15 +511,17 @@ fn attr_i32(node: Node, name: &str) -> Result<Option<i32>, String> {
     }
 }
 
-/// Reads an optional numeric attribute, erroring (rather than silently defaulting to `None`)
-/// when the attribute is present but not a finite `f64` - this covers unparseable typos like
-/// `minValue="1o"` as well as `inf`/`nan`, which `f64::parse` otherwise accepts silently.
-fn attr_f64(node: Node, name: &str) -> Result<Option<f64>, String> {
+/// Reads an optional `xs:decimal` attribute as its original text, so precision is never lost to
+/// a float round-trip. Errors (rather than silently defaulting to `None`) when the attribute is
+/// present but not a plain decimal literal - this covers typos like `minValue="1o"` as well as
+/// `inf`/`nan`/exponent forms. The value is later emitted verbatim into SQL, so it must be
+/// validated here.
+fn attr_decimal(node: Node, name: &str) -> Result<Option<String>, String> {
     match node.attribute(name) {
         None => Ok(None),
-        Some(v) => match v.parse::<f64>() {
-            Ok(n) if n.is_finite() => Ok(Some(n)),
-            _ => Err(format!(
+        Some(v) => match is_decimal_literal(v) {
+            true => Ok(Some(v.to_string())),
+            false => Err(format!(
                 "<{}> attribute '{}' has invalid numeric value '{}'",
                 node.tag_name().name(),
                 name,
@@ -527,6 +529,14 @@ fn attr_f64(node: Node, name: &str) -> Result<Option<f64>, String> {
             )),
         },
     }
+}
+
+/// `[+-]? digits [. digits]?` or `[+-]? . digits`, matching the `xs:decimal` lexical space.
+fn is_decimal_literal(v: &str) -> bool {
+    let v = v.strip_prefix(['+', '-']).unwrap_or(v);
+    let (int, frac) = v.split_once('.').unwrap_or((v, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    digits(int) && digits(frac) && !(int.is_empty() && frac.is_empty())
 }
 
 fn collect_text(node: Node) -> String {
@@ -607,27 +617,52 @@ mod tests {
     }
 
     #[test]
-    fn attr_f64_errors_on_unparseable_value() {
+    fn attr_decimal_errors_on_unparseable_value() {
         let doc = Document::parse(
             r#"<column xmlns="http://stano.com/database" name="x" type="int" minValue="1o"/>"#,
         )
         .unwrap();
         let node = doc.root_element();
 
-        let err = attr_f64(node, "minValue").unwrap_err();
+        let err = attr_decimal(node, "minValue").unwrap_err();
         assert!(err.contains("minValue"));
         assert!(err.contains("1o"));
     }
 
     #[test]
-    fn attr_f64_errors_on_infinite_value() {
+    fn attr_decimal_keeps_original_text() {
+        for v in ["0", "-5", "+3.14", ".5", "5.", "9007199254740993", "0.10"] {
+            let xml = format!(
+                r#"<column xmlns="http://stano.com/database" name="x" type="int" minValue="{v}"/>"#
+            );
+            let doc = Document::parse(&xml).unwrap();
+            assert_eq!(
+                attr_decimal(doc.root_element(), "minValue").unwrap().as_deref(),
+                Some(v)
+            );
+        }
+    }
+
+    #[test]
+    fn attr_decimal_rejects_exponent_and_bare_sign() {
+        for v in ["1e5", "-", ".", "1.2.3", ""] {
+            let xml = format!(
+                r#"<column xmlns="http://stano.com/database" name="x" type="int" minValue="{v}"/>"#
+            );
+            let doc = Document::parse(&xml).unwrap();
+            assert!(attr_decimal(doc.root_element(), "minValue").is_err(), "{v}");
+        }
+    }
+
+    #[test]
+    fn attr_decimal_errors_on_infinite_value() {
         let doc = Document::parse(
             r#"<column xmlns="http://stano.com/database" name="x" type="int" maxValue="inf"/>"#,
         )
         .unwrap();
         let node = doc.root_element();
 
-        let err = attr_f64(node, "maxValue").unwrap_err();
+        let err = attr_decimal(node, "maxValue").unwrap_err();
         assert!(err.contains("maxValue"));
         assert!(err.contains("inf"));
     }

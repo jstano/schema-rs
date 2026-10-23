@@ -49,8 +49,8 @@ mod tests {
         let table = TableBuilder::new(None::<&str>, "products")
             .add_column(
                 ColumnBuilder::new(None::<&str>, "price", ColumnType::Int)
-                    .min_value(Some(0.0))
-                    .max_value(Some(100.0))
+                    .min_value(Some("0".to_string()))
+                    .max_value(Some("100".to_string()))
                     .build(),
             )
             .build();
