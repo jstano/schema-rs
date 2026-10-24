@@ -31,3 +31,9 @@ schema-model = { version = "0.7.0", path = "schema-model" }
 schema-parser = { version = "0.7.0", path = "schema-parser" }
 schema-reverse-engineer = { version = "0.7.0", path = "schema-reverse-engineer" }
 schema-sql-generator = { version = "0.7.0", path = "schema-sql-generator" }
+
+# Xcode 27.1's linker writes a proc-macro dylib with a mis-aligned LINKEDIT string pool when
+# cargo's default release `strip = "debuginfo"` is applied, and rustc then fails to dlopen it.
+# Build scripts and proc-macros (the build-override profile) never ship, so don't strip them.
+[profile.release.build-override]
+strip = "none"
