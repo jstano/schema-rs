@@ -51,17 +51,13 @@ fn test_parser() {
 fn schema_with_keys(keys: &str) -> String {
     format!(
         r#"<database xmlns="http://stano.com/database">
-  <schema>
-    <tables>
-      <table name="t">
-        <columns>
-          <column name="id" type="int" required="true"/>
-          <column name="a" type="int"/>
-        </columns>
-        <keys>{keys}</keys>
-      </table>
-    </tables>
-  </schema>
+  <table name="t">
+    <columns>
+      <column name="id" type="int" required="true"/>
+      <column name="a" type="int"/>
+    </columns>
+    <keys>{keys}</keys>
+  </table>
 </database>"#
     )
 }
