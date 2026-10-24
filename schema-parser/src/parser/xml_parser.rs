@@ -16,6 +16,7 @@ pub fn parse_database_xml(xml: &str) -> Result<DatabaseModel, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use schema_model::model::aggregation::AggregationType;
     use std::fs;
 
     #[test]
@@ -407,5 +408,83 @@ mod tests {
         let index = &table.indexes()[0];
         assert!(index.is_unique());
         assert_eq!(index.filter(), Some("ParentId is not null"));
+    }
+
+    #[test]
+    fn aggregate_columns_keep_document_order() {
+        let xml = wrap(
+            r#"
+            <table name="T">
+                <columns><column name="ID" type="int"/></columns>
+                <aggregations>
+                    <aggregate destinationTable="D" dateColumn="Day" timestampColumn="Stamp" frequency="daily">
+                        <sum sourceColumn="ID" destinationColumn="S1"/>
+                        <count destinationColumn="C1"/>
+                        <sum sourceColumn="ID" destinationColumn="S2"/>
+                        <group><column source="ID" destination="ID"/></group>
+                    </aggregate>
+                </aggregations>
+            </table>
+            "#,
+        );
+
+        let database = parse_database_xml(&xml).expect("parse ok");
+        let table = database.schemas()[0].get_table("T");
+        let columns = table.aggregations()[0].aggregation_columns();
+
+        let kinds: Vec<_> = columns
+            .iter()
+            .map(|c| (c.aggregation_type(), c.destination_column()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (AggregationType::Sum, "S1"),
+                (AggregationType::Count, "C1"),
+                (AggregationType::Sum, "S2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn aggregate_with_multiple_groups_returns_error() {
+        let xml = wrap(
+            r#"
+            <table name="T">
+                <columns><column name="ID" type="int"/></columns>
+                <aggregations>
+                    <aggregate destinationTable="D" dateColumn="Day" timestampColumn="Stamp" frequency="daily">
+                        <count destinationColumn="C1"/>
+                        <group><column source="ID" destination="ID"/></group>
+                        <group><column source="ID" destination="ID"/></group>
+                    </aggregate>
+                </aggregations>
+            </table>
+            "#,
+        );
+
+        let result = parse_database_xml(&xml);
+
+        assert!(result.unwrap_err().contains("more than one <group>"));
+    }
+
+    #[test]
+    fn aggregate_without_group_returns_error() {
+        let xml = wrap(
+            r#"
+            <table name="T">
+                <columns><column name="ID" type="int"/></columns>
+                <aggregations>
+                    <aggregate destinationTable="D" dateColumn="Day" timestampColumn="Stamp" frequency="daily">
+                        <count destinationColumn="C1"/>
+                    </aggregate>
+                </aggregations>
+            </table>
+            "#,
+        );
+
+        let result = parse_database_xml(&xml);
+
+        assert!(result.unwrap_err().contains("missing <group>"));
     }
 }

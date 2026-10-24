@@ -1,5 +1,5 @@
 use crate::parser::convert::agg_frequency_from_str;
-use crate::parser::nodes::TableXml;
+use crate::parser::nodes::{AggregateColumnXml, TableXml};
 use schema_model::builder::{ColumnBuilder, KeyBuilder};
 use schema_model::model::aggregation::{
     Aggregation, AggregationColumn, AggregationGroup, AggregationType,
@@ -295,21 +295,22 @@ fn parse_aggregations(table_xml: &TableXml) -> Result<Vec<Aggregation>, String> 
 
     if let Some(aggregations_xml) = &table_xml.aggregations {
         for aggregate_xml in aggregations_xml.aggregate.iter() {
-            let mut cols: Vec<AggregationColumn> = Vec::new();
-            for sum_xml in aggregate_xml.sum.iter() {
-                cols.push(AggregationColumn::new(
-                    AggregationType::Sum,
-                    &sum_xml.source_column,
-                    &sum_xml.destination_column,
-                ));
-            }
-            for count_xml in aggregate_xml.count.iter() {
-                cols.push(AggregationColumn::new(
-                    AggregationType::Count,
-                    "",
-                    &count_xml.destination_column,
-                ));
-            }
+            let cols: Vec<AggregationColumn> = aggregate_xml
+                .columns
+                .iter()
+                .map(|column_xml| match column_xml {
+                    AggregateColumnXml::Sum(sum_xml) => AggregationColumn::new(
+                        AggregationType::Sum,
+                        &sum_xml.source_column,
+                        &sum_xml.destination_column,
+                    ),
+                    AggregateColumnXml::Count(count_xml) => AggregationColumn::new(
+                        AggregationType::Count,
+                        "",
+                        &count_xml.destination_column,
+                    ),
+                })
+                .collect();
             let mut groups: Vec<AggregationGroup> = Vec::new();
             for group_column_xml in aggregate_xml.group.column.iter() {
                 groups.push(AggregationGroup::new(

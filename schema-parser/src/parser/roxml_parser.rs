@@ -400,30 +400,37 @@ fn parse_aggregations_node(node: Node) -> Result<AggregationsXml, String> {
 }
 
 fn parse_aggregate_node(node: Node) -> Result<AggregateXml, String> {
-    let mut sum = Vec::new();
-    let mut count = Vec::new();
+    let mut columns = Vec::new();
     let mut group: Option<GroupXml> = None;
+    let destination_table = attr_string_required(node, "destinationTable")?;
 
     for c in node.children().filter(|n| n.is_element()) {
         if c.has_tag_name((NS, "sum")) {
-            sum.push(SumXml {
+            columns.push(AggregateColumnXml::Sum(SumXml {
                 source_column: attr_string_required(c, "sourceColumn")?,
                 destination_column: attr_string_required(c, "destinationColumn")?,
-            });
+            }));
         } else if c.has_tag_name((NS, "count")) {
-            count.push(CountXml {
+            columns.push(AggregateColumnXml::Count(CountXml {
                 destination_column: attr_string_required(c, "destinationColumn")?,
-            });
+            }));
         } else if c.has_tag_name((NS, "group")) {
+            if group.is_some() {
+                return Err(format!(
+                    "aggregate to '{destination_table}' has more than one <group>"
+                ));
+            }
             group = Some(parse_group_node(c)?);
         }
     }
 
+    let group =
+        group.ok_or_else(|| format!("aggregate to '{destination_table}' is missing <group>"))?;
+
     Ok(AggregateXml {
-        sum,
-        count,
-        group: group.unwrap_or_else(|| GroupXml { column: Vec::new() }),
-        destination_table: attr_string_required(node, "destinationTable")?,
+        columns,
+        group,
+        destination_table,
         date_column: attr_string_required(node, "dateColumn")?,
         timestamp_column: attr_string_required(node, "timestampColumn")?,
         frequency: attr_string_required(node, "frequency")?,
@@ -637,7 +644,9 @@ mod tests {
             );
             let doc = Document::parse(&xml).unwrap();
             assert_eq!(
-                attr_decimal(doc.root_element(), "minValue").unwrap().as_deref(),
+                attr_decimal(doc.root_element(), "minValue")
+                    .unwrap()
+                    .as_deref(),
                 Some(v)
             );
         }

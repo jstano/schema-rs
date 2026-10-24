@@ -339,12 +339,8 @@ pub struct AggregationsXml {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AggregateXml {
-    #[serde(default)]
-    #[serde(rename = "sum")]
-    pub sum: Vec<SumXml>,
-    #[serde(default)]
-    #[serde(rename = "count")]
-    pub count: Vec<CountXml>,
+    /// `sum` and `count` children in document order.
+    pub columns: Vec<AggregateColumnXml>,
     #[serde(rename = "group")]
     pub group: GroupXml,
     #[serde(rename = "@destinationTable")]
@@ -357,6 +353,14 @@ pub struct AggregateXml {
     pub frequency: String,
     #[serde(rename = "@criteria")]
     pub criteria: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum AggregateColumnXml {
+    #[serde(rename = "sum")]
+    Sum(SumXml),
+    #[serde(rename = "count")]
+    Count(CountXml),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
