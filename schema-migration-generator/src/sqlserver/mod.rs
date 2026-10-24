@@ -316,7 +316,7 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                 SchemaChange::AddConstraint {
                     table_name,
                     constraint,
-                } if constraint.database_type() == DatabaseType::SqlServer => {
+                } if constraint.applies_to(DatabaseType::SqlServer) => {
                     // `constraint.sql()` is already the full `check (...)` clause - same
                     // convention as `DefaultTableConstraintGenerator` on the create path
                     // (`constraint {name} {sql}`, no wrapper added) - so this must not
@@ -340,7 +340,7 @@ impl MigrationGenerator for SqlServerMigrationGenerator {
                     table_name,
                     constraint_name,
                     database_type,
-                } if *database_type == DatabaseType::SqlServer => {
+                } if database_type.is_none_or(|d| d == DatabaseType::SqlServer) => {
                     write_guarded(
                         writer,
                         &format!(

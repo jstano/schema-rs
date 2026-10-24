@@ -1,5 +1,7 @@
 use crate::model::column::Column;
 use crate::model::column_type::ColumnType;
+use crate::model::types::DatabaseType;
+use std::collections::HashMap;
 
 /// ColumnBuilder holds intermediate settings for a column and produces a model::Column on build.
 #[derive(Debug)]
@@ -11,6 +13,7 @@ pub struct ColumnBuilder {
     scale: i32,
     required: bool,
     check_constraint: Option<String>,
+    database_checks: HashMap<DatabaseType, String>,
     default_constraint: Option<String>,
     generated: Option<String>,
     min_value: Option<String>,
@@ -29,6 +32,7 @@ impl ColumnBuilder {
             scale: 0,
             required: false,
             check_constraint: None,
+            database_checks: HashMap::new(),
             default_constraint: None,
             generated: None,
             min_value: None,
@@ -54,6 +58,12 @@ impl ColumnBuilder {
 
     pub fn check_constraint(mut self, check_constraint: Option<String>) -> Self {
         self.check_constraint = check_constraint;
+        self
+    }
+
+    /// Sets the check for one database; it overrides the generic `check_constraint` there.
+    pub fn database_check(mut self, database_type: DatabaseType, check: String) -> Self {
+        self.database_checks.insert(database_type, check);
         self
     }
 
@@ -103,6 +113,7 @@ impl ColumnBuilder {
             self.enum_type,
             self.element_type,
         )
+        .with_database_checks(self.database_checks)
     }
 }
 

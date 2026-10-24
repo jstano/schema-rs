@@ -184,7 +184,7 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                 SchemaChange::AddConstraint {
                     table_name,
                     constraint,
-                } if constraint.database_type() == DatabaseType::Sqlite => {
+                } if constraint.applies_to(DatabaseType::Sqlite) => {
                     writeln!(
                         writer,
                         "-- SQLite does not support adding constraint '{}' to table '{}' in-place.",
@@ -202,7 +202,7 @@ impl MigrationGenerator for SqliteMigrationGenerator {
                     table_name,
                     constraint_name,
                     database_type,
-                } if *database_type == DatabaseType::Sqlite => {
+                } if database_type.is_none_or(|d| d == DatabaseType::Sqlite) => {
                     writeln!(
                         writer,
                         "-- SQLite does not support dropping constraint '{}' from table '{}' in-place.",

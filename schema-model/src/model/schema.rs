@@ -317,6 +317,26 @@ impl Schema {
                     ));
                 }
 
+                if column.column_type() == crate::model::column_type::ColumnType::Decimal {
+                    if column.length() <= 0 {
+                        errors.push(format!(
+                            "ERROR: {}.{} is a decimal column with no length (or length <= 0); \
+                             length is the precision and must be greater than zero",
+                            table.name(),
+                            column.name()
+                        ));
+                    } else if column.scale() > column.length() {
+                        errors.push(format!(
+                            "ERROR: {}.{} is a decimal column with scale {} greater than its \
+                             length (precision) {}",
+                            table.name(),
+                            column.name(),
+                            column.scale(),
+                            column.length()
+                        ));
+                    }
+                }
+
                 if matches!(
                     column.column_type(),
                     crate::model::column_type::ColumnType::Char
@@ -908,6 +928,36 @@ mod tests {
         let schema = SchemaBuilder::new(Some("s")).add_table(table).build();
 
         assert!(schema.validate().is_empty());
+    }
+
+    #[test]
+    fn validate_checks_decimal_precision_and_scale() {
+        use crate::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
+        use crate::model::column_type::ColumnType as CT;
+
+        let validate = |length: i32, scale: i32| {
+            let table = TableBuilder::new(Some("s"), "widget")
+                .add_column(
+                    ColumnBuilder::new(Some("s"), "amount", CT::Decimal)
+                        .length(length)
+                        .scale(scale)
+                        .build(),
+                )
+                .build();
+            SchemaBuilder::new(Some("s"))
+                .add_table(table)
+                .build()
+                .validate()
+        };
+
+        assert!(validate(10, 2).is_empty());
+        assert!(validate(10, 10).is_empty());
+        let errors = validate(0, 0);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("amount") && errors[0].contains("precision"));
+        let errors = validate(5, 6);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("scale 6"));
     }
 
     #[test]

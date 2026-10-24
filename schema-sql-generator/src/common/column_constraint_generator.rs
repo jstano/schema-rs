@@ -56,7 +56,9 @@ impl DefaultColumnConstraintGenerator {
         {
             clauses.push(clause);
         }
-        if let Some(constraint) = column.check_constraint() {
+        if let Some(constraint) =
+            column.check_constraint_for(self.context.settings().database_type())
+        {
             clauses.push(Self::strip_check_wrapper(constraint));
         }
         if column.column_type() == ColumnType::Enum
@@ -204,6 +206,34 @@ mod tests {
     use schema_model::builder::{ColumnBuilder, SchemaBuilder, TableBuilder};
     use schema_model::model::database_model::DatabaseModel;
     use schema_model::model::types::{BooleanMode, DatabaseType, ForeignKeyMode};
+
+    #[test]
+    fn database_specific_check_wins_over_generic_check_for_that_database() {
+        let table = TableBuilder::new(None::<&str>, "test")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "qty", ColumnType::Int)
+                    .check_constraint(Some("qty > 0".to_string()))
+                    .database_check(DatabaseType::Postgresql, "qty > 100".to_string())
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        let (pg_ctx, _buffer) = make_context(model.clone(), DatabaseType::Postgresql);
+        let pg = DefaultColumnConstraintGenerator::new(pg_ctx).column_check_constraints(&table);
+        assert_eq!(pg.len(), 1);
+        assert!(pg[0].contains("qty > 100"), "got: {}", pg[0]);
+        assert!(!pg[0].contains("qty > 0"), "got: {}", pg[0]);
+
+        let (ss_ctx, _buffer) = make_context(model, DatabaseType::SqlServer);
+        let ss = DefaultColumnConstraintGenerator::new(ss_ctx).column_check_constraints(&table);
+        assert_eq!(ss.len(), 1);
+        assert!(ss[0].contains("qty > 0"), "got: {}", ss[0]);
+    }
 
     #[test]
     fn user_check_constraint_is_wrapped_in_check() {

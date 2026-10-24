@@ -56,7 +56,7 @@ pub enum SchemaChange {
     DropConstraint {
         table_name: String,
         constraint_name: String,
-        database_type: DatabaseType,
+        database_type: Option<DatabaseType>,
     },
     AddRelation {
         relation: Relation,

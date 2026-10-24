@@ -196,10 +196,30 @@ fn write_column(out: &mut String, column: &Column, indent: usize) {
         let _ = write!(out, " maxValue=\"{}\"", max_value);
     }
 
-    if let Some(check) = column.check_constraint() {
+    let database_checks: Vec<(DatabaseType, &str)> = [
+        DatabaseType::Postgresql,
+        DatabaseType::Sqlite,
+        DatabaseType::SqlServer,
+    ]
+    .into_iter()
+    .filter_map(|t| column.database_checks().get(&t).map(|c| (t, c.as_str())))
+    .collect();
+
+    if column.check_constraint().is_some() || !database_checks.is_empty() {
         out.push_str(">\n");
-        push_indent(out, indent + 1);
-        let _ = writeln!(out, "<check>{}</check>", xml_escape(check));
+        if let Some(check) = column.check_constraint() {
+            push_indent(out, indent + 1);
+            let _ = writeln!(out, "<check>{}</check>", xml_escape(check));
+        }
+        for (database_type, check) in database_checks {
+            push_indent(out, indent + 1);
+            let _ = writeln!(
+                out,
+                "<check databaseType=\"{}\">{}</check>",
+                database_type_str(database_type),
+                xml_escape(check)
+            );
+        }
         push_indent(out, indent);
         out.push_str("</column>\n");
     } else {
@@ -208,39 +228,22 @@ fn write_column(out: &mut String, column: &Column, indent: usize) {
 }
 
 fn write_keys(out: &mut String, table: &Table, indent: usize) {
-    // The XSD requires a <primary> element whenever <keys> is present, so a table with no
-    // primary key can't emit unique keys or indexes either. They are skipped with a warning
-    // (like the other things the model/XSD can't represent) rather than failing the run.
-    let Some(primary) = table.primary_key() else {
-        for key in table
-            .keys()
-            .iter()
-            .filter(|k| k.key_type() == KeyType::Unique)
-        {
-            eprintln!(
-                "warning: table {} has no primary key, so its unique key on ({}) can't be written -- skipping it",
-                table.name(),
-                key.columns_as_string()
-            );
-        }
-        for index in table.indexes() {
-            eprintln!(
-                "warning: table {} has no primary key, so its index on ({}) can't be written -- skipping it",
-                table.name(),
-                index.columns_as_string()
-            );
-        }
-        return;
-    };
-
-    push_indent(out, indent);
-    out.push_str("<keys>\n");
-    write_key_columns(out, "primary", primary, indent + 1);
-    for unique in table
+    let uniques: Vec<&Key> = table
         .keys()
         .iter()
         .filter(|k| k.key_type() == KeyType::Unique)
-    {
+        .collect();
+    let primary = table.primary_key();
+    if primary.is_none() && uniques.is_empty() && table.indexes().is_empty() {
+        return;
+    }
+
+    push_indent(out, indent);
+    out.push_str("<keys>\n");
+    if let Some(primary) = primary {
+        write_key_columns(out, "primary", primary, indent + 1);
+    }
+    for unique in uniques {
         write_key_columns(out, "unique", unique, indent + 1);
     }
     for index in table.indexes() {
@@ -344,11 +347,15 @@ fn write_constraints(out: &mut String, constraints: &[Constraint], indent: usize
     out.push_str("<constraints>\n");
     for constraint in constraints {
         push_indent(out, indent + 1);
+        let database_type_attr = constraint
+            .database_type()
+            .map(|d| format!(" databaseType=\"{}\"", database_type_str(d)))
+            .unwrap_or_default();
         let _ = writeln!(
             out,
-            "<constraint name=\"{}\" databaseType=\"{}\">",
+            "<constraint name=\"{}\"{}>",
             xml_escape_attr(constraint.name()),
-            database_type_str(constraint.database_type())
+            database_type_attr
         );
         push_indent(out, indent + 2);
         write_cdata(out, constraint.sql());
@@ -604,6 +611,28 @@ mod tests {
     }
 
     #[test]
+    fn portable_constraint_round_trips_without_a_database_type() {
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
+            .add_constraint(
+                schema_model::model::constraint::Constraint::for_every_database(
+                    "ck_a",
+                    "check (a>0)",
+                ),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let xml = write_database_xml(&model);
+
+        assert!(!xml.contains("databaseType"), "{xml}");
+        let reparsed = schema_parser::parse_database_xml(&xml).expect("valid XML");
+        let constraint = &reparsed.default_schema().get_table("t").constraints()[0];
+        assert_eq!(constraint.database_type(), None);
+    }
+
+    #[test]
     fn constraint_sql_containing_cdata_close_sequence_round_trips_through_the_real_parser() {
         let table = TableBuilder::new(None::<&str>, "t")
             .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
@@ -658,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn pk_less_table_keys_and_indexes_are_skipped() {
+    fn pk_less_table_keys_and_indexes_are_written() {
         let table = TableBuilder::new(None::<&str>, "t")
             .add_column(ColumnBuilder::new(None::<&str>, "a", ColumnType::Int).build())
             .add_key(KeyBuilder::new(KeyType::Unique).add_column("a").build())
@@ -669,8 +698,48 @@ mod tests {
             DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
 
         let xml = write_database_xml(&model);
-        assert!(!xml.contains("<keys>"), "got: {xml}");
-        assert!(schema_parser::parse_database_xml(&xml).is_ok());
+        assert!(xml.contains("<keys>"), "got: {xml}");
+        assert!(!xml.contains("<primary>"), "got: {xml}");
+
+        let reparsed = schema_parser::parse_database_xml(&xml).unwrap();
+        let t = reparsed.default_schema().get_table("t");
+        assert!(t.primary_key().is_none());
+        assert_eq!(t.keys().len(), 1);
+        assert_eq!(t.indexes().len(), 1);
+    }
+
+    #[test]
+    fn database_specific_checks_round_trip() {
+        let table = TableBuilder::new(None::<&str>, "t")
+            .add_column(
+                ColumnBuilder::new(None::<&str>, "a", ColumnType::Int)
+                    .check_constraint(Some("a > 0".to_string()))
+                    .database_check(DatabaseType::SqlServer, "a > 2".to_string())
+                    .database_check(DatabaseType::Postgresql, "a > 1".to_string())
+                    .build(),
+            )
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>).add_table(table).build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+
+        let xml = write_database_xml(&model);
+        assert!(
+            xml.contains("<check databaseType=\"postgresql\">a &gt; 1</check>"),
+            "got: {xml}"
+        );
+
+        let reparsed = schema_parser::parse_database_xml(&xml).unwrap();
+        let a = reparsed.default_schema().get_table("t").column("a").clone();
+        assert_eq!(a.check_constraint(), Some("a > 0"));
+        assert_eq!(
+            a.check_constraint_for(DatabaseType::Postgresql),
+            Some("a > 1")
+        );
+        assert_eq!(
+            a.check_constraint_for(DatabaseType::SqlServer),
+            Some("a > 2")
+        );
     }
 
     #[test]

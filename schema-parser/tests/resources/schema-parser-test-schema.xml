@@ -95,7 +95,7 @@
       <column name="time" type="time"/>
       <column name="timestamp" type="timestamp"/>
       <column name="char" type="char" length="1" default="'A'"/>
-      <column name="varchar" type="varchar" length="10" unicode="true"/>
+      <column name="varchar" type="varchar" length="10"/>
       <column name="varcharWithCheck" type="varchar" length="6">
         <check>varcharWithCheck = 'ABC123'</check>
       </column>

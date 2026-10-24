@@ -4,9 +4,9 @@
           xsi:schemaLocation="http://stano.com/database http://schema.stano.com/schema.xsd">
     <table name="users">
         <columns>
-            <column name="id" type="Sequence" required="true"/>
-            <column name="name" type="Varchar" length="100" required="true"/>
-            <column name="email" type="Varchar" length="100"/>
+            <column name="id" type="sequence" required="true"/>
+            <column name="name" type="varchar" length="100" required="true"/>
+            <column name="email" type="varchar" length="100"/>
         </columns>
         <keys>
             <primary>

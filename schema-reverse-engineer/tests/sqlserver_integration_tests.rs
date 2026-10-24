@@ -144,7 +144,7 @@ async fn test_reverse_engineer_sqlserver_schema() {
             .iter()
             .any(|c| c.name() == "ck_orders_amount"
                 && c.sql().starts_with("check (")
-                && c.database_type() == DatabaseType::SqlServer)
+                && c.database_type() == Some(DatabaseType::SqlServer))
     );
     assert!(
         orders

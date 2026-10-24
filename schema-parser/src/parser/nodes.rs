@@ -46,9 +46,6 @@ pub struct SchemaXml {
     #[serde(rename = "@name")]
     pub name: String,
 
-    #[serde(rename = "@caseSensitiveText")]
-    pub case_sensitive_text: Option<bool>,
-
     #[serde(default)]
     #[serde(rename = "table")]
     pub tables: Vec<TableXml>,
@@ -134,20 +131,30 @@ pub struct ColumnXml {
     pub min_value: Option<String>,
     #[serde(rename = "@maxValue")]
     pub max_value: Option<String>,
+    #[serde(default)]
     #[serde(rename = "check")]
-    pub check: Option<CheckXml>,
+    pub check: Vec<CheckXml>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KeysXml {
     #[serde(rename = "primary")]
-    pub primary: Option<KeyColumnsXml>,
+    pub primary: Option<PrimaryKeyXml>,
     #[serde(default)]
     #[serde(rename = "unique")]
     pub uniques: Vec<KeyColumnsXml>,
     #[serde(default)]
     #[serde(rename = "index")]
     pub indexes: Vec<IndexXml>,
+}
+
+/// `<primary>`: like `<unique>` but, per the XSD, without a `where` predicate.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PrimaryKeyXml {
+    #[serde(rename = "column")]
+    pub columns: Vec<KeyColumnXml>,
+    #[serde(rename = "@cluster")]
+    pub cluster: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -293,6 +300,8 @@ pub struct EnumValueXml {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CheckXml {
+    #[serde(rename = "@databaseType")]
+    pub database_type: Option<String>,
     #[serde(rename = "$text")]
     pub value: Option<String>,
 }

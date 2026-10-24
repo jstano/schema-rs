@@ -1978,9 +1978,9 @@ dependencies = [
 
 [[package]]
 name = "schema-xsd"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfa388794bd7f21c8c1732012dd9ed5e92c04ef92193f40779f64d4c252ab51a"
+checksum = "56057090da87fc9ef6420d27b70a3088c9ab1b43f9b642825e5f968b7b7f464b"
 
 [[package]]
 name = "schemars"

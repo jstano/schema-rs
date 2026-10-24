@@ -32,7 +32,7 @@ impl TableConstraintGenerator for DefaultTableConstraintGenerator {
         table
             .constraints()
             .iter()
-            .filter(|constraint| constraint.database_type() == database_type)
+            .filter(|constraint| constraint.applies_to(database_type))
             .map(|constraint| self.generator_constraint(constraint))
             .collect()
     }
@@ -76,5 +76,31 @@ mod tests {
         assert_eq!(constraints.len(), 1);
         assert!(constraints[0].contains("ck_email_lite"));
         assert!(!constraints[0].contains("ck_email_pg"));
+    }
+
+    #[test]
+    fn constraint_without_database_type_applies_to_every_database() {
+        let table = TableBuilder::new(None::<&str>, "users")
+            .add_constraint(Constraint::for_every_database(
+                "ck_portable",
+                "check (age > 0)",
+            ))
+            .add_constraint(Constraint::new(
+                "ck_pg",
+                "check (age < 200)",
+                DatabaseType::Postgresql,
+            ))
+            .build();
+        let schema = SchemaBuilder::new(None::<&str>)
+            .add_table(table.clone())
+            .build();
+        let model =
+            DatabaseModel::new(BooleanMode::Native, ForeignKeyMode::Relations, vec![schema]);
+        let (ctx, _buffer) = make_context(model, DatabaseType::Sqlite);
+
+        let constraints = DefaultTableConstraintGenerator::new(ctx).table_check_constraints(&table);
+
+        assert_eq!(constraints.len(), 1);
+        assert!(constraints[0].contains("ck_portable"));
     }
 }

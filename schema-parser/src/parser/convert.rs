@@ -16,13 +16,14 @@ use schema_model::model::{
 
 pub fn convert_database(database_xml: DatabaseXml) -> Result<DatabaseModel, String> {
     let mut schemas: Vec<Schema> = Vec::new();
+    let case_sensitive_text = database_xml.case_sensitive_text;
 
     if let Some(default_schema) = default_schema(&database_xml)? {
         schemas.push(default_schema);
     }
 
     for schema_xml in database_xml.schemas.into_iter() {
-        schemas.push(sub_schema(&schema_xml)?);
+        schemas.push(sub_schema(&schema_xml, case_sensitive_text)?);
     }
 
     let boolean_mode = database_xml
@@ -57,10 +58,14 @@ fn default_schema(database: &DatabaseXml) -> Result<Option<Schema>, String> {
     }
 
     for view_xml in database.views.iter() {
-        let database_type = optional_database_type(
+        let database_type = match optional_database_type(
             view_xml.database_type.as_deref(),
             &format!("view '{}'", view_xml.name),
-        )?;
+        )? {
+            DatabaseTarget::Every => None,
+            DatabaseTarget::Only(database_type) => Some(database_type),
+            DatabaseTarget::Ignored => continue,
+        };
         schema_builder = schema_builder.add_view(View::new(
             None,
             &view_xml.name,
@@ -81,10 +86,13 @@ fn default_schema(database: &DatabaseXml) -> Result<Option<Schema>, String> {
     for function_xml in database.functions.iter() {
         let mut functions: Vec<Function> = Vec::new();
         for vendor_sql_xml in function_xml.sql.iter() {
-            let database_type = required_database_type(
+            let Some(database_type) = required_database_type(
                 Some(&vendor_sql_xml.database_type),
                 &format!("function '{}'", function_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             functions.push(Function::new(
                 None,
                 &function_xml.name,
@@ -100,10 +108,13 @@ fn default_schema(database: &DatabaseXml) -> Result<Option<Schema>, String> {
     for procedure_xml in database.procedures.iter() {
         let mut procedures: Vec<Procedure> = Vec::new();
         for vendor_sql_xml in procedure_xml.sql.iter() {
-            let database_type = required_database_type(
+            let Some(database_type) = required_database_type(
                 Some(&vendor_sql_xml.database_type),
                 &format!("procedure '{}'", procedure_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             procedures.push(Procedure::new(
                 None,
                 &procedure_xml.name,
@@ -117,7 +128,11 @@ fn default_schema(database: &DatabaseXml) -> Result<Option<Schema>, String> {
     }
 
     for other_sql_xml in database.other_sql.iter() {
-        let database_type = required_database_type(Some(&other_sql_xml.database_type), "otherSql")?;
+        let Some(database_type) =
+            required_database_type(Some(&other_sql_xml.database_type), "otherSql")?
+        else {
+            continue;
+        };
         if let Some(order) = other_sql_order(&other_sql_xml.order) {
             schema_builder = schema_builder.add_other_sql(OtherSql::new(
                 database_type,
@@ -141,10 +156,11 @@ fn default_schema(database: &DatabaseXml) -> Result<Option<Schema>, String> {
     Ok(None)
 }
 
-fn sub_schema(schema_xml: &SchemaXml) -> Result<Schema, String> {
+/// `case_sensitive_text` is the `<database>` setting, which covers every schema in the document.
+fn sub_schema(schema_xml: &SchemaXml, case_sensitive_text: Option<bool>) -> Result<Schema, String> {
     let mut schema_builder = SchemaBuilder::new(Some(&schema_xml.name));
 
-    if let Some(cst) = schema_xml.case_sensitive_text {
+    if let Some(cst) = case_sensitive_text {
         schema_builder = schema_builder.case_sensitive_text(cst);
     }
 
@@ -153,10 +169,14 @@ fn sub_schema(schema_xml: &SchemaXml) -> Result<Schema, String> {
     }
 
     for view_xml in schema_xml.views.iter() {
-        let database_type = optional_database_type(
+        let database_type = match optional_database_type(
             view_xml.database_type.as_deref(),
             &format!("view '{}.{}'", schema_xml.name, view_xml.name),
-        )?;
+        )? {
+            DatabaseTarget::Every => None,
+            DatabaseTarget::Only(database_type) => Some(database_type),
+            DatabaseTarget::Ignored => continue,
+        };
         schema_builder = schema_builder.add_view(View::new(
             Some(&schema_xml.name),
             &view_xml.name,
@@ -177,10 +197,13 @@ fn sub_schema(schema_xml: &SchemaXml) -> Result<Schema, String> {
     for function_xml in schema_xml.functions.iter() {
         let mut functions: Vec<Function> = Vec::new();
         for vendor_sql_xml in function_xml.sql.iter() {
-            let database_type = required_database_type(
+            let Some(database_type) = required_database_type(
                 Some(&vendor_sql_xml.database_type),
                 &format!("function '{}.{}'", schema_xml.name, function_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             functions.push(Function::new(
                 Some(schema_xml.name.as_str()),
                 &function_xml.name,
@@ -196,10 +219,13 @@ fn sub_schema(schema_xml: &SchemaXml) -> Result<Schema, String> {
     for procedure_xml in schema_xml.procedures.iter() {
         let mut procedures: Vec<Procedure> = Vec::new();
         for vendor_sql_xml in procedure_xml.sql.iter() {
-            let database_type = required_database_type(
+            let Some(database_type) = required_database_type(
                 Some(&vendor_sql_xml.database_type),
                 &format!("procedure '{}.{}'", schema_xml.name, procedure_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             procedures.push(Procedure::new(
                 Some(schema_xml.name.as_str()),
                 &procedure_xml.name,
@@ -213,10 +239,13 @@ fn sub_schema(schema_xml: &SchemaXml) -> Result<Schema, String> {
     }
 
     for other_sql_xml in schema_xml.other_sql.iter() {
-        let database_type = required_database_type(
+        let Some(database_type) = required_database_type(
             Some(&other_sql_xml.database_type),
             &format!("otherSql in schema '{}'", schema_xml.name),
-        )?;
+        )?
+        else {
+            continue;
+        };
         if let Some(order) = other_sql_order(&other_sql_xml.order) {
             schema_builder = schema_builder.add_other_sql(OtherSql::new(
                 database_type,
@@ -238,19 +267,39 @@ pub(crate) fn str_to_database_type(s: Option<&str>) -> Option<DatabaseType> {
     })
 }
 
+/// `databaseType` values the XSD allows but this library never generates for. Elements that
+/// target one of these are accepted and dropped, the same way a column check for it is.
+fn is_ignored_database_type(value: &str) -> bool {
+    value.eq_ignore_ascii_case("h2")
+}
+
+/// Which databases an element with an optional `databaseType` applies to.
+pub(crate) enum DatabaseTarget {
+    /// No `databaseType`: applies to every database.
+    Every,
+    Only(DatabaseType),
+    /// A database the XSD allows but this library does not generate for (e.g. h2).
+    Ignored,
+}
+
 /// Parses a `databaseType` attribute that's required for the element to mean anything
 /// (functions/procedures/otherSql/triggers/constraints all need one specific target
 /// database - none of them can represent "applies to every database"). Returns an error
 /// rather than silently discarding the element when the attribute is missing or doesn't
 /// match a known database type; a typo here used to make the whole element vanish from
-/// the parsed model with no warning.
+/// the parsed model with no warning. `Ok(None)` means the element targets a database this
+/// library does not generate for (e.g. h2), and the caller should skip it.
 pub(crate) fn required_database_type(
     value: Option<&str>,
     context: &str,
-) -> Result<DatabaseType, String> {
+) -> Result<Option<DatabaseType>, String> {
     let value =
         value.ok_or_else(|| format!("{context}: missing required databaseType attribute"))?;
+    if is_ignored_database_type(value) {
+        return Ok(None);
+    }
     str_to_database_type(Some(value))
+        .map(Some)
         .ok_or_else(|| format!("{context}: unrecognized databaseType '{value}'"))
 }
 
@@ -261,11 +310,12 @@ pub(crate) fn required_database_type(
 pub(crate) fn optional_database_type(
     value: Option<&str>,
     context: &str,
-) -> Result<Option<DatabaseType>, String> {
+) -> Result<DatabaseTarget, String> {
     match value {
-        None => Ok(None),
+        None => Ok(DatabaseTarget::Every),
+        Some(v) if is_ignored_database_type(v) => Ok(DatabaseTarget::Ignored),
         Some(v) => str_to_database_type(Some(v))
-            .map(Some)
+            .map(DatabaseTarget::Only)
             .ok_or_else(|| format!("{context}: unrecognized databaseType '{v}'")),
     }
 }

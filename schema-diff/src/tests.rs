@@ -557,6 +557,31 @@ fn detects_key_filter_change() {
 }
 
 #[test]
+fn detects_database_specific_column_check_change() {
+    let make = |check: &str| {
+        SchemaBuilder::new(Some("s"))
+            .add_table(
+                TableBuilder::new(Some("s"), "orders")
+                    .add_column(
+                        ColumnBuilder::new(Some("s"), "qty", ColumnType::Int)
+                            .database_check(DatabaseType::Postgresql, check.to_string())
+                            .build(),
+                    )
+                    .build(),
+            )
+            .build()
+    };
+
+    let cs = SchemaDiffEngine::diff(&make("qty > 0"), &make("qty > 1"));
+    assert!(!cs.changes().is_empty());
+    assert!(
+        SchemaDiffEngine::diff(&make("qty > 0"), &make("qty > 0"))
+            .changes()
+            .is_empty()
+    );
+}
+
+#[test]
 fn detects_check_constraint_body_change() {
     let make = |sql: &str| {
         SchemaBuilder::new(Some("s"))
@@ -601,7 +626,7 @@ fn drop_constraint_carries_its_own_database_type() {
     let cs = SchemaDiffEngine::diff(&old, &new);
     assert!(cs.changes().iter().any(
         |c| matches!(c, SchemaChange::DropConstraint { constraint_name, database_type, .. }
-            if constraint_name == "chk_qty" && *database_type == DatabaseType::SqlServer)
+            if constraint_name == "chk_qty" && *database_type == Some(DatabaseType::SqlServer))
     ));
 }
 

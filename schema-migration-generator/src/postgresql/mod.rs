@@ -275,7 +275,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                 SchemaChange::AddConstraint {
                     table_name,
                     constraint,
-                } if constraint.database_type() == DatabaseType::Postgresql => {
+                } if constraint.applies_to(DatabaseType::Postgresql) => {
                     // `constraint.sql()` is already the full `check (...)` clause - same
                     // convention as `DefaultTableConstraintGenerator` on the create path
                     // (`constraint {name} {sql}`, no wrapper added) - so this must not
@@ -297,7 +297,7 @@ impl MigrationGenerator for PostgresqlMigrationGenerator {
                     table_name,
                     constraint_name,
                     database_type,
-                } if *database_type == DatabaseType::Postgresql => {
+                } if database_type.is_none_or(|d| d == DatabaseType::Postgresql) => {
                     writeln!(
                         writer,
                         "alter table {} drop constraint if exists {};",

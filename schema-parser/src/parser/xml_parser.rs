@@ -51,6 +51,186 @@ mod tests {
     }
 
     #[test]
+    fn database_specific_checks_are_kept_per_database() {
+        use schema_model::model::types::DatabaseType;
+        let xml = wrap(
+            r#"
+            <table name="Widget">
+                <columns>
+                    <column name="Qty" type="int">
+                        <check>Qty &gt; 0</check>
+                        <check databaseType="postgresql">Qty &gt; 100</check>
+                        <check databaseType="h2">Qty &gt; 999</check>
+                    </column>
+                </columns>
+            </table>"#,
+        );
+        let database = parse_database_xml(&xml).expect("parse ok");
+        let qty = database
+            .default_schema()
+            .get_table("Widget")
+            .column("Qty")
+            .clone();
+
+        assert_eq!(qty.check_constraint(), Some("Qty > 0"));
+        assert_eq!(
+            qty.check_constraint_for(DatabaseType::Postgresql),
+            Some("Qty > 100")
+        );
+        assert_eq!(
+            qty.check_constraint_for(DatabaseType::SqlServer),
+            Some("Qty > 0")
+        );
+        // h2 is not a database this library generates for, so that check is dropped.
+        assert_eq!(qty.database_checks().len(), 1);
+    }
+
+    fn parse_err(inner: &str) -> String {
+        match parse_database_xml(&wrap(inner)) {
+            Ok(_) => panic!("expected a parse error"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn h2_targeted_elements_are_accepted_and_dropped() {
+        use schema_model::model::types::DatabaseType;
+        let xml = wrap(
+            r#"
+            <table name="T">
+                <columns><column name="A" type="int"><check databaseType="h2">A &gt; 0</check></column></columns>
+                <triggers>
+                    <update databaseType="h2">select 1;</update>
+                    <update databaseType="sqlite">select 2;</update>
+                </triggers>
+                <constraints>
+                    <constraint name="CK_H2" databaseType="h2">A &lt; 9</constraint>
+                    <constraint name="CK_PG" databaseType="postgresql">A &lt; 9</constraint>
+                </constraints>
+                <initialData>
+                    <sql databaseType="h2">insert into t values (1);</sql>
+                    <sql>insert into t values (2);</sql>
+                </initialData>
+            </table>
+            <view name="V" databaseType="h2">select 1</view>
+            <view name="W">select 1</view>
+            <function name="F"><sql databaseType="h2">x</sql></function>
+            <procedure name="P"><sql databaseType="h2">x</sql><sql databaseType="sqlite">y</sql></procedure>
+            <otherSql databaseType="h2" order="top">select 1</otherSql>"#,
+        );
+        let database = parse_database_xml(&xml).expect("h2 elements parse");
+        let schema = database.default_schema();
+        let table = schema.get_table("T");
+        assert_eq!(table.triggers().len(), 1);
+        assert_eq!(table.constraints().len(), 1);
+        assert_eq!(table.initial_data().len(), 1);
+        assert_eq!(schema.views(DatabaseType::Postgresql).len(), 1);
+        assert!(schema.functions().is_empty());
+        assert_eq!(schema.procedures().len(), 1);
+        assert!(schema.other_sql().is_empty());
+    }
+
+    #[test]
+    fn constraint_without_database_type_applies_to_every_database() {
+        let xml = wrap(
+            r#"<table name="T"><columns><column name="A" type="int"/></columns>
+            <constraints><constraint name="CK">A &gt; 0</constraint></constraints></table>"#,
+        );
+        let database = parse_database_xml(&xml).expect("parse ok");
+        let constraints = database
+            .default_schema()
+            .get_table("T")
+            .constraints()
+            .to_vec();
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].database_type(), None);
+    }
+
+    #[test]
+    fn unknown_database_type_is_still_rejected() {
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="A" type="int"/></columns><constraints><constraint name="C" databaseType="oracle">x</constraint></constraints></table>"#,
+        );
+        assert!(err.contains("unrecognized databaseType 'oracle'"), "{err}");
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="A" type="int"><check databaseType="oracle">x</check></column></columns></table>"#,
+        );
+        assert!(err.contains("unrecognized databaseType 'oracle'"), "{err}");
+    }
+
+    #[test]
+    fn negative_scale_or_length_is_rejected() {
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="A" type="decimal" length="10" scale="-2"/></columns></table>"#,
+        );
+        assert!(err.contains("scale") && err.contains("negative"), "{err}");
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="A" type="varchar" length="-1"/></columns></table>"#,
+        );
+        assert!(err.contains("length") && err.contains("negative"), "{err}");
+    }
+
+    #[test]
+    fn primary_key_where_is_rejected() {
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"/></columns><keys><primary where="ID &gt; 0"><column name="ID"/></primary></keys></table>"#,
+        );
+        assert!(err.contains("<primary>") && err.contains("where"), "{err}");
+    }
+
+    #[test]
+    fn case_sensitive_text_applies_to_every_schema_and_is_rejected_on_schema() {
+        let xml = r#"<database xmlns="http://stano.com/database" caseSensitiveText="false">
+            <schema name="s"><table name="T"><columns><column name="A" type="int"/></columns></table></schema>
+        </database>"#;
+        let database = parse_database_xml(xml).expect("parse ok");
+        assert!(!database.schemas().iter().any(|s| s.case_sensitive_text()));
+
+        let err = parse_err(r#"<schema name="s" caseSensitiveText="false"/>"#);
+        assert!(err.contains("caseSensitiveText"), "{err}");
+    }
+
+    #[test]
+    fn empty_key_is_rejected() {
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"/></columns><keys><primary/></keys></table>"#,
+        );
+        assert!(err.contains("at least one <column>"), "{err}");
+    }
+
+    #[test]
+    fn duplicate_column_checks_are_rejected() {
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"><check databaseType="h2">ID &gt; 0</check><check databaseType="h2">ID &gt; 1</check></column></columns></table>"#,
+        );
+        assert!(
+            err.contains("more than one check") && err.contains("h2"),
+            "{err}"
+        );
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"><check>ID &gt; 0</check><check>ID &gt; 1</check></column></columns></table>"#,
+        );
+        assert!(err.contains("more than one check"), "{err}");
+    }
+
+    #[test]
+    fn unknown_elements_are_rejected() {
+        let err = parse_err("<bogus/>");
+        assert!(
+            err.contains("<bogus>") && err.contains("<database>"),
+            "{err}"
+        );
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"/></columns><bogus/></table>"#,
+        );
+        assert!(err.contains("<bogus>") && err.contains("<table>"), "{err}");
+        let err = parse_err(
+            r#"<table name="T"><columns><column name="ID" type="int"><bogus/></column></columns></table>"#,
+        );
+        assert!(err.contains("<bogus>") && err.contains("<column>"), "{err}");
+    }
+
+    #[test]
     fn dangling_relation_target_returns_error_instead_of_panicking() {
         let xml = wrap(
             r#"
@@ -131,27 +311,6 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("my_func"));
         assert!(err.contains("postgres"));
-    }
-
-    #[test]
-    fn constraint_with_missing_database_type_returns_error_instead_of_vanishing() {
-        let xml = wrap(
-            r#"
-            <table name="Widget">
-                <columns>
-                    <column name="Id" type="int"/>
-                </columns>
-                <constraints>
-                    <constraint name="ck_id">check (Id > 0)</constraint>
-                </constraints>
-            </table>
-            "#,
-        );
-
-        let result = parse_database_xml(&xml);
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("ck_id"));
     }
 
     #[test]

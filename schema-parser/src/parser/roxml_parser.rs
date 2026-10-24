@@ -43,7 +43,7 @@ fn parse_database_node(node: Node) -> Result<DatabaseXml, String> {
             "schema" if child.has_tag_name((NS, "schema")) => {
                 schemas.push(parse_schema_node(child)?)
             }
-            _ => {}
+            _ => return Err(unknown_element(child, node)),
         }
     }
 
@@ -63,7 +63,12 @@ fn parse_database_node(node: Node) -> Result<DatabaseXml, String> {
 
 fn parse_schema_node(node: Node) -> Result<SchemaXml, String> {
     let name = attr_string_required(node, "name")?;
-    let case_sensitive_text = attr_bool(node, "caseSensitiveText")?;
+    // Only <database> carries caseSensitiveText; failing here beats silently ignoring it.
+    if node.has_attribute("caseSensitiveText") {
+        return Err(format!(
+            "<schema name=\"{name}\">: caseSensitiveText is only allowed on <database>"
+        ));
+    }
 
     let mut tables = Vec::new();
     let mut enums = Vec::new();
@@ -86,13 +91,12 @@ fn parse_schema_node(node: Node) -> Result<SchemaXml, String> {
             "otherSql" if child.has_tag_name((NS, "otherSql")) => {
                 other_sql.push(parse_other_sql_node(child)?)
             }
-            _ => {}
+            _ => return Err(unknown_element(child, node)),
         }
     }
 
     Ok(SchemaXml {
         name,
-        case_sensitive_text,
         tables,
         enums,
         views,
@@ -132,7 +136,9 @@ fn parse_table_node(node: Node) -> Result<TableXml, String> {
         } else if child.has_tag_name((NS, "aggregations")) {
             aggregations = Some(parse_aggregations_node(child)?);
         } else if child.has_tag_name((NS, "initialData")) {
-            initial_data = Some(parse_initial_data_node(child));
+            initial_data = Some(parse_initial_data_node(child)?);
+        } else {
+            return Err(unknown_element(child, node));
         }
     }
 
@@ -155,7 +161,10 @@ fn parse_table_node(node: Node) -> Result<TableXml, String> {
 
 fn parse_columns_node(node: Node) -> Result<ColumnsXml, String> {
     let mut cols = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
+    for c in node.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "column")) {
+            return Err(unknown_element(c, node));
+        }
         cols.push(parse_column_node(c)?);
     }
     Ok(ColumnsXml { column: cols })
@@ -165,8 +174,8 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
     Ok(ColumnXml {
         name: attr_string_required(node, "name")?,
         r#type: attr_string_required(node, "type")?,
-        length: attr_i32(node, "length")?,
-        scale: attr_i32(node, "scale")?,
+        length: attr_non_negative_i32(node, "length")?,
+        scale: attr_non_negative_i32(node, "scale")?,
         required: attr_bool(node, "required")?,
         default_value: attr_string(node, "default"),
         generated: attr_string(node, "generated"),
@@ -174,22 +183,31 @@ fn parse_column_node(node: Node) -> Result<ColumnXml, String> {
         element_type: attr_string(node, "elementType"),
         min_value: attr_decimal(node, "minValue")?,
         max_value: attr_decimal(node, "maxValue")?,
-        check: node
-            .children()
-            .find(|n| n.has_tag_name((NS, "check")))
-            .map(parse_check_node),
+        check: parse_check_nodes(node)?,
     })
+}
+
+fn parse_check_nodes(column: Node) -> Result<Vec<CheckXml>, String> {
+    let mut checks = Vec::new();
+    for c in column.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "check")) {
+            return Err(unknown_element(c, column));
+        }
+        checks.push(parse_check_node(c));
+    }
+    Ok(checks)
 }
 
 fn parse_check_node(node: Node) -> CheckXml {
     let text = collect_text(node);
     CheckXml {
+        database_type: attr_string(node, "databaseType"),
         value: if text.is_empty() { None } else { Some(text) },
     }
 }
 
 fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
-    let mut primary: Option<KeyColumnsXml> = None;
+    let mut primary: Option<PrimaryKeyXml> = None;
     let mut uniques: Vec<KeyColumnsXml> = Vec::new();
     let mut indexes: Vec<IndexXml> = Vec::new();
 
@@ -202,7 +220,7 @@ fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
             if !uniques.is_empty() || !indexes.is_empty() {
                 return Err("<primary> must come before <unique> and <index> in <keys>".to_string());
             }
-            primary = Some(parse_key_columns_node(c)?);
+            primary = Some(parse_primary_key_node(c)?);
         } else if c.has_tag_name((NS, "unique")) {
             if !indexes.is_empty() {
                 return Err("<unique> must come before <index> in <keys>".to_string());
@@ -210,6 +228,8 @@ fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
             uniques.push(parse_key_columns_node(c)?);
         } else if c.has_tag_name((NS, "index")) {
             indexes.push(parse_index_node(c)?);
+        } else {
+            return Err(unknown_element(c, node));
         }
     }
 
@@ -220,13 +240,37 @@ fn parse_keys_node(node: Node) -> Result<KeysXml, String> {
     })
 }
 
-fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
+fn parse_key_column_nodes(node: Node) -> Result<Vec<KeyColumnXml>, String> {
     let mut columns = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
+    for c in node.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "column")) {
+            return Err(unknown_element(c, node));
+        }
         columns.push(KeyColumnXml {
             name: attr_string_required(c, "name")?,
         });
     }
+    if columns.is_empty() {
+        return Err(format!(
+            "<{}> must contain at least one <column>",
+            node.tag_name().name()
+        ));
+    }
+    Ok(columns)
+}
+
+fn parse_primary_key_node(node: Node) -> Result<PrimaryKeyXml, String> {
+    if node.has_attribute("where") {
+        return Err("<primary> does not support a 'where' predicate".to_string());
+    }
+    Ok(PrimaryKeyXml {
+        columns: parse_key_column_nodes(node)?,
+        cluster: attr_bool(node, "cluster")?,
+    })
+}
+
+fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
+    let columns = parse_key_column_nodes(node)?;
     let cluster = attr_bool(node, "cluster")?;
     let where_clause = attr_string(node, "where");
     Ok(KeyColumnsXml {
@@ -237,12 +281,7 @@ fn parse_key_columns_node(node: Node) -> Result<KeyColumnsXml, String> {
 }
 
 fn parse_index_node(node: Node) -> Result<IndexXml, String> {
-    let mut columns = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
-        columns.push(KeyColumnXml {
-            name: attr_string_required(c, "name")?,
-        });
-    }
+    let columns = parse_key_column_nodes(node)?;
     Ok(IndexXml {
         columns,
         include: attr_string(node, "include"),
@@ -266,6 +305,8 @@ fn parse_relations_node(node: Node) -> Result<RelationsXml, String> {
             });
         } else if r.has_tag_name((NS, "compositeRelation")) {
             composite_rels.push(parse_composite_relation_node(r)?);
+        } else {
+            return Err(unknown_element(r, node));
         }
     }
     Ok(RelationsXml {
@@ -276,7 +317,10 @@ fn parse_relations_node(node: Node) -> Result<RelationsXml, String> {
 
 fn parse_composite_relation_node(node: Node) -> Result<CompositeRelationXml, String> {
     let mut columns = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
+    for c in node.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "column")) {
+            return Err(unknown_element(c, node));
+        }
         columns.push(CompositeRelationColumnXml {
             src: attr_string_required(c, "src")?,
             name: attr_string_required(c, "name")?,
@@ -301,7 +345,10 @@ fn parse_view_node(node: Node) -> Result<ViewXml, String> {
 fn parse_function_node(node: Node) -> Result<FunctionXml, String> {
     let name = attr_string_required(node, "name")?;
     let mut sql = Vec::new();
-    for s in node.children().filter(|n| n.has_tag_name((NS, "sql"))) {
+    for s in node.children().filter(|n| n.is_element()) {
+        if !s.has_tag_name((NS, "sql")) {
+            return Err(unknown_element(s, node));
+        }
         sql.push(VendorSqlXml {
             database_type: attr_string_required(s, "databaseType")?,
             sql: collect_text(s),
@@ -313,7 +360,10 @@ fn parse_function_node(node: Node) -> Result<FunctionXml, String> {
 fn parse_procedure_node(node: Node) -> Result<ProcedureXml, String> {
     let name = attr_string_required(node, "name")?;
     let mut sql = Vec::new();
-    for s in node.children().filter(|n| n.has_tag_name((NS, "sql"))) {
+    for s in node.children().filter(|n| n.is_element()) {
+        if !s.has_tag_name((NS, "sql")) {
+            return Err(unknown_element(s, node));
+        }
         sql.push(VendorSqlXml {
             database_type: attr_string_required(s, "databaseType")?,
             sql: collect_text(s),
@@ -345,7 +395,10 @@ fn parse_other_sql_node(node: Node) -> Result<OtherSqlXml, String> {
 fn parse_enum_node(node: Node) -> Result<EnumXml, String> {
     let name = attr_string_required(node, "name")?;
     let mut value = Vec::new();
-    for v in node.children().filter(|n| n.has_tag_name((NS, "value"))) {
+    for v in node.children().filter(|n| n.is_element()) {
+        if !v.has_tag_name((NS, "value")) {
+            return Err(unknown_element(v, node));
+        }
         value.push(EnumValueXml {
             name: attr_string_required(v, "name")?,
             code: attr_string(v, "code"),
@@ -368,6 +421,8 @@ fn parse_triggers_node(node: Node) -> Result<TriggersXml, String> {
                 database_type: attr_string_required(c, "databaseType")?,
                 sql: collect_text(c),
             });
+        } else {
+            return Err(unknown_element(c, node));
         }
     }
     Ok(TriggersXml { update, delete })
@@ -375,10 +430,10 @@ fn parse_triggers_node(node: Node) -> Result<TriggersXml, String> {
 
 fn parse_constraints_node(node: Node) -> Result<ConstraintsXml, String> {
     let mut constraint = Vec::new();
-    for c in node
-        .children()
-        .filter(|n| n.has_tag_name((NS, "constraint")))
-    {
+    for c in node.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "constraint")) {
+            return Err(unknown_element(c, node));
+        }
         constraint.push(ConstraintXml {
             name: attr_string_required(c, "name")?,
             database_type: attr_string(c, "databaseType"),
@@ -390,10 +445,10 @@ fn parse_constraints_node(node: Node) -> Result<ConstraintsXml, String> {
 
 fn parse_aggregations_node(node: Node) -> Result<AggregationsXml, String> {
     let mut aggregate = Vec::new();
-    for a in node
-        .children()
-        .filter(|n| n.has_tag_name((NS, "aggregate")))
-    {
+    for a in node.children().filter(|n| n.is_element()) {
+        if !a.has_tag_name((NS, "aggregate")) {
+            return Err(unknown_element(a, node));
+        }
         aggregate.push(parse_aggregate_node(a)?);
     }
     Ok(AggregationsXml { aggregate })
@@ -421,6 +476,8 @@ fn parse_aggregate_node(node: Node) -> Result<AggregateXml, String> {
                 ));
             }
             group = Some(parse_group_node(c)?);
+        } else {
+            return Err(unknown_element(c, node));
         }
     }
 
@@ -440,7 +497,10 @@ fn parse_aggregate_node(node: Node) -> Result<AggregateXml, String> {
 
 fn parse_group_node(node: Node) -> Result<GroupXml, String> {
     let mut column = Vec::new();
-    for c in node.children().filter(|n| n.has_tag_name((NS, "column"))) {
+    for c in node.children().filter(|n| n.is_element()) {
+        if !c.has_tag_name((NS, "column")) {
+            return Err(unknown_element(c, node));
+        }
         column.push(GroupColumnXml {
             source: attr_string_required(c, "source")?,
             destination: attr_string_required(c, "destination")?,
@@ -450,18 +510,31 @@ fn parse_group_node(node: Node) -> Result<GroupXml, String> {
     Ok(GroupXml { column })
 }
 
-fn parse_initial_data_node(node: Node) -> InitialDataXml {
+fn parse_initial_data_node(node: Node) -> Result<InitialDataXml, String> {
     let mut sql = Vec::new();
-    for s in node.children().filter(|n| n.has_tag_name((NS, "sql"))) {
+    for s in node.children().filter(|n| n.is_element()) {
+        if !s.has_tag_name((NS, "sql")) {
+            return Err(unknown_element(s, node));
+        }
         sql.push(InitialSqlXml {
             database_type: attr_string(s, "databaseType"),
             sql: collect_text(s),
         });
     }
-    InitialDataXml { sql }
+    Ok(InitialDataXml { sql })
 }
 
 // -------- Utils --------
+/// Error for a child element the XSD does not allow here (a typo, or a stray element in the
+/// wrong place), so it is reported instead of being silently dropped from the model.
+fn unknown_element(child: Node, parent: Node) -> String {
+    format!(
+        "<{}> element is not allowed inside <{}>",
+        child.tag_name().name(),
+        parent.tag_name().name()
+    )
+}
+
 fn attr_string(node: Node, name: &str) -> Option<String> {
     node.attribute(name).map(|s| s.to_string())
 }
@@ -515,6 +588,19 @@ fn attr_i32(node: Node, name: &str) -> Result<Option<i32>, String> {
                 v
             )
         }),
+    }
+}
+
+/// Reads an optional `xs:nonNegativeInteger` attribute (column `length`/`scale`).
+fn attr_non_negative_i32(node: Node, name: &str) -> Result<Option<i32>, String> {
+    match attr_i32(node, name)? {
+        Some(v) if v < 0 => Err(format!(
+            "<{}> attribute '{}' must not be negative (got {})",
+            node.tag_name().name(),
+            name,
+            v
+        )),
+        other => Ok(other),
     }
 }
 

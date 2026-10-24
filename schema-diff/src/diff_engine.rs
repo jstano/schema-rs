@@ -154,6 +154,7 @@ fn columns_differ(a: &Column, b: &Column) -> bool {
         || a.required() != b.required()
         || a.default_constraint() != b.default_constraint()
         || a.check_constraint() != b.check_constraint()
+        || a.database_checks() != b.database_checks()
         || a.enum_type() != b.enum_type()
         || a.element_type() != b.element_type()
         || a.generated() != b.generated()

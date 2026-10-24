@@ -1,5 +1,6 @@
 use crate::model::column_type::ColumnType;
-use crate::model::types::BooleanMode;
+use crate::model::types::{BooleanMode, DatabaseType};
+use std::collections::HashMap;
 
 /// Parses a boolean column's `default` attribute (an untyped `xsd:string` in the schema XSD,
 /// not `xsd:boolean` - it has to tolerate whatever a hand-written schema file spells out) into
@@ -35,6 +36,7 @@ pub struct Column {
     scale: i32,
     required: bool,
     check_constraint: Option<String>,
+    database_checks: HashMap<DatabaseType, String>,
     default_constraint: Option<String>,
     generated: Option<String>,
     min_value: Option<String>,
@@ -60,6 +62,7 @@ impl Column {
             scale,
             required,
             check_constraint: None,
+            database_checks: HashMap::new(),
             default_constraint: None,
             generated: None,
             min_value: None,
@@ -93,6 +96,7 @@ impl Column {
             scale,
             required,
             check_constraint,
+            database_checks: HashMap::new(),
             default_constraint,
             generated,
             min_value,
@@ -131,8 +135,30 @@ impl Column {
         self.required
     }
 
+    /// Replaces the checks that apply to a single database (see `check_constraint_for`).
+    pub fn with_database_checks(mut self, database_checks: HashMap<DatabaseType, String>) -> Self {
+        self.database_checks = database_checks;
+        self
+    }
+
+    /// The generic check: the one used for any database that has no check of its own.
+    /// See `check_constraint_for` for the check that applies to a given database.
     pub fn check_constraint(&self) -> Option<&str> {
         self.check_constraint.as_deref()
+    }
+
+    /// The check that applies to `database_type`: the one declared for that database if there
+    /// is one, otherwise the generic check.
+    pub fn check_constraint_for(&self, database_type: DatabaseType) -> Option<&str> {
+        self.database_checks
+            .get(&database_type)
+            .map(String::as_str)
+            .or(self.check_constraint.as_deref())
+    }
+
+    /// The checks that apply to a single database and override the generic check.
+    pub fn database_checks(&self) -> &HashMap<DatabaseType, String> {
+        &self.database_checks
     }
 
     pub fn default_constraint(&self) -> Option<&str> {
@@ -165,6 +191,7 @@ impl Column {
 
     pub fn needs_check_constraints(&self, boolean_mode: BooleanMode) -> bool {
         self.check_constraint.is_some()
+            || !self.database_checks.is_empty()
             || self.min_value.is_some()
             || self.max_value.is_some()
             || self.enum_type.is_some()
@@ -224,6 +251,46 @@ mod tests {
         for value in ["maybe", "T", "getdate()", ""] {
             assert_eq!(parse_boolean_default(value), Err(()), "value: {:?}", value);
         }
+    }
+
+    #[test]
+    fn database_check_overrides_generic_check_for_that_database_only() {
+        let c = Column::new_all(
+            None::<&str>,
+            "a",
+            ColumnType::Int,
+            0,
+            0,
+            false,
+            Some("a > 0".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_database_checks(HashMap::from([(
+            DatabaseType::Postgresql,
+            "a > 1".to_string(),
+        )]));
+        assert_eq!(
+            c.check_constraint_for(DatabaseType::Postgresql),
+            Some("a > 1")
+        );
+        assert_eq!(
+            c.check_constraint_for(DatabaseType::SqlServer),
+            Some("a > 0")
+        );
+        assert_eq!(c.check_constraint(), Some("a > 0"));
+    }
+
+    #[test]
+    fn database_only_check_needs_check_constraints() {
+        let c = Column::new(None::<&str>, "a", ColumnType::Int, 0, 0, false)
+            .with_database_checks(HashMap::from([(DatabaseType::Sqlite, "a > 1".to_string())]));
+        assert!(c.needs_check_constraints(BooleanMode::Native));
+        assert_eq!(c.check_constraint_for(DatabaseType::Postgresql), None);
     }
 
     #[test]

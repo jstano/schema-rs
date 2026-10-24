@@ -1,4 +1,4 @@
-use crate::parser::convert::agg_frequency_from_str;
+use crate::parser::convert::{DatabaseTarget, agg_frequency_from_str};
 use crate::parser::nodes::{AggregateColumnXml, TableXml};
 use schema_model::builder::{ColumnBuilder, KeyBuilder};
 use schema_model::model::aggregation::{
@@ -67,16 +67,43 @@ fn parse_columns(table_xml: &TableXml, schema_name: Option<&str>) -> Result<Vec<
                     table_xml.name, column_xml.name, e
                 )
             })?;
-            let column = ColumnBuilder::new(schema_name, &column_xml.name, column_type)
+            let mut builder = ColumnBuilder::new(schema_name, &column_xml.name, column_type)
                 .length(column_xml.length.unwrap_or(0))
                 .scale(column_xml.scale.unwrap_or(0))
-                .required(column_xml.required.unwrap_or(false))
-                .check_constraint(
-                    column_xml
-                        .check
-                        .as_ref()
-                        .and_then(|c| c.value.as_ref().cloned()),
-                )
+                .required(column_xml.required.unwrap_or(false));
+            let mut seen_checks: Vec<Option<&str>> = Vec::new();
+            for check_xml in column_xml.check.iter() {
+                let target = check_xml.database_type.as_deref();
+                if seen_checks.contains(&target) {
+                    return Err(format!(
+                        "table '{}', column '{}': more than one check for {}",
+                        table_xml.name,
+                        column_xml.name,
+                        target.map_or("every database (no databaseType)".to_string(), |t| {
+                            format!("databaseType '{t}'")
+                        })
+                    ));
+                }
+                seen_checks.push(target);
+                let Some(check) = check_xml.value.clone() else {
+                    continue;
+                };
+                match check_xml.database_type.as_deref() {
+                    None => builder = builder.check_constraint(Some(check)),
+                    Some(name) => {
+                        // A check for a database this library never generates for (e.g. h2)
+                        // cannot apply to anything, so it is dropped.
+                        let context =
+                            format!("table '{}', column '{}'", table_xml.name, column_xml.name);
+                        if let Some(database_type) =
+                            crate::parser::convert::required_database_type(Some(name), &context)?
+                        {
+                            builder = builder.database_check(database_type, check);
+                        }
+                    }
+                }
+            }
+            let column = builder
                 .default_constraint(column_xml.default_value.clone())
                 .generated(column_xml.generated.clone())
                 .min_value(column_xml.min_value.clone())
@@ -96,12 +123,6 @@ fn parse_keys(table_xml: &TableXml) -> Result<Vec<Key>, String> {
 
     if let Some(keys_xml) = &table_xml.keys {
         if let Some(primary_key_xml) = &keys_xml.primary {
-            if primary_key_xml.where_clause.is_some() {
-                return Err(format!(
-                    "table '{}': <primary> does not support a 'where' predicate",
-                    table_xml.name
-                ));
-            }
             let mut kb = KeyBuilder::new(KeyType::Primary);
             for kc in primary_key_xml.columns.iter() {
                 kb = kb.add_column(&kc.name);
@@ -240,10 +261,13 @@ fn parse_triggers(table_xml: &TableXml) -> Result<Vec<Trigger>, String> {
 
     if let Some(triggers_xml) = &table_xml.triggers {
         for trigger_xml in triggers_xml.update.iter() {
-            let database_type = crate::parser::convert::required_database_type(
+            let Some(database_type) = crate::parser::convert::required_database_type(
                 Some(&trigger_xml.database_type),
                 &format!("update trigger on table '{}'", table_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             triggers.push(Trigger::new(
                 &trigger_xml.sql,
                 TriggerType::Update,
@@ -252,10 +276,13 @@ fn parse_triggers(table_xml: &TableXml) -> Result<Vec<Trigger>, String> {
         }
 
         for trigger_xml in triggers_xml.delete.iter() {
-            let database_type = crate::parser::convert::required_database_type(
+            let Some(database_type) = crate::parser::convert::required_database_type(
                 Some(&trigger_xml.database_type),
                 &format!("delete trigger on table '{}'", table_xml.name),
-            )?;
+            )?
+            else {
+                continue;
+            };
             triggers.push(Trigger::new(
                 &trigger_xml.sql,
                 TriggerType::Delete,
@@ -272,18 +299,22 @@ fn parse_constraints(table_xml: &TableXml) -> Result<Vec<Constraint>, String> {
 
     if let Some(constraints_xml) = &table_xml.constraints {
         for constraint_xml in constraints_xml.constraint.iter() {
-            let database_type = crate::parser::convert::required_database_type(
+            let target = crate::parser::convert::optional_database_type(
                 constraint_xml.database_type.as_deref(),
                 &format!(
                     "constraint '{}' on table '{}'",
                     constraint_xml.name, table_xml.name
                 ),
             )?;
-            constraints.push(Constraint::new(
-                &constraint_xml.name,
-                &constraint_xml.sql,
-                database_type,
-            ));
+            constraints.push(match target {
+                DatabaseTarget::Every => {
+                    Constraint::for_every_database(&constraint_xml.name, &constraint_xml.sql)
+                }
+                DatabaseTarget::Only(database_type) => {
+                    Constraint::new(&constraint_xml.name, &constraint_xml.sql, database_type)
+                }
+                DatabaseTarget::Ignored => continue,
+            });
         }
     }
 
@@ -345,10 +376,14 @@ fn parse_initial_data(table_xml: &TableXml) -> Result<Vec<InitialData>, String> 
 
     if let Some(intial_data_xml) = &table_xml.initial_data {
         for initial_sql_xml in intial_data_xml.sql.iter() {
-            let database_type = crate::parser::convert::optional_database_type(
+            let database_type = match crate::parser::convert::optional_database_type(
                 initial_sql_xml.database_type.as_deref(),
                 &format!("initialData on table '{}'", table_xml.name),
-            )?;
+            )? {
+                DatabaseTarget::Every => None,
+                DatabaseTarget::Only(database_type) => Some(database_type),
+                DatabaseTarget::Ignored => continue,
+            };
             initial_data.push(InitialData::new(&initial_sql_xml.sql, database_type));
         }
     }

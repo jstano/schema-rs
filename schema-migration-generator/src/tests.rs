@@ -1903,7 +1903,7 @@ fn postgresql_drop_constraint_uses_if_exists() {
     cs.add_change(SchemaChange::DropConstraint {
         table_name: "orders".to_string(),
         constraint_name: "ck_orders_total".to_string(),
-        database_type: DatabaseType::Postgresql,
+        database_type: Some(DatabaseType::Postgresql),
     });
 
     let generator = create_generator(DatabaseType::Postgresql);
@@ -1935,7 +1935,7 @@ fn postgresql_migration_skips_constraint_and_view_scoped_to_another_dialect() {
     cs.add_change(SchemaChange::DropConstraint {
         table_name: "orders".to_string(),
         constraint_name: "ck_orders_old".to_string(),
-        database_type: DatabaseType::SqlServer,
+        database_type: Some(DatabaseType::SqlServer),
     });
     cs.add_change(SchemaChange::AddView {
         view: schema_model::model::view::View::new(
@@ -2238,7 +2238,7 @@ fn sqlserver_drop_constraint_is_guarded_by_sys_objects_check() {
     cs.add_change(SchemaChange::DropConstraint {
         table_name: "orders".to_string(),
         constraint_name: "ck_orders_total".to_string(),
-        database_type: DatabaseType::SqlServer,
+        database_type: Some(DatabaseType::SqlServer),
     });
 
     let generator = create_generator(DatabaseType::SqlServer);
@@ -2269,7 +2269,7 @@ fn sqlserver_migration_skips_constraint_and_view_scoped_to_another_dialect() {
     cs.add_change(SchemaChange::DropConstraint {
         table_name: "orders".to_string(),
         constraint_name: "ck_orders_old".to_string(),
-        database_type: DatabaseType::Postgresql,
+        database_type: Some(DatabaseType::Postgresql),
     });
     cs.add_change(SchemaChange::AddView {
         view: schema_model::model::view::View::new(
@@ -2449,7 +2449,7 @@ fn sqlite_migration_skips_constraint_and_view_scoped_to_another_dialect() {
     cs.add_change(SchemaChange::DropConstraint {
         table_name: "orders".to_string(),
         constraint_name: "ck_orders_old".to_string(),
-        database_type: DatabaseType::Postgresql,
+        database_type: Some(DatabaseType::Postgresql),
     });
     cs.add_change(SchemaChange::AddView {
         view: schema_model::model::view::View::new(
@@ -3285,4 +3285,36 @@ fn postgresql_three_level_view_chain_is_dropped_top_down_and_created_bottom_up()
         "creates must go bottom-up, got: {}",
         sql
     );
+}
+
+#[test]
+fn portable_constraint_is_added_and_dropped_on_every_database() {
+    for database_type in [
+        DatabaseType::Postgresql,
+        DatabaseType::SqlServer,
+        DatabaseType::Sqlite,
+    ] {
+        let mut cs = ChangeSet::new();
+        cs.add_change(SchemaChange::AddConstraint {
+            table_name: "orders".to_string(),
+            constraint: schema_model::model::constraint::Constraint::for_every_database(
+                "ck_orders_total",
+                "check (total > 0)",
+            ),
+        });
+        cs.add_change(SchemaChange::DropConstraint {
+            table_name: "orders".to_string(),
+            constraint_name: "ck_old".to_string(),
+            database_type: None,
+        });
+
+        let generator = create_generator(database_type);
+        let mut output = Vec::new();
+        generator
+            .generate(&cs, &default_model(), &mut output)
+            .unwrap();
+        let sql = String::from_utf8(output).unwrap();
+        assert!(sql.contains("ck_orders_total"), "{database_type:?}: {sql}");
+        assert!(sql.contains("ck_old"), "{database_type:?}: {sql}");
+    }
 }
