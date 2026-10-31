@@ -63,7 +63,7 @@ impl ColumnTypeGenerator for SqlServerColumnTypeGenerator {
     }
 
     fn uuid_default_value_sql(&self, _schema: &Schema) -> String {
-        "newid()".to_string()
+        "newsequentialid()".to_string()
     }
 
     fn array_sql(&self, _column: &Column) -> String {
